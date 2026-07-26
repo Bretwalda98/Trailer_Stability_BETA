@@ -1,9 +1,11 @@
-const CACHE_NAME = "trailer-stability-v0.7-standalone-4";
+const CACHE_NAME = "trailer-stability-v0.7-standalone-5";
+const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, "");
+const assetPath = (path) => `${BASE_PATH}${path}`;
 const CORE_ASSETS = [
-  "/",
-  "/manifest.webmanifest",
-  "/favicon.svg",
-  "/templates/Trailer_Stability_Verification_Template_v0.7.xlsm",
+  assetPath("/"),
+  assetPath("/manifest.webmanifest"),
+  assetPath("/favicon.svg"),
+  assetPath("/templates/Trailer_Stability_Verification_Template_v0.7.xlsm"),
 ];
 
 self.addEventListener("install", (event) => {
@@ -28,10 +30,10 @@ self.addEventListener("fetch", (event) => {
       fetch(event.request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("/", copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put(assetPath("/"), copy));
           return response;
         })
-        .catch(() => caches.match("/")),
+        .catch(() => caches.match(assetPath("/"))),
     );
     return;
   }

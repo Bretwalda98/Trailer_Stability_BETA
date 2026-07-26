@@ -12,6 +12,7 @@ import {
 } from "../engine/workbook";
 import { buildGeometryViewModel } from "../geometry/buildGeometryViewModel";
 import { useEngineeringEngine } from "../hooks/useEngineeringEngine";
+import { assetPath } from "../site-path";
 import { CaseHeader } from "./workbench/CaseHeader";
 import { EngineeringDetailsDrawer } from "./workbench/EngineeringDetailsDrawer";
 import { EngineeringViewport } from "./workbench/EngineeringViewport";
@@ -71,7 +72,7 @@ export default function TrailerWorkbench() {
 
   useEffect(() => {
     if ("serviceWorker" in navigator && window.isSecureContext) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
+      navigator.serviceWorker.register(assetPath("/sw.js")).catch(() => {
         // Offline installation is optional when a browser or host blocks service workers.
       });
     }

@@ -1,4 +1,5 @@
 import type { WorkSheet } from "xlsx";
+import { assetPath } from "../site-path";
 import type {
   EngineeringDegree,
   ProjectModel,
@@ -613,7 +614,7 @@ export async function exportVerificationWorkbook(
   if (templateBytes) {
     source = templateBytes;
   } else {
-    const response = await fetch("/templates/Trailer_Stability_Verification_Template_v0.7.xlsm");
+    const response = await fetch(assetPath("/templates/Trailer_Stability_Verification_Template_v0.7.xlsm"));
     if (!response.ok) throw new Error("Verification workbook template could not be loaded.");
     source = await response.arrayBuffer();
   }

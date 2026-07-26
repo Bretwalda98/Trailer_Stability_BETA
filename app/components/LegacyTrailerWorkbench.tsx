@@ -40,6 +40,7 @@ import {
   exportVerificationWorkbook,
   importWorkbook,
 } from "../engine/workbook";
+import { assetPath } from "../site-path";
 import {
   AxleLoadChart,
   BeamChart,
@@ -1296,7 +1297,7 @@ export default function TrailerWorkbench() {
 
   useEffect(() => {
     if ("serviceWorker" in navigator && window.isSecureContext) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
+      navigator.serviceWorker.register(assetPath("/sw.js")).catch(() => {
         // Installation remains optional when a browser or host blocks workers.
       });
     }
