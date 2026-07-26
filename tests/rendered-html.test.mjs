@@ -46,7 +46,7 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   const [page, layout, manifest, workbench, engineHook, worker, planView, css, serviceWorker] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),
+    readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
     readFile(new URL("../app/components/TrailerWorkbench.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/hooks/useEngineeringEngine.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/workers/engineering.worker.ts", import.meta.url), "utf8"),
@@ -56,8 +56,8 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   ]);
   assert.match(page, /<TrailerWorkbench \/>/);
   assert.match(layout, /Trailer Stability \| Native Engineering Suite/);
-  assert.match(manifest, /display:\s*"standalone"/);
-  assert.match(workbench, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
+  assert.match(manifest, /"display": "standalone"/);
+  assert.match(workbench, /assetPath\("\/sw\.js"\)/);
   assert.match(workbench, /exportVerificationWorkbook/);
   assert.match(workbench, /importWorkbook/);
   assert.match(workbench, /aria-label="Mobile workspace"/);

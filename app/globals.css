@@ -932,6 +932,63 @@ input[type="checkbox"] {
   vector-effect: non-scaling-stroke;
 }
 
+.end-spmt .spmt-deck {
+  fill: rgba(255, 255, 255, 0.07);
+  stroke: #f2f5f7;
+  stroke-width: 1.35;
+}
+
+.end-spmt .spmt-subframe {
+  fill: rgba(160, 170, 178, 0.09);
+  stroke: #c3cbd1;
+  stroke-width: 1.1;
+  vector-effect: non-scaling-stroke;
+}
+
+.end-spmt .spmt-centreline,
+.end-spmt .spmt-suspension {
+  stroke: #87919a;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.end-spmt .spmt-centreline {
+  stroke-dasharray: 3 2;
+}
+
+.end-spmt .spmt-wheel {
+  cursor: pointer;
+}
+
+.end-spmt .spmt-wheel:hover .wheel,
+.end-spmt .spmt-wheel:hover .spmt-hub {
+  filter: brightness(1.45);
+}
+
+.end-spmt .spmt-hub {
+  fill: #050505;
+  stroke-width: 1.1;
+  vector-effect: non-scaling-stroke;
+}
+
+.end-spmt .spmt-wheel.pinned .wheel {
+  stroke: var(--red) !important;
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+
+.end-spmt .spmt-label {
+  fill: #d5dbe0;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.end-spmt.colliding .spmt-deck,
+.end-spmt.colliding .spmt-subframe {
+  fill: rgba(239, 68, 68, 0.1);
+  stroke: var(--red);
+}
+
 .wheel,
 .side-axle circle {
   fill: #08090a;
@@ -948,6 +1005,34 @@ input[type="checkbox"] {
   stroke: #6c9ff5;
   stroke-width: 1;
   stroke-dasharray: 4 3;
+}
+
+.tipping-pivot {
+  fill: #050505;
+  stroke: var(--red);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.end-tipping-ray line {
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-dasharray: 5 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.end-tipping-ray circle {
+  fill: #050505;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  vector-effect: non-scaling-stroke;
+}
+
+.end-tipping-ray text {
+  fill: currentColor;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .critical-side-label {

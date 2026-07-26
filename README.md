@@ -66,6 +66,20 @@ pnpm start --hostname 0.0.0.0
 
 The production output is created in `dist/`.
 
+## GitHub Pages beta
+
+The repository deploys a static, browser-only build when changes are merged to
+`main`. In the repository's **Settings → Pages**, set **Source** to
+**GitHub Actions** once. The site will then be published at:
+
+```
+https://bretwalda98.github.io/Trailer_Stability_BETA/
+```
+
+The calculator, optimisation worker, local project storage, logs and workbook
+import/export remain in the browser. GitHub Pages does not host the optional
+Node/Cloudflare server shell used by the local desktop build.
+
 ## Verification
 
 ```powershell
