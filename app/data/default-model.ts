@@ -1,0 +1,252 @@
+import { builtinTrailerCatalogue } from "./trailers";
+import type { OptimiserWeights, ProjectModel } from "../engine/types";
+
+export const balancedWeights: OptimiserWeights = {
+  basicUtil: 1,
+  slopeUtil: 1,
+  dynamicUtil: 1,
+  spineUtil: 1,
+  basicAngle: 1,
+  slopeAngle: 1,
+  dynamicAngle: 1,
+  dynamicRatio: 1,
+  shearUtil: 0,
+  bendingUtil: 0,
+  deflection: 0,
+  localBendingUtil: 0,
+  axleLinesUsed: 0.5,
+};
+
+export function createDefaultModel(): ProjectModel {
+  return {
+    schemaVersion: 1,
+    sourceWorkbook: "Trailer_Stability_Calculator_Optimiser_v0.7.xlsm",
+    engineeringDegree: "Second",
+    weightCogReference: "GO",
+    referencePoint: "0,0",
+    cargo: {
+      name: "CARG_NAME",
+      clientReference: "CLIENT_REF",
+      ownerReference: "OWNER_REF",
+      lengthM: 11.89,
+      widthM: 4.885,
+      heightM: 4.895,
+      extremeX: 0,
+      extremeY: 0,
+      massT: 425.6,
+      cog: { x: 5.99, y: 2.4425, z: 2.045 },
+      envelopeX: 0.24,
+      envelopeY: 0.1,
+      sideWindAreaM2: 58.20455,
+      sideDragCoefficient: 1.2,
+      sideWindHeightM: 2.4475,
+      frontWindAreaM2: 23.901575,
+      frontDragCoefficient: 1.2,
+      frontWindHeightM: 2.4475,
+    },
+    packing: {
+      massT: 22.8,
+      heightM: 0.55,
+      cog: { x: 5.945, y: 2.4425, z: 0.275 },
+    },
+    trailerDeckHeightM: 1.5,
+    trailers: [
+      {
+        id: "trailer-1",
+        definitionId: "k2400-st",
+        axleLines: 8,
+        singleFile: false,
+        xM: 0,
+        yM: 1.6975,
+        placementReference: "ABSOLUTE",
+        offsetFromReference: { x: 0, y: 0 },
+        ppuLeft: false,
+        ppuRight: false,
+        enabled: true,
+      },
+      {
+        id: "trailer-2",
+        definitionId: "k2400-st",
+        axleLines: 8,
+        singleFile: false,
+        xM: 0,
+        yM: 3.1875,
+        placementReference: "ABSOLUTE",
+        offsetFromReference: { x: 0, y: 0 },
+        ppuLeft: true,
+        ppuRight: false,
+        enabled: true,
+      },
+    ],
+    groupings: [
+      {
+        splitAfterAxleLine: 2,
+        groups: [2, 2, 1, 1, 1, 1, 1, 1],
+        cornerGroups: { frontLeft: 2, frontRight: 2, rearLeft: 1, rearRight: 1 },
+        pinnedAxleLines: [],
+      },
+      {
+        splitAfterAxleLine: 2,
+        groups: [1, 1, 3, 3, 3, 3, 3, 3],
+        cornerGroups: { frontLeft: 1, frontRight: 1, rearLeft: 3, rearRight: 3 },
+        pinnedAxleLines: [],
+      },
+    ],
+    supports: [
+      { id: "support-1", xM: 1, widthM: 0.5, allowed: true, active: true },
+      { id: "support-2", xM: 4, widthM: 0.5, allowed: true, active: true },
+      { id: "support-3", xM: 7, widthM: 0.5, allowed: true, active: true },
+      { id: "support-4", xM: 10, widthM: 0.5, allowed: true, active: true },
+    ],
+    environment: {
+      routeLongitudinalSlopeDeg: 2,
+      routeTransverseSlopeDeg: 1,
+      longitudinalSlopeDeg: 2,
+      transverseSlopeDeg: 1,
+      combinationFactor: 0.7,
+      longitudinalAccelerationMps2: 0.5,
+      transverseAccelerationMps2: 0.2,
+      windSpeedMps: 15,
+    },
+    optimiser: {
+      calculationMode: "NATIVE_VERIFIED",
+      c89Start: 20,
+      c89Maximum: 44,
+      c89Step: 1,
+      d138Start: 1,
+      d138Step: 1,
+      d138MaximumFraction: 0.5,
+      overrideD138Limit: false,
+      e89Minimum: -10,
+      e89Maximum: 10,
+      e89Step: 1,
+      e89RangeMode: "AUTO_GROUP_CENTRES",
+      boundaryToleranceM: 0.01,
+      stopAtFirstPass: false,
+      afterFirstPass: "CONTINUE_SCAN",
+      fineFirstPassReference: "",
+      fineSecondPassReference: "",
+      fineE89Step: 0.25,
+      minimumActiveSupports: 2,
+      deflectionCheck: "OFF",
+      deflectionLimitMm: 5,
+      deflectionToleranceMm: 0.001,
+      pinSearchMode: "FAST",
+      pinStopRule: "CONTINUE_IMPROVING",
+      existingPinsPolicy: "REARRANGE",
+      maximumPins: 8,
+      maximumAxleUtilisation: "AUTO",
+      minimumDeflectionImprovementMm: 0.01,
+      localStructuralTargetMode: "AUTO_AT_DEFLECTION_PEAK",
+      manualLocalTargetXM: null,
+      fineE89PinMode: "REOPTIMISE_EACH_CASE",
+      pinCaseBudget: 12,
+      optimiserStrategy: "STAGED_ADAPTIVE",
+      thoroughFinalistCount: 3,
+      detailedWeighting: false,
+      f506Policy: "KEEP",
+      weightPreset: "BALANCED",
+      weights: { ...balancedWeights },
+      progressRefreshSeconds: 1,
+      liveRefreshSeconds: 3,
+    },
+    catalogue: builtinTrailerCatalogue.map((item) => ({ ...item })),
+    analysedTrailer: 1,
+    spineLoadCase: "Neutral",
+    spineMeshSizeM: 0.023,
+    loosePacking: [],
+  };
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function objectItems(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    : [];
+}
+
+/**
+ * Adds fields introduced after the first standalone release while preserving
+ * imported/custom catalogue rows and user-created arrangements.
+ */
+export function hydrateProjectModel(value: unknown): ProjectModel {
+  const base = createDefaultModel();
+  const source = objectValue(value) as Partial<ProjectModel>;
+  const cargo = objectValue(source.cargo) as Partial<ProjectModel["cargo"]>;
+  const packing = objectValue(source.packing) as Partial<ProjectModel["packing"]>;
+  const environment = objectValue(source.environment) as Partial<ProjectModel["environment"]>;
+  const optimiser = objectValue(source.optimiser) as Partial<ProjectModel["optimiser"]>;
+  const weights = objectValue(optimiser.weights) as Partial<OptimiserWeights>;
+  const trailerItems = objectItems(source.trailers);
+  const groupingItems = objectItems(source.groupings);
+  const supportItems = objectItems(source.supports);
+  const catalogueItems = objectItems(source.catalogue);
+  const loosePackingItems = objectItems(source.loosePacking);
+  return {
+    ...base,
+    ...source,
+    schemaVersion: 1,
+    cargo: {
+      ...base.cargo,
+      ...cargo,
+      cog: { ...base.cargo.cog, ...objectValue(cargo.cog) },
+    },
+    packing: {
+      ...base.packing,
+      ...packing,
+      cog: { ...base.packing.cog, ...objectValue(packing.cog) },
+    },
+    environment: {
+      ...base.environment,
+      ...environment,
+      routeLongitudinalSlopeDeg:
+        typeof environment.routeLongitudinalSlopeDeg === "number"
+          ? environment.routeLongitudinalSlopeDeg
+          : environment.longitudinalSlopeDeg ?? base.environment.routeLongitudinalSlopeDeg,
+      routeTransverseSlopeDeg:
+        typeof environment.routeTransverseSlopeDeg === "number"
+          ? environment.routeTransverseSlopeDeg
+          : environment.transverseSlopeDeg ?? base.environment.routeTransverseSlopeDeg,
+    },
+    optimiser: {
+      ...base.optimiser,
+      ...optimiser,
+      weights: { ...base.optimiser.weights, ...weights },
+    },
+    trailers: trailerItems.length
+      ? trailerItems.map((item, index) => ({
+          ...(base.trailers[index] ?? base.trailers[0]),
+          ...item,
+          offsetFromReference: {
+            ...(base.trailers[index] ?? base.trailers[0]).offsetFromReference,
+            ...objectValue(item.offsetFromReference),
+          },
+        })) as ProjectModel["trailers"]
+      : base.trailers,
+    groupings: groupingItems.length
+      ? groupingItems.map((item, index) => ({
+          ...(base.groupings[index] ?? base.groupings[0]),
+          ...item,
+          groups: Array.isArray(item.groups) ? item.groups : (base.groupings[index] ?? base.groupings[0]).groups,
+          pinnedAxleLines: Array.isArray(item.pinnedAxleLines)
+            ? item.pinnedAxleLines
+            : (base.groupings[index] ?? base.groupings[0]).pinnedAxleLines,
+        })) as ProjectModel["groupings"]
+      : base.groupings,
+    supports: supportItems.length
+      ? supportItems.map((item, index) => ({
+          ...(base.supports[index] ?? base.supports[0]),
+          ...item,
+        })) as ProjectModel["supports"]
+      : base.supports,
+    catalogue: catalogueItems.length
+      ? (catalogueItems as unknown as ProjectModel["catalogue"])
+      : base.catalogue,
+    loosePacking: loosePackingItems.length
+      ? (loosePackingItems as unknown as ProjectModel["loosePacking"])
+      : [],
+  };
+}

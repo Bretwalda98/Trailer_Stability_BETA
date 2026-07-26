@@ -1,0 +1,193 @@
+"use client";
+
+import {
+  IconBox,
+  IconChartLine,
+  IconChevronRight,
+  IconCirclePlus,
+  IconFileReport,
+  IconGeometry,
+  IconHierarchy2,
+  IconLayoutGrid,
+  IconRoute,
+  IconSettings,
+  IconSparkles,
+  IconSquarePlus,
+  IconTruck,
+} from "@tabler/icons-react";
+import type { ProjectModel } from "../../engine/types";
+import type { GeometryViewModel } from "../../geometry/types";
+import type { WorkspaceId } from "./types";
+
+const WORKSPACES: Array<{
+  id: WorkspaceId;
+  label: string;
+  icon: React.ComponentType<{ size?: number; stroke?: number }>;
+}> = [
+  { id: "model", label: "Model", icon: IconHierarchy2 },
+  { id: "geometry", label: "Geometry", icon: IconGeometry },
+  { id: "hydraulics", label: "Hydraulics", icon: IconRoute },
+  { id: "load-cases", label: "Load cases", icon: IconLayoutGrid },
+  { id: "stability", label: "Stability", icon: IconChartLine },
+  { id: "spine-beam", label: "Spine beam", icon: IconSettings },
+  { id: "optimise", label: "Optimise", icon: IconSparkles },
+  { id: "report", label: "Report", icon: IconFileReport },
+];
+
+interface ModelTreeProps {
+  model: ProjectModel;
+  vm: GeometryViewModel;
+  workspace: WorkspaceId;
+  selectedId: string;
+  onWorkspaceChange(workspace: WorkspaceId): void;
+  onSelect(id: string): void;
+  onModelChange(model: ProjectModel): void;
+  onOpenDetails(): void;
+}
+
+export function ModelTree({
+  model,
+  vm,
+  workspace,
+  selectedId,
+  onWorkspaceChange,
+  onSelect,
+  onModelChange,
+  onOpenDetails,
+}: ModelTreeProps) {
+  const addTrailer = () => {
+    if (model.trailers.length >= 12) return;
+    const source = model.trailers.at(-1) ?? model.trailers[0];
+    const grouping = model.groupings.at(-1) ?? model.groupings[0];
+    if (!source || !grouping) return;
+    const index = model.trailers.length;
+    const trailer = {
+      ...structuredClone(source),
+      id: `trailer-${Date.now()}`,
+      yM: source.yM + 2.8,
+      ppuLeft: false,
+      ppuRight: false,
+    };
+    const next = {
+      ...model,
+      trailers: [...model.trailers, trailer],
+      groupings: [...model.groupings, structuredClone(grouping)],
+    };
+    onModelChange(next);
+    onSelect(`trailer:${trailer.id}`);
+  };
+
+  const addSupport = () => {
+    if (model.supports.length >= 10) return;
+    const last = model.supports.at(-1);
+    const support = {
+      id: `support-${Date.now()}`,
+      xM: (last?.xM ?? 0) + 1,
+      widthM: last?.widthM ?? 0.5,
+      allowed: true,
+      active: true,
+    };
+    onModelChange({ ...model, supports: [...model.supports, support] });
+    onSelect(support.id);
+  };
+
+  return (
+    <aside className="model-tree" aria-label="Workspace and model navigation">
+      <div className="workspace-navigation">
+        <span className="tree-heading">WORKSPACE</span>
+        {WORKSPACES.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            className={workspace === id ? "active" : ""}
+            onClick={() => onWorkspaceChange(id)}
+          >
+            <Icon size={15} stroke={1.7} />
+            <span>{label}</span>
+            <IconChevronRight size={12} className="nav-chevron" />
+          </button>
+        ))}
+      </div>
+
+      <div className="object-tree">
+        <span className="tree-heading">MODEL</span>
+        <button
+          className={`tree-root${selectedId === "project-case" ? " selected" : ""}`}
+          onClick={() => onSelect("project-case")}
+        >
+          <IconBox size={14} />
+          <b>{model.cargo.name || "Untitled case"}</b>
+        </button>
+        <details open>
+          <summary><IconGeometry size={13} /> Geometry</summary>
+          <button
+            className={selectedId === vm.cargo.id ? "selected" : ""}
+            onClick={() => onSelect(vm.cargo.id)}
+          >
+            Cargo
+          </button>
+          {vm.trailers.map((trailer) => (
+            <button
+              key={trailer.id}
+              className={selectedId === trailer.id ? "selected" : ""}
+              onClick={() => onSelect(trailer.id)}
+            >
+              <IconTruck size={12} /> T{trailer.index + 1} · {trailer.definitionName}
+            </button>
+          ))}
+          <button onClick={() => onWorkspaceChange("geometry")}>
+            Axle lines <span>{vm.axleLines.length}</span>
+          </button>
+          <button onClick={() => onWorkspaceChange("spine-beam")}>
+            Supports <span>{vm.supports.length}</span>
+          </button>
+          <button onClick={() => onWorkspaceChange("geometry")}>
+            Power packs <span>{vm.powerPacks.length}</span>
+          </button>
+        </details>
+        <details open>
+          <summary><IconRoute size={13} /> Hydraulics</summary>
+          {vm.groups.map((group) => (
+            <button
+              key={group.id}
+              className={selectedId === group.id ? "selected" : ""}
+              onClick={() => {
+                onSelect(group.id);
+                onWorkspaceChange("hydraulics");
+              }}
+            >
+              <i className={`group-dot g${group.groupId}`} />
+              G{group.groupId}
+              <span>{group.activeAxleLineCount} AL</span>
+            </button>
+          ))}
+        </details>
+        <details>
+          <summary><IconLayoutGrid size={13} /> Load cases</summary>
+          <button onClick={() => onWorkspaceChange("load-cases")}>Basic static</button>
+          <button onClick={() => onWorkspaceChange("load-cases")}>Static incl. slopes</button>
+          <button onClick={() => onWorkspaceChange("load-cases")}>Dynamic</button>
+        </details>
+      </div>
+
+      <div className="tree-actions">
+        <button title="Add trailer" disabled={model.trailers.length >= 12} onClick={addTrailer}>
+          <IconCirclePlus size={15} /> Trailer
+        </button>
+        <button title="Add support" disabled={model.supports.length >= 10} onClick={addSupport}>
+          <IconSquarePlus size={15} /> Support
+        </button>
+        <button onClick={onOpenDetails}>
+          <IconFileReport size={15} /> Details
+        </button>
+      </div>
+
+      <div className="units-reference">
+        <b>Units</b>
+        <span>Length <em>m</em></span>
+        <span>Mass <em>t</em></span>
+        <span>Force <em>kN</em></span>
+        <span>Angle <em>°</em></span>
+      </div>
+    </aside>
+  );
+}

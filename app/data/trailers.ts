@@ -1,0 +1,92 @@
+import type { TrailerDefinition } from "../engine/types";
+
+type SourceRow = [
+  string,
+  number,
+  number,
+  number | null,
+  number,
+  number,
+  number | null,
+  number | null,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number | null,
+  number | null,
+  number | null,
+  number | null,
+  string,
+];
+
+const rows: SourceRow[] = [
+  ["K2400 G2G3", 1.4, 2.43, 1.45, 4, 34, 4.3, 6.2, 1.49, 0.32, 0.84, 0.7, 0.5, 1300000, 5490, -5490, 1800, -1800, 2.07, 140, 13.191476256670168, 0.7, "Standard"],
+  ["K2400 S", 1.4, 2.43, 1.45, 4.1, 40, 4.3, 6.2, 1.49, 0.32, 0.84, 0.7, 0.5, 1300000, 7700, -5490, 2150, -2150, 2.07, 150, 11.49124153914379, 0.7, "Standard"],
+  ["K2400 ST", 1.4, 2.43, 1.45, 4.5, 48, 4.3, 6.2, 1.49, 0.32, 0.84, 0.7, 0.5, 1298500, 9250, -9250, 2000, -2000, 1.96, 145, 11.64391946271097, 0.88, "Standard"],
+  ["K2400 ST SPL", 1.4, 2.43, null, 5, 48, 4.3, 6.2, 1.49, 0.32, 0.84, 0.7, 0.5, 1050000, 6200, -6200, 2000, -2000, 1.96, 145, 11.64391946271097, 0.88, "Standard"],
+  ["K2500 3000 H", 1.5, 3, 1.8, 3.4, 45, 4.5, 8.5, 1.175, 0.215, 0.77, 0.6, 0.4, 650000, 7000, -1500, 1650, -1650, null, null, null, null, "Standard"],
+  ["K2500 3000", 1.5, 3, 1.8, 3.4, 36, 4.5, 8.5, 1.25, 0.215, 0.77, 0.6, 0.4, 650000, 7000, -1500, 1650, -1650, null, null, null, null, "Standard"],
+  ["K2500 3200 SL", 1.5, 3.2, 1.9, 3.7, 36, null, null, 1.175, 0.215, 0.78, 0.6, 0.4, 650000, 7000, 1500, 1500, -1500, null, null, null, null, "Standard"],
+  ["Faymonville G-SL", 1.5, 3, 1.8, 3.6, 45, 2.6, 3.8, 1.175, 0.215, 0.77, 0.6, 0.4, 724000, 7500, -1750, 1500, -1500, null, null, null, null, "Standard"],
+  ["GHF THP 3000", 1.5, 3, 1.8, 3.5, 34, 3.5, 6, 1.175, 0.215, 0.77, 0.6, 0.4, 560250, 5000, -2000, 1500, -1500, null, null, null, null, "Standard"],
+  ["GHF THPSL 2018", 1.5, 3, 1.8, 3.5, 45, 2.97, 4.8, 1.175, 0.215, 0.77, 0.6, 0.4, 649130, 7200, -2100, 1500, -1500, null, null, null, null, "Standard"],
+  ["GHF THP 3600", 1.6, 3.6, 2.28, 4.6, 36, 4, 7.5, 1.25, 0.215, 0.8, 0.6, 0.5, 1033000, 5000, 0, 1550, 1550, null, null, null, null, "Standard"],
+  ["Cometto MSPE", 1.4, 2.43, 1.45, 4, 48, 4.1, 6.4, 1.5, 0.355, 0.84, 0.7, 0.5, 1057000, 7785, -6262, 2000, 2000, 2, 140, 12.38, 0.7, "Standard"],
+  ["PEKZ G4", 1.4, 2.43, 1.45, 4.25, 48, 4.275, 7.2, 1.5, 0.32, 0.84, 0.7, 0.5, 830273, 7785, -6262, 2000, -2000, 2.008569737340997, 140, 12.8, 0.75, "Standard"],
+  ["PEKZ G4 M78 X24 D24 TT20", 1.4, 2.43, 1.45, 4.1, 40, 4.28, 7.2, 1.5, 0.32, 0.84, 0.7, 0.5, 830273, 7785, -6262, 2000, -2000, 2.01, 140, 12.8, 0.75, "Alternative"],
+  ["PEKZ G4 M78 X24 D24 TL24", 1.4, 2.43, 1.45, 4.1, 48, 4.28, 7.2, 1.5, 0.32, 0.84, 0.7, 0.5, 830273, 7785, -6262, 2000, -2000, 2.01, 140, 12.8, 0.75, "Alternative"],
+];
+
+function slug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+export const builtinTrailerCatalogue: TrailerDefinition[] = rows.map((row) => ({
+  id: slug(row[0]),
+  name: row[0],
+  axleSpacingM: row[1],
+  trailerWidthM: row[2],
+  crossBogieSpacingM: row[3],
+  axleWeightT: row[4],
+  axleCapacityT: row[5],
+  ppuLengthM: row[6],
+  ppuWeightT: row[7],
+  neutralHeightM: row[8],
+  tyreWidthM: row[9],
+  wheelDiameterM: row[10],
+  strokeMaxM: row[11],
+  strokePracticalM: row[12],
+  secondMomentCm4: row[13],
+  momentMaxKNm: row[14],
+  momentMinKNm: row[15],
+  shearMaxKN: row[16],
+  shearMinKN: row[17],
+  liftRatio: row[18],
+  cylinderDiameterMm: row[19],
+  factor: row[20],
+  massBelowCylinderT: row[21],
+  category: row[22],
+}));
+
+export const trailerPropertyColumns: Array<{ key: keyof TrailerDefinition; label: string; unit: string }> = [
+  { key: "axleSpacingM", label: "Axle spacing", unit: "m" },
+  { key: "trailerWidthM", label: "Trailer width", unit: "m" },
+  { key: "crossBogieSpacingM", label: "Cross-bogie spacing", unit: "m" },
+  { key: "axleWeightT", label: "Axle-line tare", unit: "t" },
+  { key: "axleCapacityT", label: "Axle-line capacity", unit: "t" },
+  { key: "ppuLengthM", label: "PPU length", unit: "m" },
+  { key: "ppuWeightT", label: "PPU weight", unit: "t" },
+  { key: "neutralHeightM", label: "Neutral height", unit: "m" },
+  { key: "secondMomentCm4", label: "Second moment I", unit: "cm⁴" },
+  { key: "momentMaxKNm", label: "Positive moment", unit: "kNm" },
+  { key: "momentMinKNm", label: "Negative moment", unit: "kNm" },
+  { key: "shearMaxKN", label: "Positive shear", unit: "kN" },
+  { key: "shearMinKN", label: "Negative shear", unit: "kN" },
+];
