@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "rootDir": ".",
+    "outDir": "test-output/cjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": false,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"]
+  },
+  "include": [
+    "tests/engine-and-workbook.test.ts",
+    "tests/geometry-adapter.test.ts",
+    "app/data/default-model.ts",
+    "app/data/trailers.ts",
+    "app/engine/beam.ts",
+    "app/engine/core.ts",
+    "app/engine/optimiser.ts",
+    "app/engine/types.ts",
+    "app/engine/workbook.ts",
+    "app/geometry/buildGeometryViewModel.ts",
+    "app/geometry/details.ts",
+    "app/geometry/format.ts",
+    "app/geometry/hydraulic-routes.ts",
+    "app/geometry/transform.ts",
+    "app/geometry/types.ts"
+  ]
+}
