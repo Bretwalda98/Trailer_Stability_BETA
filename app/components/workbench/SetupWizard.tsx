@@ -60,6 +60,7 @@ import type {
   TrailerInput,
 } from "../../engine/types";
 import { importWorkbook } from "../../engine/workbook";
+import { applyAutomaticCargoWindInputs, derivedCargoWindInputs } from "../../engine/wind";
 import { buildGeometryViewModel } from "../../geometry/buildGeometryViewModel";
 import { useEngineeringEngine } from "../../hooks/useEngineeringEngine";
 import { EngineeringViewport } from "./EngineeringViewport";
@@ -123,6 +124,7 @@ function NumberField({
   hint,
   disabled,
   highlight,
+  validation,
   onChange,
 }: {
   label: string;
@@ -134,12 +136,20 @@ function NumberField({
   hint?: string;
   disabled?: boolean;
   highlight?(): void;
+  /** Green means the value is acceptable; amber needs correction. */
+  validation?: "valid" | "invalid" | "neutral";
   onChange(value: number): void;
 }) {
   const [text, setText] = useState(() => String(value));
   useEffect(() => setText(String(value)), [value]);
+  const parsed = Number(text);
+  const inferredValidation =
+    !text.trim() || !Number.isFinite(parsed) || (min !== undefined && parsed < min) || (max !== undefined && parsed > max)
+      ? "invalid"
+      : "valid";
+  const fieldValidation = disabled ? validation ?? "valid" : validation ?? inferredValidation;
   return (
-    <label className="wizard-field" onFocus={highlight} onClick={highlight}>
+    <label className={`wizard-field ${fieldValidation === "neutral" ? "" : `is-${fieldValidation}`}`} onFocus={highlight} onClick={highlight}>
       <span>{label}</span>
       <div className="wizard-input-unit">
         <input
@@ -380,6 +390,11 @@ export function SetupWizard({
   const warningCount = issues.filter((item) => item.severity === "warning").length;
   const setupValidEngineeringNok =
     blockingCount === 0 && engine.result.status === "GEOMETRY_FAIL";
+  const hasPreviewGeometry =
+    draftModel.cargo.lengthM > 0 &&
+    draftModel.cargo.widthM > 0 &&
+    draftModel.cargo.heightM > 0 &&
+    draftModel.trailers.length > 0;
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -532,7 +547,10 @@ export function SetupWizard({
   };
 
   const updateCargo = (patch: Partial<ProjectModel["cargo"]>) =>
-    setDraftModel((current) => ({ ...current, cargo: { ...current.cargo, ...patch } }));
+    setDraftModel((current) => ({
+      ...current,
+      cargo: applyAutomaticCargoWindInputs({ ...current.cargo, ...patch }),
+    }));
   const updatePacking = (patch: Partial<PackingInput>) =>
     setDraftModel((current) => ({ ...current, packing: { ...current.packing, ...patch } }));
   const updateTrailer = (index: number, patch: Partial<TrailerInput>) =>
@@ -620,7 +638,7 @@ export function SetupWizard({
             onClick={() => selectSource("BLANK")}
           >
             <IconPlus size={18} />
-            <span><b>Blank case</b><small>Start with calculation-ready trailer defaults.</small></span>
+            <span><b>Blank case</b><small>Start with an empty canvas and build the arrangement as you go.</small></span>
           </button>
           <button
             type="button"
@@ -667,12 +685,12 @@ export function SetupWizard({
     <>
       <FormSection title="Cargo geometry" description="Coordinates use the selected load datum. COG Z is measured from the cargo bottom.">
         <div className="wizard-field-grid two">
-          <NumberField label="Length" value={draftModel.cargo.lengthM} unit="m" min={0} highlight={() => setSelectedId("cargo")} onChange={(lengthM) => updateCargo({ lengthM })} />
-          <NumberField label="Width" value={draftModel.cargo.widthM} unit="m" min={0} highlight={() => setSelectedId("cargo")} onChange={(widthM) => updateCargo({ widthM })} />
-          <NumberField label="Height" value={draftModel.cargo.heightM} unit="m" min={0} highlight={() => setSelectedId("cargo")} onChange={(heightM) => updateCargo({ heightM })} />
+          <NumberField label="Length" value={draftModel.cargo.lengthM} unit="m" min={0} validation={draftModel.cargo.lengthM > 0 ? "valid" : "invalid"} highlight={() => setSelectedId("cargo")} onChange={(lengthM) => updateCargo({ lengthM })} />
+          <NumberField label="Width" value={draftModel.cargo.widthM} unit="m" min={0} validation={draftModel.cargo.widthM > 0 ? "valid" : "invalid"} highlight={() => setSelectedId("cargo")} onChange={(widthM) => updateCargo({ widthM })} />
+          <NumberField label="Height" value={draftModel.cargo.heightM} unit="m" min={0} validation={draftModel.cargo.heightM > 0 ? "valid" : "invalid"} highlight={() => setSelectedId("cargo")} onChange={(heightM) => updateCargo({ heightM })} />
           <NumberField label="X extreme" value={draftModel.cargo.extremeX} unit="m" highlight={() => setSelectedId("cargo")} onChange={(extremeX) => updateCargo({ extremeX })} />
           <NumberField label="Y extreme" value={draftModel.cargo.extremeY} unit="m" highlight={() => setSelectedId("cargo")} onChange={(extremeY) => updateCargo({ extremeY })} />
-          <NumberField label="Mass" value={draftModel.cargo.massT} unit="t" min={0} highlight={() => setSelectedId("cog:cargo")} onChange={(massT) => updateCargo({ massT })} />
+          <NumberField label="Mass" value={draftModel.cargo.massT} unit="t" min={0} validation={draftModel.cargo.massT > 0 ? "valid" : "invalid"} highlight={() => setSelectedId("cog:cargo")} onChange={(massT) => updateCargo({ massT })} />
         </div>
       </FormSection>
       <FormSection title="Cargo COG and uncertainty envelope">
@@ -684,15 +702,26 @@ export function SetupWizard({
           <NumberField label="Envelope Y ±" value={draftModel.cargo.envelopeY} unit="m" min={0} highlight={() => setSelectedId("envelope:cargo")} onChange={(envelopeY) => updateCargo({ envelopeY })} />
         </div>
       </FormSection>
-      <details className="wizard-advanced">
-        <summary>Advanced wind inputs</summary>
+      <details className="wizard-advanced" open>
+        <summary>Wind projection and advanced inputs</summary>
+        <div className="wizard-toggle-grid">
+          <ToggleField
+            label="Auto-calculate wind areas"
+            checked={draftModel.cargo.autoWindFromCargo}
+            hint="Default: cargo side/front projections; force acts at half cargo height."
+            onChange={(autoWindFromCargo) => updateCargo({
+              autoWindFromCargo,
+              ...(autoWindFromCargo ? derivedCargoWindInputs(draftModel.cargo) : {}),
+            })}
+          />
+        </div>
         <div className="wizard-field-grid two">
-          <NumberField label="Side wind area" value={draftModel.cargo.sideWindAreaM2} unit="m²" min={0} onChange={(sideWindAreaM2) => updateCargo({ sideWindAreaM2 })} />
+          <NumberField label="Side wind area" value={draftModel.cargo.sideWindAreaM2} unit="m²" min={0} disabled={draftModel.cargo.autoWindFromCargo} validation={draftModel.cargo.sideWindAreaM2 > 0 ? "valid" : "invalid"} hint={draftModel.cargo.autoWindFromCargo ? "Length × height" : "Manual projected side area"} onChange={(sideWindAreaM2) => updateCargo({ sideWindAreaM2 })} />
           <NumberField label="Side drag coefficient" value={draftModel.cargo.sideDragCoefficient} min={0} onChange={(sideDragCoefficient) => updateCargo({ sideDragCoefficient })} />
-          <NumberField label="Side wind height" value={draftModel.cargo.sideWindHeightM} unit="m" onChange={(sideWindHeightM) => updateCargo({ sideWindHeightM })} />
-          <NumberField label="Front wind area" value={draftModel.cargo.frontWindAreaM2} unit="m²" min={0} onChange={(frontWindAreaM2) => updateCargo({ frontWindAreaM2 })} />
+          <NumberField label="Side wind height" value={draftModel.cargo.sideWindHeightM} unit="m" min={0} disabled={draftModel.cargo.autoWindFromCargo} validation={draftModel.cargo.sideWindHeightM > 0 ? "valid" : "invalid"} hint={draftModel.cargo.autoWindFromCargo ? "Half cargo height" : "Manual force height"} onChange={(sideWindHeightM) => updateCargo({ sideWindHeightM })} />
+          <NumberField label="Front wind area" value={draftModel.cargo.frontWindAreaM2} unit="m²" min={0} disabled={draftModel.cargo.autoWindFromCargo} validation={draftModel.cargo.frontWindAreaM2 > 0 ? "valid" : "invalid"} hint={draftModel.cargo.autoWindFromCargo ? "Width × height" : "Manual projected front area"} onChange={(frontWindAreaM2) => updateCargo({ frontWindAreaM2 })} />
           <NumberField label="Front drag coefficient" value={draftModel.cargo.frontDragCoefficient} min={0} onChange={(frontDragCoefficient) => updateCargo({ frontDragCoefficient })} />
-          <NumberField label="Front wind height" value={draftModel.cargo.frontWindHeightM} unit="m" onChange={(frontWindHeightM) => updateCargo({ frontWindHeightM })} />
+          <NumberField label="Front wind height" value={draftModel.cargo.frontWindHeightM} unit="m" min={0} disabled={draftModel.cargo.autoWindFromCargo} validation={draftModel.cargo.frontWindHeightM > 0 ? "valid" : "invalid"} hint={draftModel.cargo.autoWindFromCargo ? "Half cargo height" : "Manual force height"} onChange={(frontWindHeightM) => updateCargo({ frontWindHeightM })} />
         </div>
       </details>
     </>
@@ -1137,20 +1166,28 @@ export function SetupWizard({
               <span>{calculationCurrent ? "Authoritative result" : "Updating · previous result retained"}</span>
             </div>
           </div>
-          <EngineeringViewport
-            vm={vm}
-            view={view}
-            availableViews={AVAILABLE_VIEWS}
-            compact
-            minimumWidth={300}
-            minimumHeight={240}
-            preferences={preferences}
-            selectedId={selectedId}
-            onViewChange={setView}
-            onPreferencesChange={setPreferences}
-            onSelect={setSelectedId}
-            onModelChange={setDraftModel}
-          />
+          {hasPreviewGeometry ? (
+            <EngineeringViewport
+              vm={vm}
+              view={view}
+              availableViews={AVAILABLE_VIEWS}
+              compact
+              minimumWidth={300}
+              minimumHeight={240}
+              preferences={preferences}
+              selectedId={selectedId}
+              onViewChange={setView}
+              onPreferencesChange={setPreferences}
+              onSelect={setSelectedId}
+              onModelChange={setDraftModel}
+            />
+          ) : (
+            <div className="setup-wizard-empty-preview">
+              <IconBox size={28} />
+              <b>Start with the cargo envelope</b>
+              <p>Enter cargo dimensions, then add a trailer. The live arrangement will appear here as you build it.</p>
+            </div>
+          )}
           <div className="setup-wizard-preview-metrics">
             <div><span>Overall</span><b className={engine.result.status === "PASS" ? "ok" : "nok"}>{engine.result.status.replaceAll("_", " ")}</b></div>
             <div><span>Dynamic util.</span><b>{metric(engine.result.metrics.dynamicUtil.value, "%", 100)}</b></div>

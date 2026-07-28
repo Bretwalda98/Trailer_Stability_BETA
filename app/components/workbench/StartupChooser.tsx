@@ -71,7 +71,7 @@ export function StartupChooser({
             <IconPlus size={22} />
             <span>
               <b>Start new setup</b>
-              <small>Open the seven-step wizard with a clean calculation-ready case.</small>
+              <small>Open the seven-step wizard with an empty canvas and no preset arrangement.</small>
             </span>
           </button>
 

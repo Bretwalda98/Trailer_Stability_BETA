@@ -42,6 +42,7 @@ export function createDefaultModel(): ProjectModel {
       cog: { x: 5.99, y: 2.4425, z: 2.045 },
       envelopeX: 0.24,
       envelopeY: 0.1,
+      autoWindFromCargo: true,
       sideWindAreaM2: 58.20455,
       sideDragCoefficient: 1.2,
       sideWindHeightM: 2.4475,
@@ -255,7 +256,7 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
       ...optimiser,
       weights: { ...base.optimiser.weights, ...weights },
     },
-    trailers: trailerItems.length
+    trailers: Array.isArray(source.trailers)
       ? trailerItems.map((item, index) => ({
           ...(base.trailers[index] ?? base.trailers[0]),
           ...item,
@@ -265,7 +266,7 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
           },
         })) as ProjectModel["trailers"]
       : base.trailers,
-    groupings: groupingItems.length
+    groupings: Array.isArray(source.groupings)
       ? groupingItems.map((item, index) => ({
           ...(base.groupings[index] ?? base.groupings[0]),
           ...item,
@@ -284,7 +285,7 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
             : (base.groupings[index] ?? base.groupings[0]).pinnedAxleLines,
         })) as ProjectModel["groupings"]
       : base.groupings,
-    supports: supportItems.length
+    supports: Array.isArray(source.supports)
       ? supportItems.map((item, index) => ({
           ...(base.supports[index] ?? base.supports[0]),
           ...item,

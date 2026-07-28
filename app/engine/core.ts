@@ -19,6 +19,7 @@ import type {
   TrailerDefinition,
   TrailerInput,
 } from "./types";
+import { applyAutomaticProjectWindInputs } from "./wind";
 
 const GRAVITY = 9.81;
 const EPS = 1e-9;
@@ -1028,6 +1029,7 @@ function analysisSummary(
 }
 
 export function calculateProject(model: ProjectModel): CalculationResult {
+  model = applyAutomaticProjectWindInputs(model);
   const started = performance.now();
   const warnings: string[] = [];
   const baseLoad = loadCog(model);

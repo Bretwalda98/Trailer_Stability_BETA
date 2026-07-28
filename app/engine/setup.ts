@@ -1,5 +1,6 @@
 import { createDefaultModel, hydrateProjectModel } from "../data/default-model";
 import { validateCatalogue } from "./core";
+import { derivedCargoWindInputs } from "./wind";
 import type {
   CalculationResult,
   PlacementReference,
@@ -94,12 +95,41 @@ export function createBlankSetupModel(): ProjectModel {
       name: "",
       clientReference: "",
       ownerReference: "",
+      lengthM: 0,
+      widthM: 0,
+      heightM: 0,
+      extremeX: 0,
+      extremeY: 0,
       massT: 0,
+      cog: { x: 0, y: 0, z: 0 },
+      envelopeX: 0,
+      envelopeY: 0,
+      autoWindFromCargo: true,
+      ...derivedCargoWindInputs({
+        ...model.cargo,
+        lengthM: 0,
+        widthM: 0,
+        heightM: 0,
+      }),
     },
     packing: {
       ...model.packing,
       massT: 0,
+      heightM: 0,
+      cog: { x: 0, y: 0, z: 0 },
+      footprint: {
+        ...model.packing.footprint,
+        lengthM: 0,
+        widthM: 0,
+        extremeX: 0,
+        extremeY: 0,
+      },
     },
+    trailerDeckHeightM: 0,
+    trailers: [],
+    groupings: [],
+    supports: [],
+    analysedTrailer: 1,
   };
 }
 

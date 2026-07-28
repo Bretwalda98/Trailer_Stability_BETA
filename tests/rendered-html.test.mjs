@@ -45,7 +45,7 @@ test("server-renders the standalone engineering workbench", async () => {
 });
 
 test("keeps phone, offline and workbook-verification capabilities wired", async () => {
-  const [page, layout, manifest, workbench, engineHook, worker, planView, css, serviceWorker] = await Promise.all([
+  const [page, layout, manifest, workbench, engineHook, worker, planView, css, serviceWorker, setupWizard, windEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
@@ -55,6 +55,8 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
     readFile(new URL("../app/components/workbench/views/PlanView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/workbench/SetupWizard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/engine/wind.ts", import.meta.url), "utf8"),
   ]);
   assert.match(page, /<TrailerWorkbench \/>/);
   assert.match(layout, /Trailer Stability \| Native Engineering Suite/);
@@ -76,4 +78,8 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(css, /\.mobile-workspace-nav/);
   assert.match(serviceWorker, /Trailer_Stability_Verification_Template_v0\.7\.xlsm/);
   assert.match(serviceWorker, /caches\.match/);
+  assert.match(setupWizard, /Auto-calculate wind areas/);
+  assert.match(setupWizard, /Start with the cargo envelope/);
+  assert.match(windEngine, /lengthM \* heightM/);
+  assert.match(windEngine, /widthM \* heightM/);
 });
