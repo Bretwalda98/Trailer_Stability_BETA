@@ -348,18 +348,18 @@ function CargoSetup({
     setModel((current) => ({ ...current, cargo: { ...current.cargo, cog: { ...current.cargo.cog, [key]: value } } }));
   return (
     <section className="card form-card">
-      <SectionTitle eyebrow="1 · Load definition" title="Cargo geometry, mass &amp; COG" description="The yellow workbook inputs are grouped here by engineering purpose." />
+      <SectionTitle eyebrow="1 · Load definition" title="Cargo geometry, mass &amp; COG" description="Calculation inputs are grouped here by engineering purpose." />
       <div className="form-grid three">
         <TextField label="Cargo name" value={model.cargo.name} onChange={(value) => updateCargo("name", value)} />
         <TextField label="Client reference" value={model.cargo.clientReference} onChange={(value) => updateCargo("clientReference", value)} />
         <TextField label="Owner reference" value={model.cargo.ownerReference} onChange={(value) => updateCargo("ownerReference", value)} />
-        <SelectField label="Engineering verification degree (F17)" value={model.engineeringDegree} onChange={(value) => setModel((current) => ({ ...current, engineeringDegree: value as ProjectModel["engineeringDegree"] }))}>
+        <SelectField label="Engineering verification degree" value={model.engineeringDegree} onChange={(value) => setModel((current) => ({ ...current, engineeringDegree: value as ProjectModel["engineeringDegree"] }))}>
           <option value="First">First</option>
           <option value="Second">Second</option>
           <option value="Third">Third</option>
         </SelectField>
-        <TextField label="Weight / COG information reference (J22)" value={model.weightCogReference} onChange={(value) => setModel((current) => ({ ...current, weightCogReference: value }))} />
-        <TextField label="Load datum / reference point (D48)" value={model.referencePoint} onChange={(value) => setModel((current) => ({ ...current, referencePoint: value }))} />
+        <TextField label="Weight / COG information reference" value={model.weightCogReference} onChange={(value) => setModel((current) => ({ ...current, weightCogReference: value }))} />
+        <TextField label="Load datum / reference point" value={model.referencePoint} onChange={(value) => setModel((current) => ({ ...current, referencePoint: value }))} />
       </div>
       <h3 className="subsection-title">Envelope and dimensions</h3>
       <div className="form-grid four">
@@ -388,8 +388,8 @@ function CargoSetup({
         <NumberField label="Front force height" value={model.cargo.frontWindHeightM} unit="m" min={0} onChange={(value) => updateCargo("frontWindHeightM", value)} />
       </div>
       <details className="help-details">
-        <summary>Workbook explanation</summary>
-        <p>COG Z is entered at its highest credible elevation. X and Y envelopes shift only the cargo portion of the all-inclusive COG, matching the workbook’s A/B/C/D envelope cases.</p>
+        <summary>Calculation explanation</summary>
+        <p>COG Z is entered at its highest credible elevation. X and Y envelopes shift only the cargo portion of the all-inclusive COG across the A/B/C/D envelope cases.</p>
       </details>
     </section>
   );
@@ -437,7 +437,7 @@ function TrailerCard({
         )}
       </div>
       {trailer.placementReference === "ABSOLUTE" ? (
-        <p className="inline-note">X uses the shared E89 master below. Y remains independent for each trailer row.</p>
+        <p className="inline-note">Longitudinal X is shared across trailers. Transverse Y remains independent for each trailer.</p>
       ) : (
         <div className="form-grid two">
           <NumberField label="X offset from reference" value={trailer.offsetFromReference.x} unit="m" onChange={(value) => updateOffset("x", value)} />
@@ -446,8 +446,8 @@ function TrailerCard({
       )}
       <div className="toggle-grid">
         <Toggle checked={trailer.singleFile} onChange={(value) => update("singleFile", value)} label="Single-file trailer" />
-        <Toggle checked={trailer.ppuLeft} onChange={(value) => update("ppuLeft", value)} label="Left PPU" />
-        <Toggle checked={trailer.ppuRight} onChange={(value) => update("ppuRight", value)} label="Right PPU" />
+        <Toggle checked={trailer.ppuLeft} onChange={(value) => update("ppuLeft", value)} label="Rear PPU" />
+        <Toggle checked={trailer.ppuRight} onChange={(value) => update("ppuRight", value)} label="Front PPU" />
       </div>
       {definition && (
         <div className="trailer-spec-strip">
@@ -518,11 +518,11 @@ function AxleGroupingEditor({
     }));
   return (
     <section className="card form-card">
-      <SectionTitle eyebrow="3 · Hydraulic setup" title="Axle lines, split &amp; group routing" description="C89, D138 and the pin row are shared masters. Every trailer mirrors them exactly, as in the corrected workbook." />
+      <SectionTitle eyebrow="3 · Hydraulic setup" title="Axle lines, split &amp; group routing" description="Axle count, split and pinned lines are shared across every trailer." />
       <div className="master-controls">
-        <NumberField label="No. of Axle Lines Start (C89)" value={axleLines} min={2} max={99} step={1} onChange={(value) => setModel((current) => applySharedAxleLines(current, value))} />
-        <NumberField label="Split after Axle Line (D138)" value={split} min={1} max={Math.max(1, axleLines - 1)} step={1} onChange={(value) => setModel((current) => applySharedSplit(current, value))} />
-        <NumberField label="Trailer X Start (E89)" value={model.trailers[0]?.xM ?? 0} unit="m" onChange={(value) => setModel((current) => applySharedX(current, value))} />
+        <NumberField label="Number of axle lines" value={axleLines} min={2} max={99} step={1} onChange={(value) => setModel((current) => applySharedAxleLines(current, value))} />
+        <NumberField label="Split after axle line" value={split} min={1} max={Math.max(1, axleLines - 1)} step={1} onChange={(value) => setModel((current) => applySharedSplit(current, value))} />
+        <NumberField label="Trailer X start" value={model.trailers[0]?.xM ?? 0} unit="m" onChange={(value) => setModel((current) => applySharedX(current, value))} />
       </div>
       <div className="axle-track-wrap">
         <div className="axle-track-label"><span>Front / start</span><span>Rear / end</span></div>
@@ -544,7 +544,7 @@ function AxleGroupingEditor({
           })}
         </div>
         {axleLines > 44 && <p className="inline-note">The visual track shows AL 1–44; the numerical master still applies {axleLines} lines to every trailer.</p>}
-        <p className="inline-note">Click an axle line to pin/unpin it. Up to eight pins are written across G136:N136 and mirrored down every trailer row.</p>
+        <p className="inline-note">Click an axle line to pin or unpin it. Up to eight shared pins are mirrored across every trailer.</p>
       </div>
       <div className="group-routing-list">
         {model.trailers.map((trailer, index) => {
@@ -555,10 +555,10 @@ function AxleGroupingEditor({
             <article className="group-routing" key={trailer.id}>
               <div><span className="trailer-number small">{index + 1}</span><strong>{definition?.name ?? `Trailer ${index + 1}`}</strong></div>
               <div className="route-grid">
-                <GroupSelector label={`AL 1–${split} left`} value={grouping.cornerGroups?.frontLeft ?? 2} onChange={(value) => updateGrouping(index, "frontLeft", value)} />
-                <GroupSelector label={`AL 1–${split} right`} value={grouping.cornerGroups?.frontRight ?? 1} onChange={(value) => updateGrouping(index, "frontRight", value)} />
-                <GroupSelector label={`AL ${split + 1}–${axleLines} left`} value={grouping.cornerGroups?.rearLeft ?? 3} onChange={(value) => updateGrouping(index, "rearLeft", value)} />
-                <GroupSelector label={`AL ${split + 1}–${axleLines} right`} value={grouping.cornerGroups?.rearRight ?? 1} onChange={(value) => updateGrouping(index, "rearRight", value)} />
+                <GroupSelector label={`Rear AL 1–${split} left`} value={grouping.cornerGroups?.rearLeft ?? 2} onChange={(value) => updateGrouping(index, "rearLeft", value)} />
+                <GroupSelector label={`Rear AL 1–${split} right`} value={grouping.cornerGroups?.rearRight ?? 1} onChange={(value) => updateGrouping(index, "rearRight", value)} />
+                <GroupSelector label={`Front AL ${split + 1}–${axleLines} left`} value={grouping.cornerGroups?.frontLeft ?? 3} onChange={(value) => updateGrouping(index, "frontLeft", value)} />
+                <GroupSelector label={`Front AL ${split + 1}–${axleLines} right`} value={grouping.cornerGroups?.frontRight ?? 1} onChange={(value) => updateGrouping(index, "frontRight", value)} />
               </div>
             </article>
           );
@@ -596,7 +596,7 @@ function SupportsEditor({
       <SectionTitle
         eyebrow="4 · Load-transfer supports"
         title="Optional supports &amp; automatic settling"
-        description="At every C89, D138, E89 or pin change, all defined and allowed supports start at Yes. Negative reactions are removed repeatedly until only positive reactions remain."
+        description="After every axle-count, split, trailer-position or pin change, all defined and allowed supports start active. Negative reactions are removed repeatedly until only positive reactions remain."
         action={<button className="button secondary" disabled={model.supports.length >= 10} onClick={add}>+ Add support</button>}
       />
       <div className="support-table">
@@ -681,7 +681,7 @@ function SpineBeamSetup({
       <SectionTitle
         eyebrow="5 · Spine-beam calculation"
         title="Exact beam case &amp; loose packing"
-        description="Choose the workbook static load case used for support settling and beam verification. Loose packing is already included in the declared packing mass and is applied here only as a local beam load."
+        description="Choose the static load case used for support settling and beam verification. Loose packing is already included in the declared packing mass and is applied here only as a local beam load."
         action={<button className="button secondary" disabled={model.loosePacking.length >= 4} onClick={addLoosePacking}>+ Loose packing</button>}
       />
       <div className="form-grid three">
@@ -710,8 +710,8 @@ function SpineBeamSetup({
         {!model.loosePacking.length && <div className="empty-row">No loose beam-only packing is defined.</div>}
       </div>
       <details className="help-details">
-        <summary>Workbook explanation</summary>
-        <p>Neutral and A–D use the basic static cases. A1–D3 use the twelve slope-envelope cases. Start and end X are absolute coordinates, exactly as in rows 439–442 of the workbook.</p>
+        <summary>Calculation explanation</summary>
+        <p>Neutral and A–D use the basic static cases. A1–D3 use the twelve slope-envelope cases. Start and end X are absolute coordinates.</p>
       </details>
     </section>
   );
@@ -750,14 +750,14 @@ function SetupTab({
       const grouping: HydraulicGrouping = {
         splitAfterAxleLine: current.groupings[0]?.splitAfterAxleLine ?? 1,
         groups: [...(current.groupings[0]?.groups ?? [])],
-        cornerGroups: { ...(current.groupings[0]?.cornerGroups ?? { frontLeft: 2, frontRight: 1, rearLeft: 3, rearRight: 1 }) },
+        cornerGroups: { ...(current.groupings[0]?.cornerGroups ?? { rearLeft: 2, rearRight: 1, frontLeft: 3, frontRight: 1 }) },
         pinnedAxleLines: [...(current.groupings[0]?.pinnedAxleLines ?? [])],
       };
       return { ...current, trailers: [...current.trailers, trailer], groupings: [...current.groupings, grouping] };
     });
   return (
     <div className="page-stack">
-      <SectionTitle eyebrow="Calculation inputs" title="Load &amp; transport arrangement" description="A clearer interface over the workbook’s yellow cells, with shared masters enforced automatically." />
+      <SectionTitle eyebrow="Calculation inputs" title="Load &amp; transport arrangement" description="Shared formation controls are enforced automatically across the transport arrangement." />
       <CargoSetup model={model} setModel={setModel} />
       <section className="card form-card">
         <SectionTitle
@@ -801,7 +801,7 @@ function SetupTab({
       <SupportsEditor model={model} setModel={setModel} calculated={result.supports} />
       <SpineBeamSetup model={model} setModel={setModel} />
       <section className="card form-card">
-        <SectionTitle eyebrow="6 · Environment" title="Slope, acceleration &amp; wind" description="Route and residual slopes remain separate, matching all four yellow workbook slope inputs." />
+        <SectionTitle eyebrow="6 · Environment" title="Slope, acceleration &amp; wind" description="Route and residual slopes remain separate for transparent engineering control." />
         <div className="form-grid five">
           <NumberField label="Route longitudinal slope" value={model.environment.routeLongitudinalSlopeDeg} unit="°" onChange={(value) => setModel((current) => ({ ...current, environment: { ...current.environment, routeLongitudinalSlopeDeg: value } }))} />
           <NumberField label="Residual longitudinal slope" value={model.environment.longitudinalSlopeDeg} unit="°" onChange={(value) => setModel((current) => ({ ...current, environment: { ...current.environment, longitudinalSlopeDeg: value } }))} />
@@ -878,19 +878,19 @@ function OptimiserTab({
         <section className="card form-card">
           <SectionTitle eyebrow="Coarse scan" title="Iteration controls" />
           <div className="form-grid three">
-            <NumberField label="No. of Axle Lines Start (C89)" value={settings.c89Start} min={2} step={1} onChange={(value) => update("c89Start", value)} />
-            <NumberField label="No. of Axle Lines Maximum (C89)" value={settings.c89Maximum} min={settings.c89Start} step={1} onChange={(value) => update("c89Maximum", value)} />
-            <NumberField label="C89 increment" value={settings.c89Step} min={1} step={1} onChange={(value) => update("c89Step", value)} />
-            <NumberField label="Hydraulic Split Start (D138)" value={settings.d138Start} min={1} step={1} onChange={(value) => update("d138Start", value)} />
-            <NumberField label="D138 increment" value={settings.d138Step} min={1} step={1} onChange={(value) => update("d138Step", value)} />
-            <NumberField label="D138 maximum / C89" value={settings.d138MaximumFraction} min={0.05} max={0.95} step={0.05} onChange={(value) => update("d138MaximumFraction", value)} />
-            <NumberField label="Trailer X Minimum (E89)" value={settings.e89Minimum} unit="m" onChange={(value) => update("e89Minimum", value)} />
-            <NumberField label="Trailer X Maximum (E89)" value={settings.e89Maximum} unit="m" onChange={(value) => update("e89Maximum", value)} />
-            <NumberField label="E89 increment" value={settings.e89Step} unit="m" min={0.01} onChange={(value) => update("e89Step", value)} />
+            <NumberField label="Axle lines start" value={settings.c89Start} min={2} step={1} onChange={(value) => update("c89Start", value)} />
+            <NumberField label="Axle lines maximum" value={settings.c89Maximum} min={settings.c89Start} step={1} onChange={(value) => update("c89Maximum", value)} />
+            <NumberField label="Axle lines increment" value={settings.c89Step} min={1} step={1} onChange={(value) => update("c89Step", value)} />
+            <NumberField label="Hydraulic split start" value={settings.d138Start} min={1} step={1} onChange={(value) => update("d138Start", value)} />
+            <NumberField label="Hydraulic split increment" value={settings.d138Step} min={1} step={1} onChange={(value) => update("d138Step", value)} />
+            <NumberField label="Maximum split / axle lines" value={settings.d138MaximumFraction} min={0.05} max={0.95} step={0.05} onChange={(value) => update("d138MaximumFraction", value)} />
+            <NumberField label="Trailer X minimum" value={settings.e89Minimum} unit="m" onChange={(value) => update("e89Minimum", value)} />
+            <NumberField label="Trailer X maximum" value={settings.e89Maximum} unit="m" onChange={(value) => update("e89Maximum", value)} />
+            <NumberField label="Trailer X increment" value={settings.e89Step} unit="m" min={0.01} onChange={(value) => update("e89Step", value)} />
             <NumberField label="Boundary tolerance" value={settings.boundaryToleranceM} unit="m" min={0} onChange={(value) => update("boundaryToleranceM", value)} />
           </div>
           <div className="form-grid two">
-            <SelectField label="E89 range mode" value={settings.e89RangeMode} onChange={(value) => update("e89RangeMode", value as typeof settings.e89RangeMode)}>
+            <SelectField label="Trailer X range mode" value={settings.e89RangeMode} onChange={(value) => update("e89RangeMode", value as typeof settings.e89RangeMode)}>
               <option value="AUTO_GROUP_CENTRES">Automatic group-centre geometry</option>
               <option value="MANUAL">Manual minimum / maximum</option>
             </SelectField>
@@ -904,11 +904,11 @@ function OptimiserTab({
             </SelectField>
             <SelectField label="Calculation mode" value={settings.calculationMode} onChange={(value) => update("calculationMode", value as typeof settings.calculationMode)}>
               <option value="NATIVE_VERIFIED">Native verified</option>
-              <option value="WORKBOOK_PARITY">Workbook-parity sequence</option>
+              <option value="WORKBOOK_PARITY">Verification-parity sequence</option>
             </SelectField>
           </div>
           <div className="toggle-grid">
-            <Toggle checked={settings.overrideD138Limit} onChange={(value) => update("overrideD138Limit", value)} label="Override D138 fraction limit" detail="Allows the split through C89 − 1." />
+            <Toggle checked={settings.overrideD138Limit} onChange={(value) => update("overrideD138Limit", value)} label="Override split fraction limit" detail="Allows the split through the penultimate axle line." />
             <Toggle checked={settings.stopAtFirstPass} onChange={(value) => update("stopAtFirstPass", value)} label="Legacy stop-at-first-pass switch" />
           </div>
           <p className="estimate-note">Configured upper estimate: <b>{estimatedCases.toLocaleString()}</b> coarse work units before automatic pruning and refinement.</p>
@@ -966,7 +966,7 @@ function OptimiserTab({
               const parsed = Number(value);
               update("maximumAxleUtilisation", value.trim().toUpperCase() === "AUTO" || !Number.isFinite(parsed) ? "AUTO" : parsed);
             }} />
-            <SelectField label="Fine E89 pin mode" value={settings.fineE89PinMode} onChange={(value) => update("fineE89PinMode", value as typeof settings.fineE89PinMode)}>
+            <SelectField label="Fine trailer-X pin mode" value={settings.fineE89PinMode} onChange={(value) => update("fineE89PinMode", value as typeof settings.fineE89PinMode)}>
               <option value="KEEP_BETTER_PASS">Keep better pass pins</option>
               <option value="REOPTIMISE_EACH_CASE">Re-optimise each case</option>
             </SelectField>
@@ -994,26 +994,26 @@ function OptimiserTab({
         </section>
       </div>
       <section className="card form-card">
-        <SectionTitle eyebrow="Fine E89" title="Refine between two ranked passes" description="Defaults to the best and second-best verified passes. Select explicit stable pass references when you want to control the interval." />
+        <SectionTitle eyebrow="Fine trailer X" title="Refine between two ranked passes" description="Defaults to the best and second-best verified passes. Select explicit stable pass references when you want to control the interval." />
         <div className="form-grid three">
           <SelectField label="First pass reference (B28)" value={settings.fineFirstPassReference} onChange={(value) => update("fineFirstPassReference", value)}>
             <option value="">Automatic best</option>
             {settings.fineFirstPassReference && !ranked.some((pass) => pass.id === settings.fineFirstPassReference || pass.caseReference === settings.fineFirstPassReference) && <option value={settings.fineFirstPassReference}>{settings.fineFirstPassReference} (imported)</option>}
-            {ranked.map((pass) => <option key={`fine-a-${pass.id}`} value={pass.id}>#{pass.overallRank} · {pass.id} · E89 {format(pass.e89, 3)}</option>)}
+            {ranked.map((pass) => <option key={`fine-a-${pass.id}`} value={pass.id}>#{pass.overallRank} · {pass.id} · X {format(pass.e89, 3)} m</option>)}
           </SelectField>
           <SelectField label="Second pass reference (B29)" value={settings.fineSecondPassReference} onChange={(value) => update("fineSecondPassReference", value)}>
             <option value="">Automatic second-best</option>
             {settings.fineSecondPassReference && !ranked.some((pass) => pass.id === settings.fineSecondPassReference || pass.caseReference === settings.fineSecondPassReference) && <option value={settings.fineSecondPassReference}>{settings.fineSecondPassReference} (imported)</option>}
-            {ranked.map((pass) => <option key={`fine-b-${pass.id}`} value={pass.id}>#{pass.overallRank} · {pass.id} · E89 {format(pass.e89, 3)}</option>)}
+            {ranked.map((pass) => <option key={`fine-b-${pass.id}`} value={pass.id}>#{pass.overallRank} · {pass.id} · X {format(pass.e89, 3)} m</option>)}
           </SelectField>
-          <NumberField label="Fine E89 step (B30)" value={settings.fineE89Step} unit="m" min={0.001} onChange={(value) => update("fineE89Step", value)} />
+          <NumberField label="Fine trailer-X step" value={settings.fineE89Step} unit="m" min={0.001} onChange={(value) => update("fineE89Step", value)} />
         </div>
       </section>
       <section className="card">
-        <SectionTitle eyebrow="Ranked valid passes" title="Best configurations" description="Pass references remain stable and can be reapplied or selected for later fine-E89 work." />
+        <SectionTitle eyebrow="Ranked valid passes" title="Best configurations" description="Pass references remain stable and can be reapplied or selected for later fine-position refinement." />
         <div className="data-table-wrap">
           <table className="data-table ranked-table">
-            <thead><tr><th>Rank</th><th>Pass ref</th><th>C89</th><th>D138</th><th>E89</th><th>Pins</th><th>Supports</th><th>Worst util.</th><th>Min angle</th><th>Deflection</th><th>Rating</th><th /></tr></thead>
+            <thead><tr><th>Rank</th><th>Pass ref</th><th>Axle lines</th><th>Split</th><th>Trailer X</th><th>Pins</th><th>Supports</th><th>Worst util.</th><th>Min angle</th><th>Deflection</th><th>Rating</th><th /></tr></thead>
             <tbody>
               {ranked.slice(0, 50).map((pass) => (
                 <tr key={pass.id} className={pass.overallRank === 1 ? "best-row" : ""}>
@@ -1078,7 +1078,7 @@ function LogsTab({ run }: { run: OptimiserRun }) {
         <SectionTitle eyebrow="Case log" title="All evaluated configurations" />
         <div className="data-table-wrap tall">
           <table className="data-table">
-            <thead><tr><th>#</th><th>Case</th><th>Phase</th><th>Result</th><th>C89</th><th>D138</th><th>E89</th><th>Pins</th><th>Supports</th><th>Basic UC</th><th>Slope UC</th><th>Dynamic UC</th><th>Basic angle</th><th>Dynamic angle</th><th>Deflection</th><th>Duration</th><th>Detail</th></tr></thead>
+            <thead><tr><th>#</th><th>Case</th><th>Phase</th><th>Result</th><th>Axle lines</th><th>Split</th><th>Trailer X</th><th>Pins</th><th>Supports</th><th>Basic UC</th><th>Slope UC</th><th>Dynamic UC</th><th>Basic angle</th><th>Dynamic angle</th><th>Deflection</th><th>Duration</th><th>Detail</th></tr></thead>
             <tbody>
               {run.passes.map((pass) => (
                 <tr key={pass.id}>
@@ -1183,7 +1183,7 @@ function CatalogueTab({
             </div>
             <details className="help-details" open>
               <summary>Catalogue preflight</summary>
-              <p>Required: unique name, axle spacing, trailer width, axle capacity and second moment of area. Selected models absent from the catalogue are blocked during workbook import.</p>
+              <p>Required: unique name, axle spacing, trailer width, axle capacity and second moment of area. Selected models absent from the catalogue are blocked during import.</p>
             </details>
           </section>
         )}
@@ -1229,7 +1229,7 @@ function VerificationTab({
     try {
       const bytes = await exportVerificationWorkbook(model, sourceBytes ?? undefined);
       downloadBytes(bytes, `Trailer_Stability_Verification_${new Date().toISOString().slice(0, 10)}.xlsm`, "application/vnd.ms-excel.sheet.macroEnabled.12");
-      showToast("Verification XLSM exported with full calculation forced on open.");
+      showToast("Verification data exported with a full recalculation requested on open.");
     } catch (error) {
       showToast(error instanceof Error ? error.message : String(error), "error");
     } finally {
@@ -1238,16 +1238,16 @@ function VerificationTab({
   };
   return (
     <div className="page-stack">
-      <SectionTitle eyebrow="Workbook bridge" title="Import, export &amp; parity verification" description="The browser engine is independent. XLSM files are only used to exchange inputs, trailer data and a recalculation-ready verification copy." />
+      <SectionTitle eyebrow="Data exchange" title="Import, export &amp; parity verification" description="The browser engine is independent. Verification files are optional and are used only to exchange inputs, trailer data and a recalculation-ready copy." />
       <div className="verification-grid">
         <section className="card verification-action">
-          <span className="large-icon">⇧</span><div><h2>Import workbook inputs</h2><p>Reads the yellow input cells, selected trailers, hydraulic groups, supports, optimiser controls and the complete Database catalogue.</p></div>
+          <span className="large-icon">⇧</span><div><h2>Import verification data</h2><p>Reads case inputs, selected trailers, hydraulic groups, supports, optimiser controls and the complete trailer catalogue.</p></div>
           <input ref={importRef} type="file" accept=".xlsm,.xlsx" hidden onChange={(event) => handleImport(event.target.files?.[0])} />
-          <button className="button primary" disabled={busy} onClick={() => importRef.current?.click()}>{busy ? "Working…" : "Choose XLSM"}</button>
+          <button className="button primary" disabled={busy} onClick={() => importRef.current?.click()}>{busy ? "Working…" : "Choose verification file"}</button>
         </section>
         <section className="card verification-action">
-          <span className="large-icon">⇩</span><div><h2>Export verification workbook</h2><p>Writes shared C89, D138, E89 and pin masters, every load input, supports and the trailer catalogue into a macro-enabled copy.</p></div>
-          <button className="button primary" disabled={busy} onClick={exportWorkbook}>{busy ? "Working…" : "Export recalculation XLSM"}</button>
+          <span className="large-icon">⇩</span><div><h2>Export verification data</h2><p>Writes the shared axle count, split, trailer position and pins, every load input, supports and the trailer catalogue into a recalculation-ready copy.</p></div>
+          <button className="button primary" disabled={busy} onClick={exportWorkbook}>{busy ? "Working…" : "Export verification data"}</button>
         </section>
         <section className="card verification-action">
           <span className="large-icon">{`{}`}</span><div><h2>Portable project package</h2><p>JSON contains every standalone input and custom trailer record for phones, desktops and debug reproduction.</p></div>
@@ -1257,8 +1257,10 @@ function VerificationTab({
               const file = event.target.files?.[0];
               if (!file) return;
               try {
-                const project = JSON.parse(await file.text()) as ProjectModel;
-                if (project.schemaVersion !== 1) throw new Error("Unsupported project schema.");
+                const project = JSON.parse(await file.text()) as { schemaVersion?: number };
+                if (project.schemaVersion !== 1 && project.schemaVersion !== 2) {
+                  throw new Error("Unsupported project schema.");
+                }
                 setModel(hydrateProjectModel(project));
                 setSourceBytes(null);
                 showToast("Standalone project imported.");
@@ -1273,12 +1275,12 @@ function VerificationTab({
         <SectionTitle eyebrow="Parity chain" title="What is preserved" />
         <div className="parity-steps">
           <article className="complete"><span>1</span><div><b>Trailer catalogue</b><p>Dynamic table, PEKZ alternatives and required-property checks.</p></div></article>
-          <article className="complete"><span>2</span><div><b>Shared input rules</b><p>C89, D138, E89 and G136:N136 are applied to every dependent row.</p></div></article>
+          <article className="complete"><span>2</span><div><b>Shared input rules</b><p>Axle count, split, trailer X and pinned axle lines are applied to every dependent trailer.</p></div></article>
           <article className="complete"><span>3</span><div><b>Recovered solver logic</b><p>Continuous-beam, support spreading and optimiser rules are native modules.</p></div></article>
-          <article className="active"><span>4</span><div><b>Verification round trip</b><p>Open the exported XLSM to force Excel’s full calculation and compare its detailed outputs.</p></div></article>
+          <article className="active"><span>4</span><div><b>Verification round trip</b><p>Open the exported verification file in the approved checker to force a full calculation and compare detailed outputs.</p></div></article>
         </div>
         {messages.length > 0 && <div className="import-messages"><b>Import notes</b>{messages.map((message, index) => <p key={index}>{message}</p>)}</div>}
-        <div className="source-strip"><span>Current source</span><b>{model.sourceWorkbook}</b><em>{sourceBytes ? "Imported workbook retained for export" : "Bundled v0.7 verification template"}</em></div>
+        <div className="source-strip"><span>Case data</span><b>Standalone project</b><em>{sourceBytes ? "Imported verification data retained for export" : "Built-in verification template available"}</em></div>
       </section>
     </div>
   );
@@ -1391,7 +1393,7 @@ export default function TrailerWorkbench() {
         <div className="engine-card">
           <div><span className="pulse-dot" /><b>Native engine</b></div>
           <p>Inputs recalculate locally. No Excel process or network connection is required.</p>
-          <small>Source logic: workbook v0.7</small>
+          <small>Calculation logic: standalone engine v0.7</small>
         </div>
         <button className="sidebar-reset" onClick={reset}>↻ Reset example</button>
       </aside>
@@ -1404,7 +1406,7 @@ export default function TrailerWorkbench() {
             <small>{model.cargo.clientReference || "No client reference"} · {model.trailers.length} trailer{model.trailers.length === 1 ? "" : "s"}</small>
           </div>
           <div className="topbar-actions">
-            <div className="save-state"><span>✓</span><div><b>Saved locally</b><small>{model.sourceWorkbook}</small></div></div>
+            <div className="save-state"><span>✓</span><div><b>Saved locally</b><small>Standalone project</small></div></div>
             <StatusPill status={calculation.status} />
             <button className="button secondary compact" onClick={() => setActiveTab("verification")}>⇄ Import / export</button>
           </div>

@@ -161,6 +161,16 @@ export function EndView(props: EngineeringViewProps) {
   });
   const cargoWidthPx = cargoRightTop.x - cargoLeft.x;
   const cargoHeightPx = cargoLeft.y - cargoRightTop.y;
+  const packingLeft = transform.toScreen({
+    x: 0,
+    y: vm.packing.extremeY,
+    z: model.trailerDeckHeightM,
+  });
+  const packingRightTop = transform.toScreen({
+    x: 0,
+    y: vm.packing.extremeY + vm.packing.widthM,
+    z: model.trailerDeckHeightM + model.packing.heightM,
+  });
   const groundStart = transform.toScreen({ x: 0, y: vm.bounds.minY, z: 0 });
   const groundEnd = transform.toScreen({
     x: 0,
@@ -220,19 +230,28 @@ export function EndView(props: EngineeringViewProps) {
       ))}
 
       {preferences.layers.packing && (
-        <g className="packing-section">
+        <g
+          className={`packing-section svg-selectable${
+            selectedId === vm.packing.id ? " is-selected" : ""
+          }`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(vm.packing.id);
+          }}
+        >
           <rect
-            x={cargoLeft.x}
-            y={transform.toScreen({ x: 0, y: 0, z: vm.cargo.bottomZM }).y}
-            width={cargoWidthPx}
-            height={Math.max(2, model.packing.heightM * transform.scale)}
+            className={vm.packing.footprintDefined ? "custom" : "estimated"}
+            x={packingLeft.x}
+            y={packingRightTop.y}
+            width={packingRightTop.x - packingLeft.x}
+            height={packingLeft.y - packingRightTop.y}
           />
           <text
-            x={cargoLeft.x + cargoWidthPx / 2}
-            y={transform.toScreen({ x: 0, y: 0, z: vm.cargo.bottomZM }).y - 6}
+            x={(packingLeft.x + packingRightTop.x) / 2}
+            y={packingRightTop.y - 6}
             textAnchor="middle"
           >
-            PACKING · footprint extent not defined
+            PACKING · {vm.packing.footprintDefined ? "custom footprint" : "cargo-sized estimate"}
           </text>
         </g>
       )}

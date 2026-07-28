@@ -88,6 +88,11 @@ export interface PackingItem extends VisualEntityBase {
   massT: number;
   heightM: number;
   footprintDefined: boolean;
+  footprintMode: ProjectModel["packing"]["footprint"]["mode"];
+  lengthM: number;
+  widthM: number;
+  extremeX: number;
+  extremeY: number;
 }
 
 export interface LoosePackingItem extends VisualEntityBase {
@@ -109,7 +114,7 @@ export interface TrailerUnit extends VisualEntityBase {
   deckHeightM: number;
   axleLines: number;
   singleFile: boolean;
-  frontAt: "negative-x";
+  frontAt: "positive-x";
   ppuLeftLengthM: number;
   ppuRightLengthM: number;
   colliding: boolean;

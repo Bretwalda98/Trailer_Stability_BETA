@@ -3,7 +3,13 @@
 import { GROUP_COLOURS } from "../../../geometry/buildGeometryViewModel";
 import { buildHydraulicRouteSegments } from "../../../geometry/hydraulic-routes";
 import { engineeringRectPoints } from "../../../geometry/transform";
-import { AxisGlyph, CogMarker, DimensionLine, ViewGrid } from "../svg-primitives";
+import {
+  AxisGlyph,
+  CogMarker,
+  DimensionLine,
+  LongitudinalOrientation,
+  ViewGrid,
+} from "../svg-primitives";
 import { pointPath, type EngineeringViewProps } from "./view-types";
 
 export function PlanView(props: EngineeringViewProps) {
@@ -40,6 +46,7 @@ export function PlanView(props: EngineeringViewProps) {
     >
       <rect className="viewport-hit-area" x={0} y={0} width={width} height={height} />
       <ViewGrid width={width} height={height} visible={preferences.grid} />
+      <LongitudinalOrientation width={width} />
 
       {preferences.layers.stability && (
         <g className="stability-geometry">
@@ -193,13 +200,13 @@ export function PlanView(props: EngineeringViewProps) {
                 />
                 <path
                   className="orientation-arrow"
-                  d={`M ${centreStart.x + 16} ${centreStart.y} l 12 -6 l 0 12 z`}
+                  d={`M ${centreEnd.x - 16} ${centreEnd.y} l -12 -6 l 0 12 z`}
                 />
                 <text x={labelAt.x} y={labelAt.y - 9} textAnchor="middle">
                   T{trailer.index + 1} · {trailer.definitionName}
                 </text>
                 <desc>
-                  Trailer {trailer.index + 1}: {trailer.definitionName}, front at negative X
+                  Trailer {trailer.index + 1}: {trailer.definitionName}, rear at lower X and front at higher X
                 </desc>
               </g>
             );
@@ -364,6 +371,30 @@ export function PlanView(props: EngineeringViewProps) {
 
       {preferences.layers.packing && (
         <g className="packing-layer">
+          <path
+            className={`packing-footprint svg-selectable${
+              vm.packing.footprintDefined ? " custom" : " estimated"
+            }${selectedId === vm.packing.id ? " is-selected" : ""}`}
+            d={pointPath(
+              transform,
+              engineeringRectPoints(
+                vm.packing.extremeX,
+                vm.packing.extremeY + vm.packing.widthM / 2,
+                vm.packing.lengthM,
+                vm.packing.widthM,
+              ).map(({ x, y }) => ({ x, y })),
+              true,
+            )}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelect(vm.packing.id);
+            }}
+          >
+            <desc>
+              Packing visual footprint: {vm.packing.lengthM.toFixed(3)} m ×{" "}
+              {vm.packing.widthM.toFixed(3)} m
+            </desc>
+          </path>
           {vm.loosePacking.map((item) => {
             const trailer = vm.trailers.find(
               (candidate) => candidate.sourceTrailerId === item.sourceTrailerId,

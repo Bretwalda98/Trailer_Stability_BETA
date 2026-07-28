@@ -13,6 +13,7 @@ type WorkerResponse =
 
 export interface EngineeringEngineState {
   result: CalculationResult;
+  authoritativeModel: ProjectModel;
   run: OptimiserRun;
   calculating: boolean;
   workerReady: boolean;
@@ -37,6 +38,7 @@ export function useEngineeringEngine(model: ProjectModel): EngineeringEngineStat
   const [result, setResult] = useState<CalculationResult>(() =>
     deterministicInitialCalculation(model),
   );
+  const [authoritativeModel, setAuthoritativeModel] = useState<ProjectModel>(model);
   const [run, setRun] = useState<OptimiserRun>(() => createEmptyRun());
   const [calculating, setCalculating] = useState(false);
   const [workerReady, setWorkerReady] = useState(false);
@@ -44,6 +46,7 @@ export function useEngineeringEngine(model: ProjectModel): EngineeringEngineStat
   const workerRef = useRef<Worker | null>(null);
   const modelRef = useRef(model);
   const calculationRequestRef = useRef(0);
+  const calculationModelRef = useRef(model);
   const optimiserRequestRef = useRef(0);
 
   modelRef.current = model;
@@ -66,6 +69,7 @@ export function useEngineeringEngine(model: ProjectModel): EngineeringEngineStat
       if (message.type === "calculation") {
         if (message.requestId !== calculationRequestRef.current) return;
         setResult(message.result);
+        setAuthoritativeModel(calculationModelRef.current);
         setCalculating(false);
         setError(null);
         return;
@@ -112,6 +116,7 @@ export function useEngineeringEngine(model: ProjectModel): EngineeringEngineStat
   useEffect(() => {
     const requestId = calculationRequestRef.current + 1;
     calculationRequestRef.current = requestId;
+    calculationModelRef.current = model;
     setCalculating(true);
     setError(null);
     const worker = workerRef.current;
@@ -124,6 +129,7 @@ export function useEngineeringEngine(model: ProjectModel): EngineeringEngineStat
     const timer = window.setTimeout(() => {
       try {
         setResult(calculateProject(model));
+        setAuthoritativeModel(model);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : String(caught));
       } finally {
@@ -156,6 +162,7 @@ export function useEngineeringEngine(model: ProjectModel): EngineeringEngineStat
 
   return {
     result,
+    authoritativeModel,
     run,
     calculating,
     workerReady,

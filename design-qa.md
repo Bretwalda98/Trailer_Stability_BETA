@@ -1,83 +1,116 @@
-# Design QA
+# Trailer Stability Shell, Startup and Orientation — Design QA
 
 ## Comparison target
 
-- Source visual truth: `C:\Users\Harry\.codex\generated_images\019f6a41-4cb2-7b72-852b-1ed0af642779\call_f96WVZNk4vVMatsRnNE6VhWz.png`
-- Browser-rendered implementation: `C:\Users\Harry\Documents\Codex\2026-07-16\the\audit\ui-redesign-2026-07-26\final\1440x900-plan-final-pass.png`
-- Working hydraulic state: `C:\Users\Harry\Documents\Codex\2026-07-16\the\audit\ui-redesign-2026-07-26\final\1440x900-hydraulics-local-final.png`
-- Full-view comparison: `C:\Users\Harry\Documents\Codex\2026-07-16\the\audit\ui-redesign-2026-07-26\final\comparison-final-pass.png`
-- Focused error-state evidence: `C:\Users\Harry\Documents\Codex\2026-07-16\the\audit\ui-redesign-2026-07-26\final\overlap-hard-failure.png`
-- Mobile evidence: `C:\Users\Harry\Documents\Codex\2026-07-16\the\audit\ui-redesign-2026-07-26\final\390x844-mobile-hydraulics-final.png`
-- Local URL: `http://localhost:3000/`
+- Source visual truth: Browser comments 1–7 in the current task, supplied as a 1280 × 876 annotated desktop capture.
+- Additional source target: `docs/design/setup-wizard-guided-split-reference.png`.
+- Functional source additions: the user’s startup-choice requirement and the canonical rule that screen-left/lower X is REAR and screen-right/higher X is FRONT.
+- Matched desktop implementation: `qa-evidence/implementation-desktop-report-details-1280x876.jpg`.
+- Desktop orientation implementation: `qa-evidence/implementation-desktop-geometry-1440x900.jpg`.
+- Mobile implementation: `qa-evidence/implementation-mobile-main-390x844.jpg`.
+- Mobile wizard implementation: `qa-evidence/implementation-mobile-wizard-390x844.jpg`.
+- Startup chooser: `qa-evidence/implementation-startup-chooser-1280x876.jpg` and `qa-evidence/implementation-startup-chooser-mobile-390x844.jpg`.
+- Route: `http://127.0.0.1:4174/`.
 
-## Normalisation and state
+## Normalization
 
-- Source pixels: 1586 × 992.
-- Desktop implementation: 1440 × 900 CSS pixels at density 1.
-- Full comparison: each image contained and padded to 1440 × 900, then placed side by side at 2880 × 900.
-- Mobile implementation: 390 × 844 CSS pixels at density 1.
-- State: corrected two-trailer arrangement; trailers separated at Y 1 m and Y 4 m; G1 is the local front cluster, G2/G3 are local rear clusters; four active supports; dynamic result view.
-- Theme difference is intentional: the source established the compact CAD/product structure, while the user explicitly selected a black background with white primary text and engineering lines.
+- Desktop source pixels and CSS target: 1280 × 876.
+- Matched desktop implementation pixels and CSS viewport: 1280 × 876.
+- Mobile implementation pixels and CSS viewport: 390 × 844.
+- Device density normalization: captured image pixels equal CSS pixels, so no density conversion was required.
+- State for matched comparison: Report workspace, model tree visible, Engineering Details open at 250 px, current calculation visible.
+- The annotated source and matched implementation were compared together in the current multimodal task context at the same viewport and equivalent state.
 
 ## Findings
 
-- No actionable P0, P1 or P2 visual findings remain.
-- Typography: the Inter/system-sans stack, compact weights, tab labels and numeric hierarchy are consistent and readable. The header collision between the version and Project label was fixed by widening the title track and hiding the version at narrower breakpoints.
-- Spacing and layout: the source's header, model tree, tabbed engineering canvas, results inspector and lower technical editor are preserved. The implementation is intentionally denser while retaining clear region boundaries and no clipped persistent desktop controls.
-- Colors and tokens: true black surfaces, white engineering lines, blue selection, cyan/amber/violet hydraulic groups, green OK and red failure states have consistent semantic contrast.
-- Image and asset fidelity: there are no decorative raster assets to substitute. The engineering drawing is generated from authoritative model geometry, while controls use one consistent Tabler icon family.
-- Copy and content: engineering labels are standalone and specific. The new `THREE LOCAL GROUPS`, triangle area, minimum altitude and trailer-overlap messages explain the physical setup without exposing workbook implementation details.
-- Interaction and accessibility: semantic tabs, buttons, labelled numeric fields, select controls, expandable details and keyboard-reachable form controls are present. Error state remains readable while retaining the calculated metrics.
-- Responsiveness: the 390 × 844 capture retains the primary actions, workspace selector, view tabs, engineering canvas and details access without collapsing the workflow.
+- No actionable P0, P1 or P2 findings remain.
+- [P3] The phone Report table uses an internal horizontal scrollbar for its least important trailing columns.
+  - Location: Report workspace at 390 px.
+  - Evidence: the page itself remains exactly 390 px wide, while the dense engineering table can be swiped horizontally.
+  - Impact: low. No persistent controls or page content are clipped, and the full result summary remains available in the Results panel.
+  - Follow-up: consider a stacked phone-only report layout if field users spend substantial time reviewing the long report table on phones.
 
-## Focused comparison
+## Required fidelity surfaces
 
-- Hydraulic editor: `1440x900-hydraulics-local-final.png` confirms one interactive graph plus the manual table, G1/G2/G3 local clusters, group loads, group centres, split control and grouping-quality summary in one dense workspace.
-- Physical error state: `overlap-hard-failure.png` confirms overlapping trailer footprints produce a blocking `INVALID GEOMETRY` state and explicit dimensions while calculations continue to update.
-- These focused views were required because the group-assignment table and failure copy are too small to judge reliably in the full-view comparison.
+- Fonts and typography: the implementation preserves the existing Inter-first technical sans-serif stack, compact tabular numerics, white primary text, restrained metadata, and clear PASS/NOK hierarchy. The 38 px desktop header and 50 px Report heading avoid cramped or wrapped primary labels.
+- Spacing and layout rhythm: the desktop shell is materially denser than the annotated source while keeping the same model/workspace/result structure. The Workspace list folds below its heading, the model tree remains fully available, and Engineering Details scales from a collapsed strip through 170–650 px to full page.
+- Colors and visual tokens: the black technical canvas, white/grey hierarchy, blue selection, green pass, amber warning and red failure tokens remain consistent. The startup chooser uses the same square borders and restrained blue emphasis rather than introducing a separate visual language.
+- Image quality and asset fidelity: the target contains no photographic or branded raster assets. Engineering drawings remain live vector/data visualizations driven by the calculation model. Interface icons use the existing Tabler family; no emoji, placeholder art, fake SVG illustration or CSS illustration was added.
+- Copy and content: visible spreadsheet/workbook filenames, source-cell mappings and spreadsheet-specific labels were removed from the shell, report and detail table. Verification exchange remains described in standalone user language. Help content now covers startup, setup, workspace folding, phone panels, details sizing, optimisation and the rear/front convention.
+- Icons and states: startup, setup, help, import, export, panel switching, resize, full-page and run/stop controls use one icon family with visible focus. Disabled, selected, calculating, PASS and NOK states remain distinct.
+- Accessibility: dialogs are semantic and modal, startup focus lands on Start new setup, Escape cannot bypass the required startup choice, phone primary controls measure 44 px, mobile panel controls have accessible names, and the document has no horizontal page overflow at 390 px.
+
+## Full-view comparison evidence
+
+- The desktop top bar reduced from the annotated tall source to 38 px without losing the case, setup, help, verification or optimisation controls.
+- The selected source filename has been removed. The header now presents only product, project/case state and user actions.
+- The Workspace list is collapsed by default beneath a single WORKSPACE row, leaving the model tree visible. Expanding it restores all workspace destinations.
+- The Report title region measures 50 px in the matched implementation and keeps the result verdict aligned on the same row.
+- Engineering Details retains the source’s bottom-drawer placement but adds a persistent size slider, minimise action and full-page action.
+- The new startup chooser presents Start new setup and Open saved file as the two primary decisions, with Continue saved case only when local data exists.
+
+## Focused-region comparison evidence
+
+- Header: controls remain on one line at 1280 px, labels do not collide, and no source filename appears.
+- Left rail: the folded Workspace row and visible model tree directly address the annotated obstruction.
+- Report heading: the 50 px measured implementation is substantially slimmer than the annotated target while retaining case identity and engineering state.
+- Engineering Details: the slider was exercised at 250 px and 500 px; minimise, reopen, full page and restore all worked.
+- Phone header: Set up, Help, Run and More each measure 44 × 44 px. Workspace, View, Model and Results are also 44 px high.
+- Orientation: Plan and Hydraulics explicitly render `REAR · −X` on the left and `FRONT · +X` on the right. PPU fields use Rear/Front wording, and axle line 1 maps to the rear segment.
+- Startup: both 1280 × 876 and 390 × 844 captures show an unobstructed modal, readable option descriptions and no viewport overflow.
+
+## Responsive and interaction evidence
+
+- 1280 × 876: exact viewport fit; 38 px top bar; 50 px Report title; no page overflow.
+- 1440 × 900: Plan drawing, model tree, results and collapsed Engineering Details remain visible together.
+- 390 × 844: exact viewport fit; no horizontal or vertical page overflow; View, Model and Results switch the single visible workbench panel correctly.
+- Startup paths tested: Continue saved case closes the chooser; Start new setup opens a blank wizard with Blank case selected and empty case references; the saved-file input accepts project JSON and verification exports.
+- Wizard path tested: the seven-step phone wizard opens with sticky preview, scrollable form and fixed Save/Next actions.
+- Help tested: the maintained guide opens on phone, exposes all topics and closes cleanly.
+- Engineering Details tested: 250 px, 500 px, minimised, full page and restored split view.
+- Browser console errors/warnings checked: none.
+- Automated verification: typecheck, engine/verification parity tests, geometry tests, production build and rendered-HTML tests all pass.
 
 ## Comparison history
 
-1. Earlier P1: the first standalone UI spread the workflow across too many large tabs and did not match the compact engineering reference.
-   - Fix: consolidated navigation, live canvas, results inspector, hydraulic editor and engineering details into the dense workbench shell.
-   - Post-fix evidence: `comparison-final-pass.png`.
-2. Earlier P1: hydraulic grouping was difficult to understand and edit.
-   - Fix: added the interactive hydraulic graph, colour-coded centres/routes and editable axle-line table.
-   - Post-fix evidence: `1440x900-hydraulics-local-final.png`.
-3. Earlier P2: narrow screens lacked a compact workspace switcher and stable engineering viewport.
-   - Fix: added the mobile workspace selector and responsive single-column layout.
-   - Post-fix evidence: `390x844-mobile-hydraulics-final.png`.
-4. Earlier P0: physically overlapping trailers could still be evaluated as a valid arrangement.
-   - Fix: added a hard footprint-collision gate used by manual calculations and optimiser cases, plus red collision rendering and detailed log/report fields.
-   - Post-fix evidence: `overlap-hard-failure.png`.
-5. Earlier P1: a hydraulic group could be distributed across disconnected axle regions, creating a misleading triangle corner.
-   - Fix: added connected-cluster validation, triangle area/minimum-altitude diagnostics and clear warnings without auto-moving user geometry.
-   - Post-fix evidence: `1440x900-hydraulics-local-final.png`.
-6. Earlier P2: the desktop title/version block visually collided with the Project label.
-   - Fix: widened the title grid track and hid the version at narrower breakpoints.
-   - Post-fix evidence: `1440x900-plan-final-pass.png`.
+### Iteration 1 — shell density and terminology
 
-## Primary interactions and technical checks
+- Earlier P2 findings: the top bar and Report title occupied too much vertical space; a visible verification-source filename remained; the expanded Workspace list crowded the model tree.
+- Fixes: reduced the desktop header to 38 px, removed the visible source filename and spreadsheet-specific UI labels, reduced the Report title to 50 px, and made Workspace independently collapsible.
+- Post-fix evidence: `qa-evidence/implementation-desktop-report-details-1280x876.jpg`.
 
-- Tested Plan, Hydraulics and Stability tabs.
-- Tested trailer Y edits, hydraulic circuit edits and restoration of the corrected case.
-- Tested a deliberate overlap and verified immediate worker recalculation and blocking failure.
-- Verified triangle area/minimum-altitude diagnostics and local-group status.
-- Verified the engineering-details drawer open/closed states.
-- Browser console checked after the production rebuild: no errors or warnings.
-- Full automated suite passed: typecheck, engine/workbook parity, geometry adapter, optimiser, production build and rendered HTML.
+### Iteration 2 — detail panel and phone navigation
 
-## Follow-up polish
+- Earlier P2 findings: Engineering Details had a fixed height; the phone compressed three desktop columns and panel-switch icons lacked durable accessible names.
+- Fixes: added a 170–650 px slider, minimise and full-page states; replaced the phone layout with View/Model/Results panels and labelled 44 px controls.
+- Post-fix evidence: `qa-evidence/implementation-mobile-main-390x844.jpg` and the matched desktop report capture.
 
-- P3: a future optional high-detail mechanical layer could add more trailer hardware detail at high zoom. It is not required for the current engineering workflow and must remain subordinate to authoritative geometry.
+### Iteration 3 — orientation consistency
+
+- Earlier P1 risk: front/rear semantics were not canonical across group corners, PPUs, data exchange and drawings.
+- Fixes: added a versioned `REAR_LEFT_FRONT_RIGHT` convention, migrated legacy corner fields, routed axle lines through one orientation helper, remapped verification exchange, relabelled PPUs, and added drawing annotations and tests.
+- Post-fix evidence: `qa-evidence/implementation-desktop-geometry-1440x900.jpg`; engine and geometry tests pass.
+
+### Iteration 4 — startup flow
+
+- Earlier P2 finding: startup either loaded local data silently or opened the wizard directly, so users were not explicitly offered a new setup versus a saved file.
+- Fixes: added a mandatory responsive startup chooser with Start new setup, Open saved file and conditional Continue saved case actions; updated Help and rendered-output coverage.
+- Post-fix evidence: `qa-evidence/implementation-startup-chooser-1280x876.jpg` and `qa-evidence/implementation-startup-chooser-mobile-390x844.jpg`.
 
 ## Implementation checklist
 
-- [x] Compact black engineering workbench.
-- [x] Corrected non-overlapping trailer arrangement retained.
-- [x] Three local hydraulic clusters and broad-triangle diagnostics.
-- [x] Hard collision rejection in manual and optimiser calculations.
-- [x] Desktop and mobile evidence captured.
-- [x] Production build and browser console verified.
+- [x] Slim desktop top bar and Report title.
+- [x] Remove visible spreadsheet/source references.
+- [x] Keep Workspace independently foldable above the model tree.
+- [x] Add resizable, minimisable and full-page Engineering Details.
+- [x] Add and maintain a Help guide.
+- [x] Provide a usable no-overflow phone shell and wizard.
+- [x] Canonicalize rear-left/front-right engineering semantics.
+- [x] Prompt for a new setup or saved file at startup.
+- [x] Clear all P0–P2 design findings before handoff.
+
+## Follow-up polish
+
+- P3: evaluate a stacked phone Report table after real field-use feedback.
 
 final result: passed

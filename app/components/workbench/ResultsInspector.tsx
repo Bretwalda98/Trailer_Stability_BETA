@@ -230,8 +230,8 @@ function SelectionEditor({
         </label>
         <div className="toggle-row">
           <label><input type="checkbox" checked={input.singleFile} onChange={(event) => update({ singleFile: event.target.checked })} /> Single file</label>
-          <label><input type="checkbox" checked={input.ppuLeft} onChange={(event) => update({ ppuLeft: event.target.checked })} /> Front PPU</label>
-          <label><input type="checkbox" checked={input.ppuRight} onChange={(event) => update({ ppuRight: event.target.checked })} /> Rear PPU</label>
+          <label><input type="checkbox" checked={input.ppuLeft} onChange={(event) => update({ ppuLeft: event.target.checked })} /> Rear PPU</label>
+          <label><input type="checkbox" checked={input.ppuRight} onChange={(event) => update({ ppuRight: event.target.checked })} /> Front PPU</label>
         </div>
         <button
           className="danger-action"
@@ -282,7 +282,7 @@ function SelectionEditor({
         </div>
         <dl className="selection-result-list">
           <div><dt>Settled active state</dt><dd>{supportEntity.active ? "YES" : "NO"}</dd></div>
-          <div><dt>Rstatic</dt><dd>{formatEngineering(supportEntity.reactionT, "t")}</dd></div>
+          <div><dt>Static reaction</dt><dd>{formatEngineering(supportEntity.reactionT, "t")}</dd></div>
           <div><dt>Disable reason</dt><dd>{supportEntity.disableReason || "—"}</dd></div>
         </dl>
         <button
@@ -451,9 +451,6 @@ export function ResultsInspector({
           onSelect={onSelect}
           onNavigate={onNavigate}
         />
-        {selected?.sourceDataReference && (
-          <footer>Source · {selected.sourceDataReference}</footer>
-        )}
       </section>
     </aside>
   );

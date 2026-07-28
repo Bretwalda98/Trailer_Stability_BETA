@@ -42,6 +42,10 @@ interface EngineeringViewportProps {
   onPreferencesChange(preferences: ViewPreferences): void;
   onSelect(id: string): void;
   onModelChange(model: ProjectModel): void;
+  availableViews?: ViewId[];
+  compact?: boolean;
+  minimumWidth?: number;
+  minimumHeight?: number;
 }
 
 export function EngineeringViewport({
@@ -53,6 +57,10 @@ export function EngineeringViewport({
   onPreferencesChange,
   onSelect,
   onModelChange,
+  availableViews,
+  compact = false,
+  minimumWidth = 520,
+  minimumHeight = 360,
 }: EngineeringViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; start: Point2; pan: Point2 } | null>(null);
@@ -67,15 +75,15 @@ export function EngineeringViewport({
     const update = () => {
       const rect = host.getBoundingClientRect();
       setSize({
-        width: Math.max(520, Math.floor(rect.width)),
-        height: Math.max(360, Math.floor(rect.height)),
+        width: Math.max(minimumWidth, Math.floor(rect.width)),
+        height: Math.max(minimumHeight, Math.floor(rect.height)),
       });
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(host);
     return () => observer.disconnect();
-  }, []);
+  }, [minimumHeight, minimumWidth]);
 
   useEffect(() => {
     setZoom(1);
@@ -86,7 +94,9 @@ export function EngineeringViewport({
   const drawableHeight = Math.max(300, size.height - toolbarHeight);
   const transformHeight =
     view === "hydraulics"
-      ? Math.max(250, Math.floor(drawableHeight * 0.58))
+      ? compact
+        ? drawableHeight
+        : Math.max(250, Math.floor(drawableHeight * 0.58))
       : view === "stability"
         ? Math.max(300, Math.floor(drawableHeight * 0.66))
         : drawableHeight;
@@ -151,6 +161,7 @@ export function EngineeringViewport({
     onBackgroundPointerMove: pointerMove,
     onBackgroundPointerUp: pointerUp,
     onWheel: wheel,
+    compact,
   };
 
   const renderedView = (() => {
@@ -171,10 +182,13 @@ export function EngineeringViewport({
   })();
 
   return (
-    <section className="engineering-viewport" aria-label="Interactive engineering viewport">
+    <section
+      className={`engineering-viewport${compact ? " compact-viewport" : ""}`}
+      aria-label="Interactive engineering viewport"
+    >
       <div className="viewport-toolbar">
         <div className="view-tabs" role="tablist" aria-label="Engineering view">
-          {VIEW_TABS.map((tab) => (
+          {VIEW_TABS.filter((tab) => !availableViews || availableViews.includes(tab.id)).map((tab) => (
             <button
               key={tab.id}
               role="tab"

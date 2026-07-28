@@ -3,6 +3,7 @@
 import {
   IconBox,
   IconChartLine,
+  IconChevronDown,
   IconChevronRight,
   IconCirclePlus,
   IconFileReport,
@@ -15,6 +16,7 @@ import {
   IconSquarePlus,
   IconTruck,
 } from "@tabler/icons-react";
+import { useState } from "react";
 import type { ProjectModel } from "../../engine/types";
 import type { GeometryViewModel } from "../../geometry/types";
 import type { WorkspaceId } from "./types";
@@ -55,6 +57,10 @@ export function ModelTree({
   onModelChange,
   onOpenDetails,
 }: ModelTreeProps) {
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const currentWorkspace =
+    WORKSPACES.find((item) => item.id === workspace)?.label ?? "Workspace";
+
   const addTrailer = () => {
     if (model.trailers.length >= 12) return;
     const source = model.trailers.at(-1) ?? model.trailers[0];
@@ -93,19 +99,34 @@ export function ModelTree({
 
   return (
     <aside className="model-tree" aria-label="Workspace and model navigation">
-      <div className="workspace-navigation">
-        <span className="tree-heading">WORKSPACE</span>
-        {WORKSPACES.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            className={workspace === id ? "active" : ""}
-            onClick={() => onWorkspaceChange(id)}
-          >
-            <Icon size={15} stroke={1.7} />
-            <span>{label}</span>
-            <IconChevronRight size={12} className="nav-chevron" />
-          </button>
-        ))}
+      <div className={`workspace-navigation${workspaceOpen ? " open" : ""}`}>
+        <button
+          type="button"
+          className="workspace-navigation-toggle"
+          aria-expanded={workspaceOpen}
+          aria-controls="workspace-navigation-items"
+          onClick={() => setWorkspaceOpen((current) => !current)}
+        >
+          <span className="tree-heading">WORKSPACE</span>
+          <b>{currentWorkspace}</b>
+          <IconChevronDown size={14} />
+        </button>
+        <div id="workspace-navigation-items" className="workspace-navigation-items" hidden={!workspaceOpen}>
+          {WORKSPACES.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              className={workspace === id ? "active" : ""}
+              onClick={() => {
+                onWorkspaceChange(id);
+                setWorkspaceOpen(false);
+              }}
+            >
+              <Icon size={15} stroke={1.7} />
+              <span>{label}</span>
+              <IconChevronRight size={12} className="nav-chevron" />
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="object-tree">

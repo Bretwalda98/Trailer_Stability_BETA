@@ -127,6 +127,23 @@ export function AxisGlyph({ x = 24, y = 28 }: { x?: number; y?: number }) {
   );
 }
 
+export function LongitudinalOrientation({
+  width,
+  y = 18,
+}: {
+  width: number;
+  y?: number;
+}) {
+  return (
+    <g className="longitudinal-orientation" aria-label="Rear is left; front is right">
+      <text x={12} y={y} textAnchor="start">REAR · −X</text>
+      <line x1={74} y1={y - 4} x2={Math.max(88, width - 82)} y2={y - 4} />
+      <path d={`M ${Math.max(88, width - 82)} ${y - 4} l -7 -4 l 0 8 z`} />
+      <text x={width - 12} y={y} textAnchor="end">FRONT · +X</text>
+    </g>
+  );
+}
+
 export function ViewGrid({
   width,
   height,

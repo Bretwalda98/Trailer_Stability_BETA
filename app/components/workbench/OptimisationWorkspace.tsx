@@ -107,22 +107,22 @@ export function OptimisationWorkspace({
       <div className="optimisation-settings-grid">
         <section>
           <header><IconSettings size={15} /><b>Coarse scan</b></header>
-          <Field query={query} label="Calculation mode" description="Native worker-backed or workbook-parity sequencing">
+          <Field query={query} label="Calculation mode" description="Native worker-backed or verification-parity sequencing">
             <select value={settings.calculationMode} onChange={(event) => update({ calculationMode: event.target.value as OptimiserSettings["calculationMode"] })}>
               <option value="NATIVE_VERIFIED">Native verified</option>
-              <option value="WORKBOOK_PARITY">Workbook parity</option>
+              <option value="WORKBOOK_PARITY">Verification parity</option>
             </select>
           </Field>
-          <Field query={query} label="Axle lines start (C89)"><input type="number" value={settings.c89Start} onChange={(event) => update({ c89Start: Number(event.target.value) })} /></Field>
-          <Field query={query} label="Axle lines maximum (C89)"><input type="number" value={settings.c89Maximum} onChange={(event) => update({ c89Maximum: Number(event.target.value) })} /></Field>
+          <Field query={query} label="Axle lines start"><input type="number" value={settings.c89Start} onChange={(event) => update({ c89Start: Number(event.target.value) })} /></Field>
+          <Field query={query} label="Axle lines maximum"><input type="number" value={settings.c89Maximum} onChange={(event) => update({ c89Maximum: Number(event.target.value) })} /></Field>
           <Field query={query} label="Axle lines step"><input type="number" min={1} value={settings.c89Step} onChange={(event) => update({ c89Step: Number(event.target.value) })} /></Field>
-          <Field query={query} label="Split start (D138)"><input type="number" min={1} value={settings.d138Start} onChange={(event) => update({ d138Start: Number(event.target.value) })} /></Field>
+          <Field query={query} label="Split start"><input type="number" min={1} value={settings.d138Start} onChange={(event) => update({ d138Start: Number(event.target.value) })} /></Field>
           <Field query={query} label="Split step"><input type="number" min={1} value={settings.d138Step} onChange={(event) => update({ d138Step: Number(event.target.value) })} /></Field>
           <Field query={query} label="Maximum split fraction"><input type="number" min={0.1} max={1} step={0.05} value={settings.d138MaximumFraction} onChange={(event) => update({ d138MaximumFraction: Number(event.target.value) })} /></Field>
-          <Field query={query} label="E89 range mode"><select value={settings.e89RangeMode} onChange={(event) => update({ e89RangeMode: event.target.value as OptimiserSettings["e89RangeMode"] })}><option value="AUTO_GROUP_CENTRES">Automatic group centres</option><option value="MANUAL">Manual range</option></select></Field>
-          <Field query={query} label="E89 minimum"><input type="number" step="any" value={settings.e89Minimum} disabled={settings.e89RangeMode !== "MANUAL"} onChange={(event) => update({ e89Minimum: Number(event.target.value) })} /></Field>
-          <Field query={query} label="E89 maximum"><input type="number" step="any" value={settings.e89Maximum} disabled={settings.e89RangeMode !== "MANUAL"} onChange={(event) => update({ e89Maximum: Number(event.target.value) })} /></Field>
-          <Field query={query} label="E89 step"><input type="number" min={0.001} step="any" value={settings.e89Step} onChange={(event) => update({ e89Step: Number(event.target.value) })} /></Field>
+          <Field query={query} label="Trailer X range mode"><select value={settings.e89RangeMode} onChange={(event) => update({ e89RangeMode: event.target.value as OptimiserSettings["e89RangeMode"] })}><option value="AUTO_GROUP_CENTRES">Automatic group centres</option><option value="MANUAL">Manual range</option></select></Field>
+          <Field query={query} label="Trailer X minimum"><input type="number" step="any" value={settings.e89Minimum} disabled={settings.e89RangeMode !== "MANUAL"} onChange={(event) => update({ e89Minimum: Number(event.target.value) })} /></Field>
+          <Field query={query} label="Trailer X maximum"><input type="number" step="any" value={settings.e89Maximum} disabled={settings.e89RangeMode !== "MANUAL"} onChange={(event) => update({ e89Maximum: Number(event.target.value) })} /></Field>
+          <Field query={query} label="Trailer X step"><input type="number" min={0.001} step="any" value={settings.e89Step} onChange={(event) => update({ e89Step: Number(event.target.value) })} /></Field>
         </section>
 
         <section>
@@ -132,7 +132,7 @@ export function OptimisationWorkspace({
           </Field>
           <Field query={query} label="Stop at first pass"><input type="checkbox" checked={settings.stopAtFirstPass} onChange={(event) => update({ stopAtFirstPass: event.target.checked, afterFirstPass: event.target.checked ? "STOP" : "CONTINUE_SCAN" })} /></Field>
           <Field query={query} label="Boundary tolerance"><div className="value-with-unit"><input type="number" min={0.0001} step="any" value={settings.boundaryToleranceM} onChange={(event) => update({ boundaryToleranceM: Number(event.target.value) })} /><em>m</em></div></Field>
-          <Field query={query} label="Fine E89 step"><div className="value-with-unit"><input type="number" min={0.001} step="any" value={settings.fineE89Step} onChange={(event) => update({ fineE89Step: Number(event.target.value) })} /><em>m</em></div></Field>
+          <Field query={query} label="Fine trailer-X step"><div className="value-with-unit"><input type="number" min={0.001} step="any" value={settings.fineE89Step} onChange={(event) => update({ fineE89Step: Number(event.target.value) })} /><em>m</em></div></Field>
           <Field query={query} label="Fine pass reference 1"><input type="text" value={settings.fineFirstPassReference} placeholder="Default: best pass" onChange={(event) => update({ fineFirstPassReference: event.target.value })} /></Field>
           <Field query={query} label="Fine pass reference 2"><input type="text" value={settings.fineSecondPassReference} placeholder="Default: second best" onChange={(event) => update({ fineSecondPassReference: event.target.value })} /></Field>
           <Field query={query} label="Deflection check"><select value={settings.deflectionCheck} onChange={(event) => update({ deflectionCheck: event.target.value as OptimiserSettings["deflectionCheck"] })}><option value="OFF">Off</option><option value="REQUIRED">Required</option></select></Field>

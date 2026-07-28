@@ -3,7 +3,7 @@
 import { engineeringLimitsFor } from "../../../engine/core";
 import { GROUP_COLOURS } from "../../../geometry/buildGeometryViewModel";
 import { closestPointOnSegment } from "../../../geometry/transform";
-import { CogMarker, ViewGrid } from "../svg-primitives";
+import { CogMarker, LongitudinalOrientation, ViewGrid } from "../svg-primitives";
 import { pointPath, type EngineeringViewProps } from "./view-types";
 
 const CASE_COLOURS = {
@@ -61,6 +61,7 @@ export function StabilityView(props: EngineeringViewProps) {
         >
           <rect className="viewport-hit-area" x={0} y={0} width={width} height={svgHeight} />
           <ViewGrid width={width} height={svgHeight} visible={preferences.grid} />
+          <LongitudinalOrientation width={width} />
 
           <path
             className="stability-polygon"

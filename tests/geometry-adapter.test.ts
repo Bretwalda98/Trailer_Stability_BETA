@@ -53,10 +53,10 @@ async function main(): Promise<void> {
   const localGroups = structuredClone(touchingTrailers);
   localGroups.trailers[1].yM += 0.57;
   localGroups.groupings[0].cornerGroups = {
-    frontLeft: 1,
-    frontRight: 1,
-    rearLeft: 2,
-    rearRight: 2,
+    rearLeft: 1,
+    rearRight: 1,
+    frontLeft: 2,
+    frontRight: 2,
   };
   const localGroupResult = calculateProject(localGroups);
   assert.equal(localGroupResult.trailerOverlaps.length, 0);
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   const oneResult = calculateProject(oneTrailer);
   const oneVm = buildGeometryViewModel(oneTrailer, oneResult);
   assert.equal(oneVm.trailers.length, 1);
-  assert.equal(oneVm.trailers[0].frontAt, "negative-x");
+  assert.equal(oneVm.trailers[0].frontAt, "positive-x");
   assert.equal(oneVm.bogies.length, oneTrailer.trailers[0].axleLines);
 
   const multiFile = structuredClone(oneTrailer);
@@ -125,7 +125,30 @@ async function main(): Promise<void> {
   assert.equal(optionalVm.loosePacking.length, 1);
   assert.ok(optionalVm.powerPacks.some((ppu) => ppu.end === "front"));
   assert.ok(optionalVm.powerPacks.some((ppu) => ppu.end === "rear"));
+  assert.equal(
+    optionalVm.powerPacks.find((ppu) => ppu.end === "rear")?.startXM,
+    optionalVm.trailers[0].startXM - optionalVm.trailers[0].ppuLeftLengthM,
+  );
+  assert.equal(
+    optionalVm.powerPacks.find((ppu) => ppu.end === "front")?.startXM,
+    optionalVm.trailers[0].startXM + optionalVm.trailers[0].lengthM,
+  );
   assert.equal(optionalVm.packing.footprintDefined, false);
+  assert.equal(optionalVm.packing.lengthM, optionalItems.cargo.lengthM);
+  const customPacking = structuredClone(optionalItems);
+  customPacking.packing.footprint = {
+    mode: "CUSTOM",
+    lengthM: 4.5,
+    widthM: 2.25,
+    extremeX: 1.1,
+    extremeY: -0.4,
+  };
+  const customPackingVm = buildGeometryViewModel(customPacking, calculateProject(customPacking));
+  assert.equal(customPackingVm.packing.footprintDefined, true);
+  assert.equal(customPackingVm.packing.lengthM, 4.5);
+  assert.equal(customPackingVm.packing.widthM, 2.25);
+  assert.equal(customPackingVm.packing.extremeX, 1.1);
+  assert.equal(customPackingVm.packing.extremeY, -0.4);
 
   // Cargo offset, COG envelope, slopes, wind and both acceleration directions.
   const environment = createDefaultModel();

@@ -6,6 +6,10 @@ import * as XLSX from "xlsx";
 import { createDefaultModel, hydrateProjectModel } from "../app/data/default-model";
 import { solveContinuousBeam } from "../app/engine/beam";
 import {
+  LONGITUDINAL_ORIENTATION_ID,
+  longitudinalEndForAxleLine,
+} from "../app/engine/orientation";
+import {
   applySharedAxleLines,
   applySharedPins,
   applySharedSplit,
@@ -15,6 +19,17 @@ import {
   validateCatalogue,
 } from "../app/engine/core";
 import { runOptimiser } from "../app/engine/optimiser";
+import {
+  applySharedLongitudinalPlacement,
+  applyTrailerTransversePlacement,
+  autoSpaceTrailers,
+  canFinishSetup,
+  collectSetupIssues,
+  createWizardDraftPayload,
+  hydrateWizardDraftPayload,
+  setSharedPlacementReference,
+  stepCanContinue,
+} from "../app/engine/setup";
 import { exportVerificationWorkbook, importWorkbook } from "../app/engine/workbook";
 
 function arrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -32,6 +47,46 @@ function text(bytes: Uint8Array): string {
 async function main(): Promise<void> {
   const root = process.cwd();
   const model = createDefaultModel();
+  assert.equal(model.schemaVersion, 2);
+  assert.equal(model.longitudinalOrientation, LONGITUDINAL_ORIENTATION_ID);
+  assert.equal(longitudinalEndForAxleLine(1, 2), "rear");
+  assert.equal(longitudinalEndForAxleLine(3, 2), "front");
+  const migratedV1 = hydrateProjectModel({
+    ...structuredClone(model),
+    schemaVersion: 1,
+    packing: {
+      massT: model.packing.massT,
+      heightM: model.packing.heightM,
+      cog: model.packing.cog,
+    },
+  });
+  assert.equal(migratedV1.schemaVersion, 2);
+  assert.equal(migratedV1.packing.footprint.mode, "CARGO_ESTIMATE");
+  assert.equal(migratedV1.packing.footprint.lengthM, model.cargo.lengthM);
+  const legacyOrientation = structuredClone(model) as Partial<typeof model>;
+  delete legacyOrientation.longitudinalOrientation;
+  const legacyRearGroup = model.groupings[0].cornerGroups?.rearLeft;
+  legacyOrientation.groupings![0].cornerGroups = {
+    frontLeft: legacyRearGroup ?? 1,
+    frontRight: model.groupings[0].cornerGroups?.rearRight ?? 1,
+    rearLeft: model.groupings[0].cornerGroups?.frontLeft ?? 1,
+    rearRight: model.groupings[0].cornerGroups?.frontRight ?? 1,
+  };
+  const migratedOrientation = hydrateProjectModel(legacyOrientation);
+  assert.equal(
+    migratedOrientation.groupings[0].cornerGroups?.rearLeft,
+    model.groupings[0].cornerGroups?.rearLeft,
+  );
+  assert.equal(
+    migratedOrientation.groupings[0].cornerGroups?.frontLeft,
+    model.groupings[0].cornerGroups?.frontLeft,
+  );
+  const draftPayload = createWizardDraftPayload("packing", migratedV1, "CURRENT", "2026-07-28T12:00:00.000Z");
+  const hydratedDraft = hydrateWizardDraftPayload(JSON.parse(JSON.stringify(draftPayload)));
+  assert.ok(hydratedDraft);
+  assert.equal(hydratedDraft.step, "packing");
+  assert.equal(hydratedDraft.model.schemaVersion, 2);
+  assert.equal(hydratedDraft.updatedAt, "2026-07-28T12:00:00.000Z");
   assert.deepEqual(validateCatalogue(model.catalogue), []);
   assert.equal(model.catalogue.length, 15);
   assert.ok(model.catalogue.some((item) => item.name === "PEKZ G4"));
@@ -87,10 +142,10 @@ async function main(): Promise<void> {
   missingResistance.trailers[1].yM =
     missingResistance.trailers[0].yM + selectedTrailerWidth + 0.1;
   missingResistance.groupings[0].cornerGroups = {
-    frontLeft: 1,
-    frontRight: 1,
-    rearLeft: 2,
-    rearRight: 2,
+    rearLeft: 1,
+    rearRight: 1,
+    frontLeft: 2,
+    frontRight: 2,
   };
   missingResistance.cargo.envelopeX = 0;
   missingResistance.cargo.envelopeY = 0;
@@ -128,6 +183,66 @@ async function main(): Promise<void> {
     catalogue: [null],
   });
   assert.doesNotThrow(() => calculateProject(malformedHydrated));
+
+  const spaced = autoSpaceTrailers(createDefaultModel(), 0.05);
+  const spacedResult = calculateProject(spaced);
+  assert.equal(spacedResult.trailerOverlaps.length, 0);
+  const firstWidth = spaced.catalogue.find(
+    (definition) => definition.id === spaced.trailers[0].definitionId,
+  )?.trailerWidthM ?? 0;
+  const secondWidth = spaced.catalogue.find(
+    (definition) => definition.id === spaced.trailers[1].definitionId,
+  )?.trailerWidthM ?? 0;
+  assert.ok(
+    Math.abs(
+      Math.abs(spaced.trailers[1].yM - spaced.trailers[0].yM) -
+        (firstWidth / 2 + secondWidth / 2 + 0.05),
+    ) < 1e-10,
+  );
+  const touching = autoSpaceTrailers(createDefaultModel(), 0);
+  assert.equal(calculateProject(touching).trailerOverlaps.length, 0);
+
+  const absolutePositions = spacedResult.resolvedTrailers.map((trailer) => ({
+    index: trailer.index,
+    x: trailer.startXM,
+    y: trailer.centreYM,
+  }));
+  const allInclusiveRelative = setSharedPlacementReference(
+    spaced,
+    spacedResult,
+    "ALL_INCLUSIVE_COG",
+  );
+  assert.ok(allInclusiveRelative.trailers.every((trailer) => trailer.placementReference === "ALL_INCLUSIVE_COG"));
+  const allInclusiveResult = calculateProject(allInclusiveRelative);
+  for (const expected of absolutePositions) {
+    const actual = allInclusiveResult.resolvedTrailers.find((trailer) => trailer.index === expected.index);
+    assert.ok(actual);
+    assert.ok(Math.abs(actual.startXM - expected.x) < 1e-8);
+    assert.ok(Math.abs(actual.centreYM - expected.y) < 1e-8);
+  }
+  const relativeMoved = applyTrailerTransversePlacement(
+    applySharedLongitudinalPlacement(allInclusiveRelative, -3.25),
+    1,
+    2.5,
+  );
+  assert.ok(relativeMoved.trailers.every((trailer) => trailer.offsetFromReference.x === -3.25));
+  assert.equal(relativeMoved.trailers[1].offsetFromReference.y, 2.5);
+
+  const setupIssues = collectSetupIssues(spaced, spacedResult);
+  assert.equal(setupIssues.filter((item) => item.severity === "blocking").length, 0);
+  assert.equal(canFinishSetup(setupIssues), true);
+  assert.equal(stepCanContinue(setupIssues, "trailers"), true);
+  const oneGroup = structuredClone(spaced);
+  oneGroup.groupings = oneGroup.groupings.map((grouping) => ({
+    ...grouping,
+    cornerGroups: { frontLeft: 1, frontRight: 1, rearLeft: 1, rearRight: 1 },
+  }));
+  const oneGroupIssues = collectSetupIssues(oneGroup, calculateProject(oneGroup));
+  assert.ok(oneGroupIssues.some((item) => item.id === "triangle" && item.severity === "blocking"));
+  const tooFewSupports = structuredClone(spaced);
+  tooFewSupports.optimiser.minimumActiveSupports = 5;
+  const tooFewSupportIssues = collectSetupIssues(tooFewSupports, calculateProject(tooFewSupports));
+  assert.ok(tooFewSupportIssues.some((item) => item.id === "settled-supports"));
 
   const simplySupportedUniform = solveContinuousBeam({
     lengthM: 10,
@@ -231,6 +346,7 @@ async function main(): Promise<void> {
   assert.equal(imported.model.catalogue.length, 15);
   assert.ok(imported.model.catalogue.some((item) => item.name === "PEKZ G4"));
   assert.ok(imported.model.trailers.length > 0);
+  assert.equal(imported.model.longitudinalOrientation, LONGITUDINAL_ORIENTATION_ID);
   assert.equal(imported.model.optimiser.c89Start, 30);
   assert.equal(imported.model.optimiser.c89Maximum, 36);
   assert.equal(imported.model.optimiser.c89Step, 2);
@@ -265,7 +381,7 @@ async function main(): Promise<void> {
       }),
       createDefaultModel(),
     ),
-    /trailer preflight failed/i,
+    /verification import failed/i,
   );
   const sourceMain = sourceWorkbook.Sheets["Load and Stability Calculation"];
   const parityMetrics = {
@@ -299,6 +415,45 @@ async function main(): Promise<void> {
   ];
   const loosePackingResult = calculateProject(loosePackingModel);
   assert.notEqual(loosePackingResult.beam.bendingMaxKNm, importedNativeResult.beam.bendingMaxKNm);
+
+  const customPackingFootprint = structuredClone(imported.model);
+  customPackingFootprint.packing.footprint = {
+    mode: "CUSTOM",
+    lengthM: 3.4,
+    widthM: 1.8,
+    extremeX: 4.2,
+    extremeY: 8.1,
+  };
+  const customPackingFootprintResult = calculateProject(customPackingFootprint);
+  assert.deepEqual(customPackingFootprintResult.combinedCog, importedNativeResult.combinedCog);
+  assert.equal(
+    customPackingFootprintResult.beam.bendingMaxKNm,
+    importedNativeResult.beam.bendingMaxKNm,
+  );
+
+  const relativeVerificationResult = calculateProject(relativeMoved);
+  const relativeVerificationBytes = await exportVerificationWorkbook(
+    relativeMoved,
+    arrayBuffer(template),
+  );
+  const relativeVerificationWorkbook = XLSX.read(relativeVerificationBytes, {
+    type: "array",
+    cellFormula: true,
+  });
+  const relativeVerificationSheet =
+    relativeVerificationWorkbook.Sheets["Load and Stability Calculation"];
+  assert.ok(
+    Math.abs(
+      Number(relativeVerificationSheet.E89.v) -
+        relativeVerificationResult.resolvedTrailers[0].startXM,
+    ) < 1e-8,
+  );
+  for (const resolved of relativeVerificationResult.resolvedTrailers) {
+    assert.ok(
+      Math.abs(Number(relativeVerificationSheet[`F${89 + resolved.index}`].v) - resolved.centreYM) <
+        1e-8,
+    );
+  }
 
   const exportModel = structuredClone(changed);
   exportModel.supports[0].allowed = false;
@@ -376,6 +531,11 @@ async function main(): Promise<void> {
   assert.equal(mainSheet.D439.v, 12.5);
   assert.equal(mainSheet.E439.v, 1.2);
   assert.equal(mainSheet.F439.v, 3.8);
+  assert.equal(mainSheet.C70.v, exportModel.packing.massT);
+  assert.equal(mainSheet.C71.v, exportModel.packing.heightM);
+  assert.equal(mainSheet.C72.v, exportModel.packing.cog.x);
+  assert.equal(mainSheet.C73.v, exportModel.packing.cog.y);
+  assert.equal(mainSheet.C74.v, exportModel.packing.cog.z);
   const controlSheet = workbook.Sheets.TS_CONTROL;
   assert.equal(controlSheet.B2.v, "STOP");
   assert.equal(controlSheet.B6.v, exportModel.optimiser.e89Step);

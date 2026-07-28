@@ -142,11 +142,19 @@ export function buildEngineeringDetailRows(
       "packing-footprint",
       "Packing",
       "Packing footprint",
-      "Not defined by ProjectModel",
+      model.packing.footprint.mode === "CUSTOM" ? "Custom visual footprint" : "Cargo-sized estimate",
       "",
-      "Native model",
-      { valueType: "unavailable", status: "N/A", validation: "Only packing mass, height and COG are available." },
+      "Native web-only",
+      {
+        valueType: "text",
+        status: "OK",
+        validation: "Visual only. Verification export receives packing mass, height and COG, not footprint geometry.",
+      },
     ),
+    row("packing-footprint-length", "Packing", "Visual footprint length", model.packing.footprint.lengthM, "m", "Native web-only"),
+    row("packing-footprint-width", "Packing", "Visual footprint width", model.packing.footprint.widthM, "m", "Native web-only"),
+    row("packing-footprint-x", "Packing", "Visual footprint X extreme", model.packing.footprint.extremeX, "m", "Native web-only"),
+    row("packing-footprint-y", "Packing", "Visual footprint Y extreme", model.packing.footprint.extremeY, "m", "Native web-only"),
     row("deck-height", "Trailer definitions", "Trailer deck height", model.trailerDeckHeightM, "m", "C85", {
       editable: true,
       fieldKey: "trailerDeckHeightM",
@@ -186,12 +194,12 @@ export function buildEngineeringDetailRows(
         fieldKey: `trailers.${index}.placementReference`,
         valueType: "select",
       }),
-      row(`trailer-${index}-ppu-left`, category, "PPU at front / left", trailer.ppuLeft, "", `J${sourceRow}`, {
+      row(`trailer-${index}-ppu-left`, category, "Rear PPU (lower X / left)", trailer.ppuLeft, "", `J${sourceRow}`, {
         editable: true,
         fieldKey: `trailers.${index}.ppuLeft`,
         valueType: "boolean",
       }),
-      row(`trailer-${index}-ppu-right`, category, "PPU at rear / right", trailer.ppuRight, "", `K${sourceRow}`, {
+      row(`trailer-${index}-ppu-right`, category, "Front PPU (higher X / right)", trailer.ppuRight, "", `K${sourceRow}`, {
         editable: true,
         fieldKey: `trailers.${index}.ppuRight`,
         valueType: "boolean",
@@ -216,24 +224,24 @@ export function buildEngineeringDetailRows(
         editable: true,
         fieldKey: `groupings.${index}.splitAfterAxleLine`,
       }),
-      row(`grouping-${index}-front-left`, category, "Front left circuit group", grouping.cornerGroups?.frontLeft ?? null, "", `B${firstRow}`, {
-        editable: true,
-        fieldKey: `groupings.${index}.cornerGroups.frontLeft`,
-        valueType: "select",
-      }),
-      row(`grouping-${index}-front-right`, category, "Front right circuit group", grouping.cornerGroups?.frontRight ?? null, "", `B${firstRow + 1}`, {
-        editable: true,
-        fieldKey: `groupings.${index}.cornerGroups.frontRight`,
-        valueType: "select",
-      }),
-      row(`grouping-${index}-rear-left`, category, "Rear left circuit group", grouping.cornerGroups?.rearLeft ?? null, "", `C${firstRow}`, {
+      row(`grouping-${index}-rear-left`, category, "Rear segment · left circuit group", grouping.cornerGroups?.rearLeft ?? null, "", `B${firstRow}`, {
         editable: true,
         fieldKey: `groupings.${index}.cornerGroups.rearLeft`,
         valueType: "select",
       }),
-      row(`grouping-${index}-rear-right`, category, "Rear right circuit group", grouping.cornerGroups?.rearRight ?? null, "", `C${firstRow + 1}`, {
+      row(`grouping-${index}-rear-right`, category, "Rear segment · right circuit group", grouping.cornerGroups?.rearRight ?? null, "", `B${firstRow + 1}`, {
         editable: true,
         fieldKey: `groupings.${index}.cornerGroups.rearRight`,
+        valueType: "select",
+      }),
+      row(`grouping-${index}-front-left`, category, "Front segment · left circuit group", grouping.cornerGroups?.frontLeft ?? null, "", `C${firstRow}`, {
+        editable: true,
+        fieldKey: `groupings.${index}.cornerGroups.frontLeft`,
+        valueType: "select",
+      }),
+      row(`grouping-${index}-front-right`, category, "Front segment · right circuit group", grouping.cornerGroups?.frontRight ?? null, "", `C${firstRow + 1}`, {
+        editable: true,
+        fieldKey: `groupings.${index}.cornerGroups.frontRight`,
         valueType: "select",
       }),
       row(`grouping-${index}-pins`, "Pinned axle lines", `Trailer ${index + 1} pinned axle lines`, grouping.pinnedAxleLines.join(", ") || "None", "AL", "G136:N147", {
@@ -386,7 +394,7 @@ export function buildEngineeringDetailRows(
       valueType: "unavailable",
       status: "N/A",
     }),
-    row("ground-bearing", "Ground-bearing pressure", "Ground-bearing pressure", "Workbook-only; not calculated by the native engine", "", "Load and Stability Calculation!B268:M281", {
+    row("ground-bearing", "Ground-bearing pressure", "Ground-bearing pressure", "Not currently calculated by the native engine", "", "Unavailable", {
       valueType: "unavailable",
       status: "N/A",
     }),
@@ -521,13 +529,12 @@ export function buildEngineeringDetailRows(
 }
 
 export function engineeringDetailsCsv(rows: EngineeringDetailRow[]): string {
-  const header = ["Category", "Label", "Value", "Unit", "Source", "Editable", "Status"];
+  const header = ["Category", "Label", "Value", "Unit", "Editable", "Status"];
   const lines = rows.map((item) => [
     item.category,
     item.label,
     typeof item.value === "number" ? formatCompact(item.value, 8) : item.value ?? "",
     item.unit,
-    item.source,
     item.editable ? "yes" : "no",
     item.status ?? "",
   ]);

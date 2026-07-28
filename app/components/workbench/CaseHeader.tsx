@@ -4,9 +4,11 @@ import {
   IconChevronDown,
   IconDownload,
   IconFileImport,
+  IconHelpCircle,
   IconPlayerPlay,
   IconPlayerStop,
   IconRefresh,
+  IconSettings,
   IconUpload,
 } from "@tabler/icons-react";
 import { useRef, useState } from "react";
@@ -19,9 +21,11 @@ interface CaseHeaderProps {
   saved: boolean;
   busy: boolean;
   onImport(file: File): void;
+  onSetup(): void;
   onExportWorkbook(): void;
   onExportProject(): void;
   onImportProject(file: File): void;
+  onHelp(): void;
   onRun(): void;
   onStop(): void;
   onReset(): void;
@@ -34,9 +38,11 @@ export function CaseHeader({
   saved,
   busy,
   onImport,
+  onSetup,
   onExportWorkbook,
   onExportProject,
   onImportProject,
+  onHelp,
   onRun,
   onStop,
   onReset,
@@ -64,9 +70,6 @@ export function CaseHeader({
         <span>{saved ? "Saved locally" : "Saving…"}</span>
         {calculating && <em>Calculating</em>}
       </div>
-      <div className="source-name" title={model.sourceWorkbook}>
-        {model.sourceWorkbook}
-      </div>
       <div className="header-actions">
         <input
           ref={workbookInput}
@@ -90,19 +93,26 @@ export function CaseHeader({
             event.currentTarget.value = "";
           }}
         />
-        <button disabled={busy} onClick={() => workbookInput.current?.click()}>
-          <IconUpload size={15} /> Import
+        <button className="setup-action" aria-label="Set up case" disabled={busy} onClick={onSetup}>
+          <IconSettings size={15} /> <span>Set up case</span>
         </button>
-        <button disabled={busy} onClick={onExportWorkbook}>
-          <IconDownload size={15} /> Export XLSM
+        <button className="mobile-optional" aria-label="Import verification data" disabled={busy} onClick={() => workbookInput.current?.click()}>
+          <IconUpload size={15} /> <span>Import</span>
+        </button>
+        <button className="mobile-optional" aria-label="Export verification data" disabled={busy} onClick={onExportWorkbook}>
+          <IconDownload size={15} /> <span>Export verification</span>
+        </button>
+        <button className="help-action" aria-label="Open help and user guide" onClick={onHelp}>
+          <IconHelpCircle size={15} /> <span>Help</span>
         </button>
         <button
           className={running ? "run-action running" : "run-action"}
+          aria-label={running ? "Stop optimisation" : "Run optimisation"}
           disabled={busy}
           onClick={running ? onStop : onRun}
         >
           {running ? <IconPlayerStop size={15} /> : <IconPlayerPlay size={15} />}
-          {running ? "Stop optimisation" : "Run optimisation"}
+          <span>{running ? "Stop optimisation" : "Run optimisation"}</span>
         </button>
         <div className="header-menu">
           <button
@@ -115,6 +125,9 @@ export function CaseHeader({
           </button>
           {menuOpen && (
             <div className="header-menu-popover">
+              <button onClick={() => { workbookInput.current?.click(); setMenuOpen(false); }}><IconUpload size={14} /> Import verification data</button>
+              <button onClick={() => { onExportWorkbook(); setMenuOpen(false); }}><IconDownload size={14} /> Export verification data</button>
+              <button onClick={() => { onHelp(); setMenuOpen(false); }}><IconHelpCircle size={14} /> Help and user guide</button>
               <button onClick={() => { onExportProject(); setMenuOpen(false); }}><IconDownload size={14} /> Export project JSON</button>
               <button onClick={() => { projectInput.current?.click(); setMenuOpen(false); }}><IconFileImport size={14} /> Import project JSON</button>
               <button onClick={() => { onReset(); setMenuOpen(false); }}><IconRefresh size={14} /> Reset example</button>

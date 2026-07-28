@@ -2,6 +2,7 @@ export type YesNo = "yes" | "no";
 export type RunState = "IDLE" | "PLANNING" | "RUNNING" | "STOPPED" | "FAILED" | "COMPLETE";
 export type RunPhase = "PLANNING" | "COARSE_SCAN" | "PIN_SEARCH" | "REFINEMENT" | "FINALISING";
 export type PlacementReference = "ABSOLUTE" | "LOAD_COG" | "ALL_INCLUSIVE_COG";
+export type PackingFootprintMode = "CARGO_ESTIMATE" | "CUSTOM";
 export type CalculationMode = "NATIVE_VERIFIED" | "WORKBOOK_PARITY";
 export type EngineeringDegree = "First" | "Second" | "Third";
 export type SpineLoadCase =
@@ -84,6 +85,13 @@ export interface PackingInput {
   massT: number;
   heightM: number;
   cog: Point3;
+  footprint: {
+    mode: PackingFootprintMode;
+    lengthM: number;
+    widthM: number;
+    extremeX: number;
+    extremeY: number;
+  };
 }
 
 export interface TrailerInput {
@@ -212,7 +220,8 @@ export interface OptimiserSettings {
 }
 
 export interface ProjectModel {
-  schemaVersion: 1;
+  schemaVersion: 2;
+  longitudinalOrientation: "REAR_LEFT_FRONT_RIGHT";
   sourceWorkbook: string;
   engineeringDegree: EngineeringDegree;
   weightCogReference: string;

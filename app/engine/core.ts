@@ -1,4 +1,5 @@
 import { beamMetricsFromResult, solveContinuousBeam } from "./beam";
+import { hydraulicCornerForAxleLine } from "./orientation";
 import type {
   AxlePoint,
   BeamMetrics,
@@ -283,7 +284,7 @@ function groupingFor(model: ProjectModel, trailerIndex: number): HydraulicGroupi
     model.groupings[trailerIndex] ?? {
       splitAfterAxleLine: 1,
       groups: [],
-      cornerGroups: { frontLeft: 2, frontRight: 1, rearLeft: 3, rearRight: 1 },
+      cornerGroups: { rearLeft: 2, rearRight: 1, frontLeft: 3, frontRight: 1 },
       pinnedAxleLines: [],
     }
   );
@@ -298,16 +299,16 @@ function buildAxles(model: ProjectModel, trailers: ResolvedTrailer[]): AxlePoint
       trailer.definition.crossBogieSpacingM ?? Math.max(0, trailer.definition.trailerWidthM - trailer.definition.tyreWidthM);
     for (let axleLine = 1; axleLine <= trailer.input.axleLines; axleLine += 1) {
       const x = trailer.xM + (axleLine - 0.5) * trailer.definition.axleSpacingM;
-      const front = axleLine <= clamp(grouping.splitAfterAxleLine, 1, trailer.input.axleLines);
+      const split = clamp(grouping.splitAfterAxleLine, 1, trailer.input.axleLines);
       const leftGroup = grouping.cornerGroups
-        ? front
-          ? grouping.cornerGroups.frontLeft
-          : grouping.cornerGroups.rearLeft
+        ? grouping.cornerGroups[
+            hydraulicCornerForAxleLine(axleLine, split, "left")
+          ]
         : grouping.groups[axleLine - 1] ?? 2;
       const rightGroup = grouping.cornerGroups
-        ? front
-          ? grouping.cornerGroups.frontRight
-          : grouping.cornerGroups.rearRight
+        ? grouping.cornerGroups[
+            hydraulicCornerForAxleLine(axleLine, split, "right")
+          ]
         : grouping.groups[axleLine - 1] ?? 1;
       const pinned = pinSet.has(axleLine);
       if (trailer.input.singleFile) {
