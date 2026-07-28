@@ -73,6 +73,8 @@ export interface CargoInput {
   cog: Point3;
   envelopeX: number;
   envelopeY: number;
+  /** When enabled, projected areas and force heights follow the cargo envelope. */
+  autoWindFromCargo: boolean;
   sideWindAreaM2: number;
   sideDragCoefficient: number;
   sideWindHeightM: number;

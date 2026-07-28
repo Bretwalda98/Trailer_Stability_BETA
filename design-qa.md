@@ -113,4 +113,52 @@
 
 - P3: evaluate a stacked phone Report table after real field-use feedback.
 
+## Iteration 5 — cargo-derived wind and blank setup
+
+### Comparison target
+
+- Source visual truth: the established black technical wizard reference at `docs/design/setup-wizard-guided-split-reference.png`, augmented by the explicit requested states: blank new case has no arrangement, and wind inputs are derived from cargo dimensions by default.
+- Implementation capture: `qa-evidence/implementation-wind-auto-and-blank-wizard-1280x720.png`.
+- Route: `http://127.0.0.1:4174/`.
+- Viewport and density: 1280 × 720 CSS px; capture pixels equal CSS pixels; no density normalization required.
+- Compared states: blank Wizard/Cargo state, then entered 12 m × 5 m × 4 m cargo with automatic wind enabled.
+
+### Findings
+
+- No actionable P0, P1 or P2 findings remain.
+- [P3] The compact form requires a short scroll to expose every wind field at a 720 px desktop height. This is intentional density behaviour; the section heading and automatic toggle remain visible in the form flow.
+
+### Required fidelity surfaces
+
+- Fonts and typography: retains the compact technical sans-serif hierarchy and legible 9–12 px form labels. Computed wind hints are secondary and do not compete with the numeric values.
+- Spacing and layout rhythm: the empty preview holds the same dominant right-hand area as the live model, so the split view does not jump when a trailer is added.
+- Colors and visual tokens: invalid cargo dimensions/mass are amber; accepted values and calculated wind fields are green; disabled calculated fields remain readable on the black canvas.
+- Image quality and asset fidelity: no new raster or decorative assets were added. Existing Tabler icons remain consistent with the established interface.
+- Copy and content: wording states the formulas directly: side = length × height, front = width × height, with both forces at half cargo height.
+
+### Full-view and focused evidence
+
+- Blank state shows “Start with the cargo envelope” rather than a pre-populated trailer arrangement. The setup rail and form stay usable and the Next action remains correctly blocked.
+- With 12 m length, 5 m width and 4 m height, the live automatic fields show 48 m² side area, 20 m² front area and 2 m application height for both directions.
+- The automatic control is checked by default. Turning it off exposes the same populated values as manual inputs; turning it back on restores calculated, locked values.
+- Primary interactions tested in the in-app browser: new setup, empty canvas, cargo numeric entry, live automatic recomputation, automatic/manual toggle, and server reload. Browser console errors: none observed.
+
+### Comparison history
+
+- Earlier P2 finding: Start new setup still exposed a sample arrangement and could mislead users into treating it as part of a new case.
+  - Fix: blank model now contains no trailers, hydraulic groups or supports; the wizard substitutes an explicit empty-preview state until cargo dimensions and a trailer exist.
+  - Post-fix evidence: `qa-evidence/implementation-wind-auto-and-blank-wizard-1280x720.png` and the in-app browser blank-state capture.
+- Earlier P2 finding: wind areas and application heights had to be maintained manually after cargo geometry changes.
+  - Fix: automatic cargo-derived wind mode is defaulted on, calculated in the engineering engine and verification export, and exposed as a clear manual override.
+  - Post-fix evidence: automatic values 48 m² / 20 m² / 2 m for a 12 × 5 × 4 m cargo in the browser capture; engine regression tests pass.
+
+### Implementation checklist
+
+- [x] Default automatic side/front projected wind areas and mid-height force application.
+- [x] Preserve workbook-imported manual wind inputs until automatic mode is explicitly enabled.
+- [x] Apply automatic values to calculation and verification export.
+- [x] Add amber invalid and green accepted input states in the wizard.
+- [x] Start new setup with no pre-existing arrangement or geometry drawing.
+- [x] Update maintained Help content and automated regression coverage.
+
 final result: passed

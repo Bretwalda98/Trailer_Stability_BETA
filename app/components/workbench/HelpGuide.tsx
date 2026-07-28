@@ -13,7 +13,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
-export const HELP_GUIDE_REVISION = "Interface revision 0.7.2 · reviewed 28 July 2026";
+export const HELP_GUIDE_REVISION = "Interface revision 0.7.3 · reviewed 28 July 2026";
 
 const GUIDE_SECTIONS = [
   {
@@ -25,9 +25,23 @@ const GUIDE_SECTIONS = [
     steps: [
       "At startup, choose Start new setup or Open saved file. Continue saved case resumes the project stored on this device.",
       "Select Set up case in the top bar whenever you want to reopen the wizard.",
+      "Blank case starts with no cargo, trailers, hydraulics or supports on the drawing. The arrangement appears only as you enter setup data.",
       "Work through case basics, cargo, packing, trailers, hydraulics, supports and review.",
       "Resolve blocking findings. Engineering-limit NOK results remain visible but do not prevent saving a geometrically valid setup.",
       "Choose Finish setup, or Finish & run optimisation when you are ready to search alternatives.",
+    ],
+  },
+  {
+    id: "wind",
+    label: "Wind inputs",
+    icon: IconSettings,
+    title: "Calculate projected wind areas from cargo",
+    intro: "Automatic wind projection is enabled by default for new cases.",
+    steps: [
+      "With Auto-calculate wind areas on, side area is cargo length × height and front area is cargo width × height.",
+      "Both wind forces act at half the cargo height; changing any cargo dimension updates these verification inputs immediately.",
+      "Switch automatic calculation off only when a separately verified projected area or force height is required.",
+      "Green inputs are acceptable. Amber inputs require a value within the allowed engineering range before the wizard can continue.",
     ],
   },
   {
@@ -193,7 +207,7 @@ export function HelpGuide({
 
         <footer>
           <span>{HELP_GUIDE_REVISION}</span>
-          <span>Guide coverage: setup · model · results · details · optimisation · phone</span>
+          <span>Guide coverage: setup · wind · model · results · details · optimisation · phone</span>
         </footer>
       </div>
     </dialog>

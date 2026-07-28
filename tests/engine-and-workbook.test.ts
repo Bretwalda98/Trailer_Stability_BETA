@@ -25,11 +25,13 @@ import {
   autoSpaceTrailers,
   canFinishSetup,
   collectSetupIssues,
+  createBlankSetupModel,
   createWizardDraftPayload,
   hydrateWizardDraftPayload,
   setSharedPlacementReference,
   stepCanContinue,
 } from "../app/engine/setup";
+import { derivedCargoWindInputs } from "../app/engine/wind";
 import { exportVerificationWorkbook, importWorkbook } from "../app/engine/workbook";
 
 function arrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -91,6 +93,41 @@ async function main(): Promise<void> {
   assert.equal(model.catalogue.length, 15);
   assert.ok(model.catalogue.some((item) => item.name === "PEKZ G4"));
   assert.ok(model.catalogue.some((item) => item.name === "PEKZ G4 M78 X24 D24 TL24"));
+  assert.equal(model.cargo.autoWindFromCargo, true);
+  assert.deepEqual(derivedCargoWindInputs(model.cargo), {
+    sideWindAreaM2: model.cargo.lengthM * model.cargo.heightM,
+    frontWindAreaM2: model.cargo.widthM * model.cargo.heightM,
+    sideWindHeightM: model.cargo.heightM / 2,
+    frontWindHeightM: model.cargo.heightM / 2,
+  });
+
+  const blankSetup = createBlankSetupModel();
+  assert.equal(blankSetup.trailers.length, 0);
+  assert.equal(blankSetup.groupings.length, 0);
+  assert.equal(blankSetup.supports.length, 0);
+  assert.equal(blankSetup.cargo.lengthM, 0);
+  assert.equal(blankSetup.cargo.autoWindFromCargo, true);
+  assert.equal(calculateProject(blankSetup).status, "ERROR");
+  const hydratedBlankSetup = hydrateProjectModel(blankSetup);
+  assert.equal(hydratedBlankSetup.trailers.length, 0);
+  assert.equal(hydratedBlankSetup.groupings.length, 0);
+  assert.equal(hydratedBlankSetup.supports.length, 0);
+
+  const autoWind = createDefaultModel();
+  autoWind.cargo.lengthM = 12;
+  autoWind.cargo.widthM = 5;
+  autoWind.cargo.heightM = 4;
+  autoWind.cargo.sideWindAreaM2 = 999;
+  autoWind.cargo.frontWindAreaM2 = 999;
+  autoWind.cargo.sideWindHeightM = 999;
+  autoWind.cargo.frontWindHeightM = 999;
+  const autoWindResult = calculateProject(autoWind);
+  const manualWind = structuredClone(autoWind);
+  manualWind.cargo.autoWindFromCargo = false;
+  Object.assign(manualWind.cargo, derivedCargoWindInputs(manualWind.cargo));
+  const manualWindResult = calculateProject(manualWind);
+  assert.ok(Math.abs(autoWindResult.analysis.windShift.x - manualWindResult.analysis.windShift.x) < 1e-12);
+  assert.ok(Math.abs(autoWindResult.analysis.windShift.y - manualWindResult.analysis.windShift.y) < 1e-12);
 
   const result = calculateProject(model);
   assert.ok(Number.isFinite(result.totalMassT) && result.totalMassT > model.cargo.massT);

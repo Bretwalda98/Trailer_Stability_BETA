@@ -3770,6 +3770,26 @@ input[type="checkbox"] {
   background: #0d1012;
 }
 
+.wizard-field.is-valid input,
+.wizard-field.is-valid select {
+  border-color: #2f8d5d;
+  background: #0a1710;
+  box-shadow: inset 3px 0 0 #38b26d;
+}
+
+.wizard-field.is-invalid input,
+.wizard-field.is-invalid select {
+  border-color: #b27a25;
+  background: #1b1408;
+  box-shadow: inset 3px 0 0 #e4a43d;
+}
+
+.wizard-field input:disabled {
+  cursor: not-allowed;
+  color: #a8d9bc;
+  opacity: 1;
+}
+
 .wizard-field small,
 .wizard-toggle small {
   color: var(--text-faint);
@@ -4418,6 +4438,37 @@ input[type="checkbox"] {
 .setup-wizard-preview .engineering-viewport {
   min-height: 0;
   border: 0;
+}
+
+.setup-wizard-empty-preview {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  border-bottom: 1px solid var(--line);
+  background: #050607;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.setup-wizard-empty-preview svg {
+  color: var(--amber);
+}
+
+.setup-wizard-empty-preview b {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.setup-wizard-empty-preview p {
+  max-width: 270px;
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: 1.5;
 }
 
 .setup-wizard-preview .compact-viewport .viewport-toolbar {
