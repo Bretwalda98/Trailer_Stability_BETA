@@ -74,9 +74,9 @@ function SeriesDiagram({
         <line x1={margin.left} y1={height / 2} x2={width - margin.right} y2={height / 2} />
         <line x1={margin.left} y1={margin.top} x2={margin.left} y2={height - margin.bottom} />
         {path && <path d={path} style={{ stroke: colour }} />}
-        <text x={margin.left} y={height - 3}>0</text>
+        <text x={margin.left} y={height - 3}>REAR · 0</text>
         <text x={width - margin.right} y={height - 3} textAnchor="end">
-          {xMax.toFixed(2)} m
+          FRONT · {xMax.toFixed(2)} m
         </text>
       </svg>
     </div>

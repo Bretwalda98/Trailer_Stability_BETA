@@ -37,6 +37,8 @@ test("server-renders the standalone engineering workbench", async () => {
   assert.match(html, /Spine beam/);
   assert.match(html, /Engineering details/);
   assert.match(html, /Run optimisation/);
+  assert.match(html, /How would you like to start/);
+  assert.match(html, /Open saved file/);
   assert.match(html, /Results and selected item inspector/);
   assert.match(html, /manifest\.webmanifest/);
   assert.doesNotMatch(html, /Your site is taking shape|Building your site/);
@@ -61,6 +63,7 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(workbench, /exportVerificationWorkbook/);
   assert.match(workbench, /importWorkbook/);
   assert.match(workbench, /aria-label="Mobile workspace"/);
+  assert.match(workbench, /StartupChooser/);
   assert.match(engineHook, /deterministicInitialCalculation/);
   assert.match(engineHook, /new Worker\(new URL\("\.\.\/workers\/engineering\.worker\.ts"/);
   assert.match(worker, /calculateProject/);

@@ -1,5 +1,9 @@
 import { builtinTrailerCatalogue } from "./trailers";
 import type { OptimiserWeights, ProjectModel } from "../engine/types";
+import {
+  LONGITUDINAL_ORIENTATION_ID,
+  swapLegacyLongitudinalCorners,
+} from "../engine/orientation";
 
 export const balancedWeights: OptimiserWeights = {
   basicUtil: 1,
@@ -19,8 +23,9 @@ export const balancedWeights: OptimiserWeights = {
 
 export function createDefaultModel(): ProjectModel {
   return {
-    schemaVersion: 1,
-    sourceWorkbook: "Trailer_Stability_Calculator_Optimiser_v0.7.xlsm",
+    schemaVersion: 2,
+    longitudinalOrientation: LONGITUDINAL_ORIENTATION_ID,
+    sourceWorkbook: "Standalone web project",
     engineeringDegree: "Second",
     weightCogReference: "GO",
     referencePoint: "0,0",
@@ -48,6 +53,13 @@ export function createDefaultModel(): ProjectModel {
       massT: 22.8,
       heightM: 0.55,
       cog: { x: 5.945, y: 2.4425, z: 0.275 },
+      footprint: {
+        mode: "CARGO_ESTIMATE",
+        lengthM: 11.89,
+        widthM: 4.885,
+        extremeX: 0,
+        extremeY: 0,
+      },
     },
     trailerDeckHeightM: 1.5,
     trailers: [
@@ -82,13 +94,13 @@ export function createDefaultModel(): ProjectModel {
       {
         splitAfterAxleLine: 2,
         groups: [2, 2, 1, 1, 1, 1, 1, 1],
-        cornerGroups: { frontLeft: 2, frontRight: 2, rearLeft: 1, rearRight: 1 },
+        cornerGroups: { rearLeft: 2, rearRight: 2, frontLeft: 1, frontRight: 1 },
         pinnedAxleLines: [],
       },
       {
         splitAfterAxleLine: 2,
         groups: [1, 1, 3, 3, 3, 3, 3, 3],
-        cornerGroups: { frontLeft: 1, frontRight: 1, rearLeft: 3, rearRight: 3 },
+        cornerGroups: { rearLeft: 1, rearRight: 1, frontLeft: 3, frontRight: 3 },
         pinnedAxleLines: [],
       },
     ],
@@ -177,6 +189,9 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
   const source = objectValue(value) as Partial<ProjectModel>;
   const cargo = objectValue(source.cargo) as Partial<ProjectModel["cargo"]>;
   const packing = objectValue(source.packing) as Partial<ProjectModel["packing"]>;
+  const packingFootprint = objectValue(packing.footprint) as Partial<
+    ProjectModel["packing"]["footprint"]
+  >;
   const environment = objectValue(source.environment) as Partial<ProjectModel["environment"]>;
   const optimiser = objectValue(source.optimiser) as Partial<ProjectModel["optimiser"]>;
   const weights = objectValue(optimiser.weights) as Partial<OptimiserWeights>;
@@ -185,10 +200,13 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
   const supportItems = objectItems(source.supports);
   const catalogueItems = objectItems(source.catalogue);
   const loosePackingItems = objectItems(source.loosePacking);
+  const hasCurrentOrientation =
+    source.longitudinalOrientation === LONGITUDINAL_ORIENTATION_ID;
   return {
     ...base,
     ...source,
-    schemaVersion: 1,
+    schemaVersion: 2,
+    longitudinalOrientation: LONGITUDINAL_ORIENTATION_ID,
     cargo: {
       ...base.cargo,
       ...cargo,
@@ -198,6 +216,27 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
       ...base.packing,
       ...packing,
       cog: { ...base.packing.cog, ...objectValue(packing.cog) },
+      footprint: {
+        ...base.packing.footprint,
+        ...packingFootprint,
+        mode: packingFootprint.mode === "CUSTOM" ? "CUSTOM" : "CARGO_ESTIMATE",
+        lengthM:
+          typeof packingFootprint.lengthM === "number"
+            ? packingFootprint.lengthM
+            : cargo.lengthM ?? base.cargo.lengthM,
+        widthM:
+          typeof packingFootprint.widthM === "number"
+            ? packingFootprint.widthM
+            : cargo.widthM ?? base.cargo.widthM,
+        extremeX:
+          typeof packingFootprint.extremeX === "number"
+            ? packingFootprint.extremeX
+            : cargo.extremeX ?? base.cargo.extremeX,
+        extremeY:
+          typeof packingFootprint.extremeY === "number"
+            ? packingFootprint.extremeY
+            : cargo.extremeY ?? base.cargo.extremeY,
+      },
     },
     environment: {
       ...base.environment,
@@ -230,6 +269,15 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
       ? groupingItems.map((item, index) => ({
           ...(base.groupings[index] ?? base.groupings[0]),
           ...item,
+          cornerGroups: item.cornerGroups
+            ? hasCurrentOrientation
+              ? (item.cornerGroups as ProjectModel["groupings"][number]["cornerGroups"])
+              : swapLegacyLongitudinalCorners(
+                  item.cornerGroups as NonNullable<
+                    ProjectModel["groupings"][number]["cornerGroups"]
+                  >,
+                )
+            : (base.groupings[index] ?? base.groupings[0]).cornerGroups,
           groups: Array.isArray(item.groups) ? item.groups : (base.groupings[index] ?? base.groupings[0]).groups,
           pinnedAxleLines: Array.isArray(item.pinnedAxleLines)
             ? item.pinnedAxleLines

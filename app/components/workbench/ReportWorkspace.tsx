@@ -42,7 +42,6 @@ export function ReportWorkspace({
         <section>
           <header><IconFileReport size={15} /><b>Case definition</b></header>
           <dl>
-            <div><dt>Source workbook</dt><dd>{model.sourceWorkbook}</dd></div>
             <div><dt>Reference point</dt><dd>{model.referencePoint}</dd></div>
             <div><dt>Weight / COG reference</dt><dd>{model.weightCogReference}</dd></div>
             <div><dt>Cargo dimensions</dt><dd>{model.cargo.lengthM.toFixed(3)} × {model.cargo.widthM.toFixed(3)} × {model.cargo.heightM.toFixed(3)} m</dd></div>

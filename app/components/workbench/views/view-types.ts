@@ -9,6 +9,7 @@ export interface EngineeringViewProps {
   height: number;
   preferences: ViewPreferences;
   selectedId: string;
+  compact?: boolean;
   onSelect(id: string): void;
   onBackgroundPointerDown?(event: React.PointerEvent<SVGSVGElement>): void;
   onBackgroundPointerMove?(event: React.PointerEvent<SVGSVGElement>): void;
@@ -26,4 +27,3 @@ export function pointPath(transform: ViewportTransform, points: Point2[], closed
     .join(" ");
   return closed ? `${path} Z` : path;
 }
-

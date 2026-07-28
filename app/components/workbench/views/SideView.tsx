@@ -1,7 +1,12 @@
 "use client";
 
 import { GROUP_COLOURS } from "../../../geometry/buildGeometryViewModel";
-import { CogMarker, DimensionLine, ViewGrid } from "../svg-primitives";
+import {
+  CogMarker,
+  DimensionLine,
+  LongitudinalOrientation,
+  ViewGrid,
+} from "../svg-primitives";
 import type { EngineeringViewProps } from "./view-types";
 
 export function SideView(props: EngineeringViewProps) {
@@ -19,6 +24,16 @@ export function SideView(props: EngineeringViewProps) {
   });
   const cargoWidthPx = cargoTopRight.x - cargoBottomLeft.x;
   const cargoHeightPx = cargoBottomLeft.y - cargoTopRight.y;
+  const packingBottomLeft = transform.toScreen({
+    x: vm.packing.extremeX,
+    y: 0,
+    z: model.trailerDeckHeightM,
+  });
+  const packingTopRight = transform.toScreen({
+    x: vm.packing.extremeX + vm.packing.lengthM,
+    y: 0,
+    z: model.trailerDeckHeightM + model.packing.heightM,
+  });
   const groundStart = transform.toScreen({ x: vm.bounds.minX, y: 0, z: 0 });
   const groundEnd = transform.toScreen({
     x: vm.bounds.maxX,
@@ -42,6 +57,7 @@ export function SideView(props: EngineeringViewProps) {
     >
       <rect className="viewport-hit-area" x={0} y={0} width={width} height={height} />
       <ViewGrid width={width} height={height} visible={preferences.grid} />
+      <LongitudinalOrientation width={width} />
       <line
         className="ground-line"
         x1={groundStart.x}
@@ -190,7 +206,7 @@ export function SideView(props: EngineeringViewProps) {
                   S{support.supportIndex + 1}
                 </text>
                 <desc>
-                  Support {support.supportIndex + 1}: Rstatic {support.reactionT.toFixed(2)} t
+                  Support {support.supportIndex + 1}: static reaction {support.reactionT.toFixed(2)} t
                 </desc>
               </g>
             );
@@ -199,19 +215,28 @@ export function SideView(props: EngineeringViewProps) {
       )}
 
       {preferences.layers.packing && (
-        <g className="side-packing">
+        <g
+          className={`side-packing svg-selectable${
+            selectedId === vm.packing.id ? " is-selected" : ""
+          }`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(vm.packing.id);
+          }}
+        >
           <rect
-            x={cargoBottomLeft.x}
-            y={transform.toScreen({ x: 0, y: 0, z: vm.cargo.bottomZM }).y}
-            width={cargoWidthPx}
-            height={Math.max(2, model.packing.heightM * transform.scale)}
+            className={vm.packing.footprintDefined ? "custom" : "estimated"}
+            x={packingBottomLeft.x}
+            y={packingTopRight.y}
+            width={packingTopRight.x - packingBottomLeft.x}
+            height={packingBottomLeft.y - packingTopRight.y}
           />
           <text
-            x={cargoBottomLeft.x + cargoWidthPx / 2}
-            y={transform.toScreen({ x: 0, y: 0, z: vm.cargo.bottomZM }).y - 6}
+            x={(packingBottomLeft.x + packingTopRight.x) / 2}
+            y={packingTopRight.y - 6}
             textAnchor="middle"
           >
-            PACKING · indicative longitudinal span; footprint unresolved
+            PACKING · {vm.packing.footprintDefined ? "custom footprint" : "cargo-sized estimate"}
           </text>
           {vm.loosePacking.map((item) => {
             const left = transform.toScreen({
@@ -268,7 +293,7 @@ export function SideView(props: EngineeringViewProps) {
             >
               <rect x={left.x} y={right.y} width={right.x - left.x} height={left.y - right.y} />
               <text x={(left.x + right.x) / 2} y={right.y - 5} textAnchor="middle">
-                PPU · {ppu.end}
+                PPU · {ppu.end.toUpperCase()}
               </text>
             </g>
           );

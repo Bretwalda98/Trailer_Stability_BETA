@@ -2,12 +2,17 @@
 
 import { IconPin, IconPinnedOff } from "@tabler/icons-react";
 import type { HydraulicGrouping, ProjectModel } from "../../../engine/types";
+import {
+  hydraulicCornerForAxleLine,
+  type HydraulicCornerKey,
+} from "../../../engine/orientation";
 import { GROUP_COLOURS } from "../../../geometry/buildGeometryViewModel";
 import { buildHydraulicRouteSegments } from "../../../geometry/hydraulic-routes";
-import { ViewGrid } from "../svg-primitives";
+import { LongitudinalOrientation, ViewGrid } from "../svg-primitives";
 import { pointPath, type EngineeringViewProps } from "./view-types";
 
-type CornerKey = keyof NonNullable<HydraulicGrouping["cornerGroups"]>;
+type CornerKey = HydraulicCornerKey &
+  keyof NonNullable<HydraulicGrouping["cornerGroups"]>;
 
 interface HydraulicsViewProps extends EngineeringViewProps {
   onModelChange(model: ProjectModel): void;
@@ -21,12 +26,12 @@ function cornerFor(
 ): CornerKey {
   const trailer = vm.trailers.find((item) => item.index === trailerIndex);
   const grouping = vm.project.model.groupings[trailerIndex];
-  const front = axleLine <= (grouping?.splitAfterAxleLine ?? 1);
-  const left = yM <= (trailer?.centreYM ?? 0);
-  if (front && left) return "frontLeft";
-  if (front) return "frontRight";
-  if (left) return "rearLeft";
-  return "rearRight";
+  const circuit = yM <= (trailer?.centreYM ?? 0) ? "left" : "right";
+  return hydraulicCornerForAxleLine(
+    axleLine,
+    grouping?.splitAfterAxleLine ?? 1,
+    circuit,
+  );
 }
 
 function setCorner(
@@ -39,10 +44,10 @@ function setCorner(
   const grouping = next.groupings[trailerIndex];
   if (!grouping) return model;
   grouping.cornerGroups = {
-    frontLeft: grouping.cornerGroups?.frontLeft ?? 1,
-    frontRight: grouping.cornerGroups?.frontRight ?? 2,
-    rearLeft: grouping.cornerGroups?.rearLeft ?? 3,
-    rearRight: grouping.cornerGroups?.rearRight ?? 3,
+    rearLeft: grouping.cornerGroups?.rearLeft ?? 1,
+    rearRight: grouping.cornerGroups?.rearRight ?? 2,
+    frontLeft: grouping.cornerGroups?.frontLeft ?? 3,
+    frontRight: grouping.cornerGroups?.frontRight ?? 3,
     [key]: group,
   };
   return next;
@@ -50,7 +55,7 @@ function setCorner(
 
 export function HydraulicsView(props: HydraulicsViewProps) {
   const { vm, transform, width, height, preferences, selectedId, onSelect, onModelChange } = props;
-  const svgHeight = Math.max(250, Math.floor(height * 0.58));
+  const svgHeight = props.compact ? height : Math.max(250, Math.floor(height * 0.58));
   const model = vm.project.model;
   const sharedPins = model.groupings[0]?.pinnedAxleLines ?? [];
   const routeSegments = buildHydraulicRouteSegments(vm);
@@ -95,6 +100,7 @@ export function HydraulicsView(props: HydraulicsViewProps) {
         >
           <rect className="viewport-hit-area" x={0} y={0} width={width} height={svgHeight} />
           <ViewGrid width={width} height={svgHeight} visible={preferences.grid} />
+          <LongitudinalOrientation width={width} />
           {vm.trailers.map((trailer) => {
             const start = transform.toScreen({
               x: trailer.startXM,
@@ -226,7 +232,7 @@ export function HydraulicsView(props: HydraulicsViewProps) {
         </svg>
       </div>
 
-      <div className="hydraulic-editor">
+      {!props.compact && <div className="hydraulic-editor">
         <div className="hydraulic-summary">
           {[1, 2, 3].map((groupId) => {
             const group = vm.groups.find((item) => item.groupId === groupId);
@@ -399,7 +405,7 @@ export function HydraulicsView(props: HydraulicsViewProps) {
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

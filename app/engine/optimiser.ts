@@ -578,7 +578,7 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
     ) + 1,
   );
   const tracker = new ProgressTracker(run, Math.max(1, coarseCases.length + pinUpper + refinementUpper + 2));
-  tracker.setPhase("PLANNING", 1, "Enumerating C89 / D138 / E89 cases");
+  tracker.setPhase("PLANNING", 1, "Enumerating axle-line, split and trailer-X cases");
   event(
     run,
     started,
@@ -646,7 +646,7 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
       pass.caseReference,
       "Result",
       result.status,
-      `C89=${pass.c89}; D138=${pass.d138}; E89=${pass.e89}; supports=${result.activeSupportCount}; ${result.failDetail || "verified"}`,
+      `Axle lines=${pass.c89}; split after=${pass.d138}; trailer X=${pass.e89}; supports=${result.activeSupportCount}; ${result.failDetail || "verified"}`,
       level,
     );
     return pass;
@@ -779,7 +779,7 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
           : 0;
       const refinementPlan = Math.max(1, values.length * (1 + reoptimisePins));
       tracker.adjustOverallPlanned(refinementPlan - refinementUpper);
-      tracker.setPhase("REFINEMENT", refinementPlan, `${fineBase.caseReference}: fine E89`);
+      tracker.setPhase("REFINEMENT", refinementPlan, `${fineBase.caseReference}: fine trailer-X search`);
       for (const e89 of values) {
         if (callbacks.signal?.aborted) throw new DOMException("Stopped by user", "AbortError");
         if (run.passes.some((item) =>
@@ -788,7 +788,7 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
           Math.abs(item.e89 - e89) < 1e-10 &&
           item.pinnedAxleLines.join(",") === fineBase.pinnedAxleLines.join(",")
         )) {
-          tracker.advance("Existing best E89");
+          tracker.advance("Existing best trailer-X case");
           continue;
         }
         const pass = await evaluate({
@@ -807,7 +807,7 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
           for (const line of pinLines) {
             if (callbacks.signal?.aborted) throw new DOMException("Stopped by user", "AbortError");
             if (currentPins.includes(line) || currentPins.length >= model.optimiser.maximumPins) {
-              tracker.advance(`Fine E89 ${e89}: skipped AL ${line}`);
+              tracker.advance(`Fine trailer X ${e89}: skipped AL ${line}`);
               continue;
             }
             const pinPass = await evaluate({
@@ -831,8 +831,8 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
                 "REFINEMENT",
                 pinPass.caseReference,
                 "Best",
-                "Improved fine-E89 pin state",
-                `E89=${e89}; pinned AL ${currentPins.join(", ")}; deflection ${bestDeflection.toFixed(3)} mm.`,
+                "Improved fine trailer-X pin state",
+                `Trailer X=${e89}; pinned AL ${currentPins.join(", ")}; deflection ${bestDeflection.toFixed(3)} mm.`,
                 "BEST",
               );
               if (model.optimiser.pinStopRule === "FIRST_IMPROVEMENT") {
@@ -912,9 +912,9 @@ export function exportPassesCsv(passes: PassResult[]): string {
     "Case Ref",
     "Phase",
     "Status",
-    "C89 Axle Lines",
-    "D138 Split After",
-    "E89 X Position",
+    "Axle Lines",
+    "Split After",
+    "Trailer X Position",
     "Pinned Axle Lines",
     "Active Supports",
     "Basic Utilisation",

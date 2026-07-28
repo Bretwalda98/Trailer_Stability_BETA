@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  IconArrowsMaximize,
+  IconArrowsMinimize,
   IconChevronDown,
   IconChevronUp,
   IconCopy,
@@ -8,7 +10,7 @@ import {
   IconSearch,
   IconTable,
 } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import { downloadText } from "../../engine/workbook";
 import type { ProjectModel, SpineLoadCase } from "../../engine/types";
 import {
@@ -44,7 +46,11 @@ interface EngineeringDetailsDrawerProps {
   model: ProjectModel;
   result: CalculationResult;
   open: boolean;
+  height: number;
+  fullScreen: boolean;
   onOpenChange(open: boolean): void;
+  onHeightChange(height: number): void;
+  onFullScreenChange(fullScreen: boolean): void;
   onModelChange(model: ProjectModel): void;
 }
 
@@ -97,7 +103,11 @@ export function EngineeringDetailsDrawer({
   model,
   result,
   open,
+  height,
+  fullScreen,
   onOpenChange,
+  onHeightChange,
+  onFullScreenChange,
   onModelChange,
 }: EngineeringDetailsDrawerProps) {
   const [query, setQuery] = useState("");
@@ -112,7 +122,7 @@ export function EngineeringDetailsDrawer({
       if (category !== "ALL" && row.category !== category) return false;
       if (status !== "ALL" && (row.status ?? "N/A") !== status) return false;
       if (!wanted) return true;
-      return [row.category, row.label, row.value, row.unit, row.source, row.validation]
+      return [row.category, row.label, row.value, row.unit, row.validation]
         .some((value) => String(value ?? "").toLowerCase().includes(wanted));
     });
   }, [rows, category, status, query]);
@@ -124,12 +134,52 @@ export function EngineeringDetailsDrawer({
   };
 
   return (
-    <section className={`engineering-details-drawer${open ? " open" : ""}`}>
-      <button className="drawer-handle" onClick={() => onOpenChange(!open)} aria-expanded={open}>
-        <span><IconTable size={15} /> Engineering details</span>
-        <span>{rows.length} values · {result.warnings.length} warnings</span>
-        {open ? <IconChevronDown size={15} /> : <IconChevronUp size={15} />}
-      </button>
+    <section
+      className={`engineering-details-drawer${open ? " open" : ""}${fullScreen ? " details-fullscreen" : ""}`}
+      style={{ "--details-height": `${height}px` } as CSSProperties}
+    >
+      <div className="drawer-handle">
+        <button
+          className="drawer-toggle"
+          aria-label={open ? "Minimise engineering details" : "Open engineering details"}
+          title={open ? "Minimise engineering details" : "Open engineering details"}
+          onClick={() => {
+            if (open) onFullScreenChange(false);
+            onOpenChange(!open);
+          }}
+          aria-expanded={open}
+        >
+          <span><IconTable size={15} /> Engineering details</span>
+          <span>{rows.length} values · {result.warnings.length} warnings</span>
+          {open ? <IconChevronDown size={15} /> : <IconChevronUp size={15} />}
+        </button>
+        <div className="details-panel-controls">
+          <label className="details-size-control" title="Adjust engineering-details panel height">
+            <span>Panel height</span>
+            <input
+              type="range"
+              min={170}
+              max={650}
+              step={10}
+              value={height}
+              disabled={!open || fullScreen}
+              aria-label="Engineering details panel height"
+              onChange={(event) => onHeightChange(Number(event.target.value))}
+            />
+          </label>
+          <button
+            className="icon-button"
+            aria-label={fullScreen ? "Restore split view" : "Open engineering details full page"}
+            title={fullScreen ? "Restore split" : "Full page"}
+            onClick={() => {
+              onOpenChange(true);
+              onFullScreenChange(!fullScreen);
+            }}
+          >
+            {fullScreen ? <IconArrowsMinimize size={15} /> : <IconArrowsMaximize size={15} />}
+          </button>
+        </div>
+      </div>
       {open && (
         <div className="details-content">
           <div className="details-toolbar">
@@ -138,7 +188,7 @@ export function EngineeringDetailsDrawer({
               <input
                 type="search"
                 value={query}
-                placeholder="Search values, sources or warnings"
+                placeholder="Search values, categories or warnings"
                 onChange={(event) => setQuery(event.target.value)}
               />
             </label>
@@ -175,7 +225,6 @@ export function EngineeringDetailsDrawer({
                   <th>Engineering value</th>
                   <th>Value</th>
                   <th>Unit</th>
-                  <th>Source / mapping</th>
                   <th>Validation</th>
                 </tr>
               </thead>
@@ -199,7 +248,6 @@ export function EngineeringDetailsDrawer({
                       />
                     </td>
                     <td>{row.unit}</td>
-                    <td className="source-cell">{row.source}</td>
                     <td>{row.validation ?? row.status ?? ""}</td>
                   </tr>
                 ))}

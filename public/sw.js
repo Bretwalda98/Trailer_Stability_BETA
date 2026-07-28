@@ -1,4 +1,4 @@
-const CACHE_NAME = "trailer-stability-v0.7-standalone-5";
+const CACHE_NAME = "trailer-stability-v0.7-standalone-6";
 const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, "");
 const assetPath = (path) => `${BASE_PATH}${path}`;
 const CORE_ASSETS = [

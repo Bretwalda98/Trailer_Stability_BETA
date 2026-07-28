@@ -218,15 +218,34 @@ export function buildGeometryViewModel(
     bottomZM: cargoBottomZ,
   };
 
+  const packingFootprint = model.packing.footprint.mode === "CUSTOM"
+    ? model.packing.footprint
+    : {
+        ...model.packing.footprint,
+        lengthM: model.cargo.lengthM,
+        widthM: model.cargo.widthM,
+        extremeX: model.cargo.extremeX,
+        extremeY: model.cargo.extremeY,
+      };
   const packing: PackingItem = {
     ...base("packing", "packing", result.componentCogs.packing, {
       selection: selection("packing", "Packing", "Packing", true),
-      label: label("Packing", "Packing extent not defined"),
+      label: label(
+        "Packing",
+        model.packing.footprint.mode === "CUSTOM"
+          ? "Custom visual footprint"
+          : "Cargo-sized visual estimate",
+      ),
       source: "Load and Stability Calculation!C70:C74",
     }),
     massT: model.packing.massT,
     heightM: model.packing.heightM,
-    footprintDefined: false,
+    footprintDefined: model.packing.footprint.mode === "CUSTOM",
+    footprintMode: model.packing.footprint.mode,
+    lengthM: packingFootprint.lengthM,
+    widthM: packingFootprint.widthM,
+    extremeX: packingFootprint.extremeX,
+    extremeY: packingFootprint.extremeY,
   };
 
   const collidingTrailerIds = new Set(
@@ -266,7 +285,7 @@ export function buildGeometryViewModel(
       deckHeightM: model.trailerDeckHeightM,
       axleLines: input?.axleLines ?? 0,
       singleFile: input?.singleFile ?? false,
-      frontAt: "negative-x",
+      frontAt: "positive-x",
       ppuLeftLengthM: resolved.ppuLeftLengthM,
       ppuRightLengthM: resolved.ppuRightLengthM,
       colliding: collidingTrailerIds.has(resolved.id),
@@ -422,14 +441,14 @@ export function buildGeometryViewModel(
         z: model.trailerDeckHeightM / 2,
       };
       packs.push({
-        ...base(`ppu:${trailer.sourceTrailerId}:front`, "power-pack", point, {
+        ...base(`ppu:${trailer.sourceTrailerId}:rear`, "power-pack", point, {
           sourceTrailerId: trailer.sourceTrailerId,
-          selection: selection("power-pack", `PPU · Trailer ${trailer.index + 1} front`, "PPU", true),
-          label: label("PPU", "Front power pack", "t", definition?.ppuWeightT?.toFixed(2)),
+          selection: selection("power-pack", `PPU · Trailer ${trailer.index + 1} rear`, "PPU", true),
+          label: label("PPU", "Rear power pack", "t", definition?.ppuWeightT?.toFixed(2)),
           source: `Load and Stability Calculation!J${89 + trailer.index}`,
         }),
         trailerIndex: trailer.index,
-        end: "front",
+        end: "rear",
         startXM,
         endXM: trailer.startXM,
         centreYM: trailer.centreYM,
@@ -445,14 +464,14 @@ export function buildGeometryViewModel(
         z: model.trailerDeckHeightM / 2,
       };
       packs.push({
-        ...base(`ppu:${trailer.sourceTrailerId}:rear`, "power-pack", point, {
+        ...base(`ppu:${trailer.sourceTrailerId}:front`, "power-pack", point, {
           sourceTrailerId: trailer.sourceTrailerId,
-          selection: selection("power-pack", `PPU · Trailer ${trailer.index + 1} rear`, "PPU", true),
-          label: label("PPU", "Rear power pack", "t", definition?.ppuWeightT?.toFixed(2)),
+          selection: selection("power-pack", `PPU · Trailer ${trailer.index + 1} front`, "PPU", true),
+          label: label("PPU", "Front power pack", "t", definition?.ppuWeightT?.toFixed(2)),
           source: `Load and Stability Calculation!K${89 + trailer.index}`,
         }),
         trailerIndex: trailer.index,
-        end: "rear",
+        end: "front",
         startXM,
         endXM: startXM + trailer.ppuRightLengthM,
         centreYM: trailer.centreYM,
@@ -886,6 +905,13 @@ export function buildGeometryViewModel(
       cargo.widthM,
       cargo.bottomZM + cargo.heightM,
     ),
+    ...engineeringRectPoints(
+      packing.extremeX,
+      packing.extremeY + packing.widthM / 2,
+      packing.lengthM,
+      packing.widthM,
+      model.trailerDeckHeightM + model.packing.heightM,
+    ),
     ...trailers.flatMap((trailer) =>
       engineeringRectPoints(
         trailer.startXM - trailer.ppuLeftLengthM,
@@ -904,6 +930,8 @@ export function buildGeometryViewModel(
     ...trailers.map((trailer) => trailer.lengthM),
     cargo.lengthM,
     cargo.widthM,
+    packing.lengthM,
+    packing.widthM,
   );
   const bounds = expandBounds(finiteBounds(extentPoints), Math.max(0.8, modelSpan * 0.06));
 
@@ -962,7 +990,7 @@ export function buildGeometryViewModel(
       "Packing footprint dimensions are not defined by the current ProjectModel.",
       "Support transverse extents are not defined; only longitudinal position and spread width are authoritative.",
       "Pinned-axle COG is not exposed by the native engine.",
-      "Ground-bearing pressure is workbook-only and is not calculated by the native engine.",
+      "Ground-bearing pressure is not currently calculated by the native engine.",
       "Beam slope is not exposed by the native engine.",
       "Separate wind and acceleration group-load contributions are not exposed; the combined dynamic increment is available.",
     ],

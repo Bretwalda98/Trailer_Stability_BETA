@@ -6,6 +6,8 @@ import type {
   SpineLoadCase,
   TrailerDefinition,
 } from "./types";
+import { calculateProject } from "./core";
+import { LONGITUDINAL_ORIENTATION_ID } from "./orientation";
 
 export interface WorkbookImportResult {
   model: ProjectModel;
@@ -148,12 +150,13 @@ export async function importWorkbook(file: File, fallback: ProjectModel): Promis
   });
   const main = workbook.Sheets[MAIN];
   const database = workbook.Sheets[DATABASE];
-  if (!main || !database) throw new Error(`Workbook must contain "${MAIN}" and "${DATABASE}".`);
+  if (!main || !database) throw new Error("The verification file is missing required calculation or catalogue data.");
   const warnings: string[] = [];
   const catalogue = catalogueFromSheet(database);
   if (!catalogue.length) throw new Error("No valid trailer rows were found in the Database sheet.");
   const model: ProjectModel = JSON.parse(JSON.stringify(fallback)) as ProjectModel;
   model.sourceWorkbook = file.name;
+  model.longitudinalOrientation = LONGITUDINAL_ORIENTATION_ID;
   model.catalogue = catalogue;
   model.engineeringDegree = engineeringDegree(
     textValue(main, "F17", model.engineeringDegree),
@@ -187,6 +190,7 @@ export async function importWorkbook(file: File, fallback: ProjectModel): Promis
     frontWindHeightM: numberValue(main, "F59", model.cargo.frontWindHeightM),
   };
   model.packing = {
+    ...model.packing,
     massT: numberValue(main, "C70", model.packing.massT),
     heightM: numberValue(main, "C71", model.packing.heightM),
     cog: {
@@ -233,20 +237,20 @@ export async function importWorkbook(file: File, fallback: ProjectModel): Promis
       splitAfterAxleLine: sharedSplit,
       groups: Array.from({ length: sharedAxles }, () => 1),
       cornerGroups: {
-        frontLeft: Math.max(1, Math.round(numberValue(main, `B${firstBogieRow}`, 2))),
-        rearLeft: Math.max(1, Math.round(numberValue(main, `C${firstBogieRow}`, 1))),
-        frontRight: Math.max(1, Math.round(numberValue(main, `B${secondBogieRow}`, 2))),
-        rearRight: Math.max(1, Math.round(numberValue(main, `C${secondBogieRow}`, 1))),
+        rearLeft: Math.max(1, Math.round(numberValue(main, `B${firstBogieRow}`, 2))),
+        frontLeft: Math.max(1, Math.round(numberValue(main, `C${firstBogieRow}`, 1))),
+        rearRight: Math.max(1, Math.round(numberValue(main, `B${secondBogieRow}`, 2))),
+        frontRight: Math.max(1, Math.round(numberValue(main, `C${secondBogieRow}`, 1))),
       },
       pinnedAxleLines: [...pins],
     });
   }
   if (missingSelections.length) {
     throw new Error(
-      `Workbook trailer preflight failed. The following selected model(s) are absent from Database: ${missingSelections.join(", ")}.`,
+      `Verification import failed. The following selected model(s) are absent from the trailer catalogue: ${missingSelections.join(", ")}.`,
     );
   }
-  if (!trailers.length) throw new Error("Workbook trailer preflight failed. No trailer model is selected in B89:B100.");
+  if (!trailers.length) throw new Error("Verification import failed. No trailer model is selected.");
   model.trailers = trailers;
   model.groupings = groupings;
   model.supports = Array.from({ length: 10 }, (_, index) => {
@@ -445,7 +449,7 @@ function xmlAttribute(tag: string, name: string): string | null {
 function worksheetPaths(archive: Record<string, Uint8Array>, decoder: TextDecoder): Map<string, string> {
   const workbookXml = archive["xl/workbook.xml"];
   const relationshipsXml = archive["xl/_rels/workbook.xml.rels"];
-  if (!workbookXml || !relationshipsXml) throw new Error("Workbook package is missing workbook relationships.");
+  if (!workbookXml || !relationshipsXml) throw new Error("The verification package is missing required relationships.");
   const relationships = new Map<string, string>();
   const relationshipText = decoder.decode(relationshipsXml);
   for (const match of relationshipText.matchAll(/<Relationship\b[^>]*\/?>/g)) {
@@ -567,7 +571,7 @@ async function patchWorkbookPackage(
   const paths = worksheetPaths(archive, decoder);
   for (const sheet of sheets) {
     const path = paths.get(sheet.name);
-    if (!path || !archive[path]) throw new Error(`Workbook package is missing worksheet "${sheet.name}".`);
+    if (!path || !archive[path]) throw new Error(`The verification package is missing the required "${sheet.name}" data section.`);
     let xml = patchWorksheet(decoder.decode(archive[path]), sheet);
     if (sheet.name === DATABASE) {
       const endRow = 3 + catalogueRows;
@@ -615,12 +619,13 @@ export async function exportVerificationWorkbook(
     source = templateBytes;
   } else {
     const response = await fetch(assetPath("/templates/Trailer_Stability_Verification_Template_v0.7.xlsm"));
-    if (!response.ok) throw new Error("Verification workbook template could not be loaded.");
+    if (!response.ok) throw new Error("The verification template could not be loaded.");
     source = await response.arrayBuffer();
   }
   const main = createPatchSheet(MAIN);
   const database = createPatchSheet(DATABASE);
   const control = createPatchSheet(CONTROL);
+  const resolvedResult = calculateProject(model);
   setValue(main, "F17", model.engineeringDegree);
   setValue(main, "D21", model.cargo.name);
   setValue(main, "J21", model.cargo.clientReference);
@@ -651,7 +656,9 @@ export async function exportVerificationWorkbook(
   setValue(main, "C74", model.packing.cog.z);
   setValue(main, "C85", model.trailerDeckHeightM);
   const sharedAxles = model.trailers[0]?.axleLines ?? 1;
-  const sharedX = model.trailers[0]?.xM ?? 0;
+  const sharedX = resolvedResult.resolvedTrailers.find((item) => item.index === 0)?.startXM
+    ?? model.trailers[0]?.xM
+    ?? 0;
   const sharedSplit = model.groupings[0]?.splitAfterAxleLine ?? 1;
   for (let index = 0; index < 12; index += 1) {
     const row = 89 + index;
@@ -666,7 +673,13 @@ export async function exportVerificationWorkbook(
       setFormula(main, `E${row}`, "$E$89", sharedX);
     }
     setValue(main, `D${row}`, trailer?.singleFile ? "yes" : "no");
-    setValue(main, `F${row}`, trailer?.yM ?? null);
+    setValue(
+      main,
+      `F${row}`,
+      trailer
+        ? resolvedResult.resolvedTrailers.find((item) => item.index === index)?.centreYM ?? trailer.yM
+        : null,
+    );
     setValue(main, `J${row}`, trailer?.ppuLeft ? "yes" : "no");
     setValue(main, `K${row}`, trailer?.ppuRight ? "yes" : "no");
   }
@@ -676,10 +689,10 @@ export async function exportVerificationWorkbook(
     const grouping = model.groupings[index];
     const firstBogieRow = 138 + index * 2;
     const secondBogieRow = firstBogieRow + 1;
-    setValue(main, `B${firstBogieRow}`, grouping?.cornerGroups?.frontLeft ?? null);
-    setValue(main, `C${firstBogieRow}`, grouping?.cornerGroups?.rearLeft ?? null);
-    setValue(main, `B${secondBogieRow}`, grouping?.cornerGroups?.frontRight ?? null);
-    setValue(main, `C${secondBogieRow}`, grouping?.cornerGroups?.rearRight ?? null);
+    setValue(main, `B${firstBogieRow}`, grouping?.cornerGroups?.rearLeft ?? null);
+    setValue(main, `C${firstBogieRow}`, grouping?.cornerGroups?.frontLeft ?? null);
+    setValue(main, `B${secondBogieRow}`, grouping?.cornerGroups?.rearRight ?? null);
+    setValue(main, `C${secondBogieRow}`, grouping?.cornerGroups?.frontRight ?? null);
   }
   const pins = model.groupings[0]?.pinnedAxleLines ?? [];
   for (let column = 7; column <= 14; column += 1) {
