@@ -1,4 +1,5 @@
 import { beamMetricsFromResult, solveContinuousBeam } from "./beam";
+import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
 import { hydraulicCornerForAxleLine } from "./orientation";
 import type {
   AxlePoint,
@@ -1029,6 +1030,7 @@ function analysisSummary(
 }
 
 export function calculateProject(model: ProjectModel): CalculationResult {
+  model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   model = applyAutomaticProjectWindInputs(model);
   const started = performance.now();
   const warnings: string[] = [];

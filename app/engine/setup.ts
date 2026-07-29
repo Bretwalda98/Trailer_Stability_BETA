@@ -1,5 +1,6 @@
 import { createDefaultModel, hydrateProjectModel } from "../data/default-model";
 import { validateCatalogue } from "./core";
+import { derivedCargoCogEnvelopeInputs } from "./cargo-envelope";
 import { derivedCargoWindInputs } from "./wind";
 import type {
   CalculationResult,
@@ -102,14 +103,18 @@ export function createBlankSetupModel(): ProjectModel {
       extremeY: 0,
       massT: 0,
       cog: { x: 0, y: 0, z: 0 },
-      envelopeX: 0,
-      envelopeY: 0,
+      autoCogEnvelopeFromCargo: true,
       autoWindFromCargo: true,
       ...derivedCargoWindInputs({
         ...model.cargo,
         lengthM: 0,
         widthM: 0,
         heightM: 0,
+      }),
+      ...derivedCargoCogEnvelopeInputs({
+        ...model.cargo,
+        lengthM: 0,
+        widthM: 0,
       }),
     },
     packing: {

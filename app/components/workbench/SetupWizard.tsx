@@ -28,6 +28,10 @@ import {
 } from "react";
 import { createDefaultModel, hydrateProjectModel } from "../../data/default-model";
 import {
+  applyAutomaticCargoCogEnvelopeInputs,
+  derivedCargoCogEnvelopeInputs,
+} from "../../engine/cargo-envelope";
+import {
   applySharedAxleLines,
   applySharedPins,
   applySharedSplit,
@@ -549,7 +553,9 @@ export function SetupWizard({
   const updateCargo = (patch: Partial<ProjectModel["cargo"]>) =>
     setDraftModel((current) => ({
       ...current,
-      cargo: applyAutomaticCargoWindInputs({ ...current.cargo, ...patch }),
+      cargo: applyAutomaticCargoWindInputs(
+        applyAutomaticCargoCogEnvelopeInputs({ ...current.cargo, ...patch }),
+      ),
     }));
   const updatePacking = (patch: Partial<PackingInput>) =>
     setDraftModel((current) => ({ ...current, packing: { ...current.packing, ...patch } }));
@@ -694,12 +700,23 @@ export function SetupWizard({
         </div>
       </FormSection>
       <FormSection title="Cargo COG and uncertainty envelope">
+        <div className="wizard-toggle-grid">
+          <ToggleField
+            label="Auto-calculate COG envelope"
+            checked={draftModel.cargo.autoCogEnvelopeFromCargo}
+            hint="Default: X is 2% of cargo length; Y is 2% of cargo width."
+            onChange={(autoCogEnvelopeFromCargo) => updateCargo({
+              autoCogEnvelopeFromCargo,
+              ...(autoCogEnvelopeFromCargo ? derivedCargoCogEnvelopeInputs(draftModel.cargo) : {}),
+            })}
+          />
+        </div>
         <div className="wizard-field-grid two">
           <NumberField label="COG X" value={draftModel.cargo.cog.x} unit="m" highlight={() => setSelectedId("cog:cargo")} onChange={(x) => updateCargo({ cog: { ...draftModel.cargo.cog, x } })} />
           <NumberField label="COG Y" value={draftModel.cargo.cog.y} unit="m" highlight={() => setSelectedId("cog:cargo")} onChange={(y) => updateCargo({ cog: { ...draftModel.cargo.cog, y } })} />
           <NumberField label="COG Z" value={draftModel.cargo.cog.z} unit="m" highlight={() => setSelectedId("cog:cargo")} onChange={(z) => updateCargo({ cog: { ...draftModel.cargo.cog, z } })} />
-          <NumberField label="Envelope X ±" value={draftModel.cargo.envelopeX} unit="m" min={0} highlight={() => setSelectedId("envelope:cargo")} onChange={(envelopeX) => updateCargo({ envelopeX })} />
-          <NumberField label="Envelope Y ±" value={draftModel.cargo.envelopeY} unit="m" min={0} highlight={() => setSelectedId("envelope:cargo")} onChange={(envelopeY) => updateCargo({ envelopeY })} />
+          <NumberField label="Envelope X ±" value={draftModel.cargo.envelopeX} unit="m" min={0} disabled={draftModel.cargo.autoCogEnvelopeFromCargo} validation={draftModel.cargo.envelopeX >= 0 ? "valid" : "invalid"} hint={draftModel.cargo.autoCogEnvelopeFromCargo ? "2% of cargo length" : "Manual X uncertainty"} highlight={() => setSelectedId("envelope:cargo")} onChange={(envelopeX) => updateCargo({ envelopeX })} />
+          <NumberField label="Envelope Y ±" value={draftModel.cargo.envelopeY} unit="m" min={0} disabled={draftModel.cargo.autoCogEnvelopeFromCargo} validation={draftModel.cargo.envelopeY >= 0 ? "valid" : "invalid"} hint={draftModel.cargo.autoCogEnvelopeFromCargo ? "2% of cargo width" : "Manual Y uncertainty"} highlight={() => setSelectedId("envelope:cargo")} onChange={(envelopeY) => updateCargo({ envelopeY })} />
         </div>
       </FormSection>
       <details className="wizard-advanced" open>

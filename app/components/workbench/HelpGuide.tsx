@@ -13,7 +13,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
-export const HELP_GUIDE_REVISION = "Interface revision 0.7.3 · reviewed 28 July 2026";
+export const HELP_GUIDE_REVISION = "Interface revision 0.7.4 · reviewed 29 July 2026";
 
 const GUIDE_SECTIONS = [
   {
@@ -33,14 +33,15 @@ const GUIDE_SECTIONS = [
   },
   {
     id: "wind",
-    label: "Wind inputs",
+    label: "Auto inputs",
     icon: IconSettings,
-    title: "Calculate projected wind areas from cargo",
-    intro: "Automatic wind projection is enabled by default for new cases.",
+    title: "Calculate COG envelope and wind inputs from cargo",
+    intro: "Automatic COG envelope and wind projection are enabled by default for new cases.",
     steps: [
+      "With Auto-calculate COG envelope on, X uncertainty is 2% of cargo length and Y uncertainty is 2% of cargo width.",
       "With Auto-calculate wind areas on, side area is cargo length × height and front area is cargo width × height.",
-      "Both wind forces act at half the cargo height; changing any cargo dimension updates these verification inputs immediately.",
-      "Switch automatic calculation off only when a separately verified projected area or force height is required.",
+      "Both wind forces act at half the cargo height; changing any cargo dimension updates these verification inputs and the COG envelope immediately.",
+      "Switch automatic calculation off only when separately verified envelope, projected area or force height values are required.",
       "Green inputs are acceptable. Amber inputs require a value within the allowed engineering range before the wizard can continue.",
     ],
   },

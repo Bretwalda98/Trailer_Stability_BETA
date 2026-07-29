@@ -7,6 +7,7 @@ import type {
   TrailerDefinition,
 } from "./types";
 import { calculateProject } from "./core";
+import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
 import { applyAutomaticProjectWindInputs } from "./wind";
 import { LONGITUDINAL_ORIENTATION_ID } from "./orientation";
 
@@ -170,6 +171,7 @@ export async function importWorkbook(file: File, fallback: ProjectModel): Promis
     // Imported verification files retain their recorded wind inputs unless a
     // user explicitly enables the automatic cargo-derived setting afterwards.
     autoWindFromCargo: false,
+    autoCogEnvelopeFromCargo: false,
     name: textValue(main, "D21", model.cargo.name),
     clientReference: textValue(main, "J21", model.cargo.clientReference),
     ownerReference: textValue(main, "D22", model.cargo.ownerReference),
@@ -618,6 +620,7 @@ export async function exportVerificationWorkbook(
   model: ProjectModel,
   templateBytes?: ArrayBuffer,
 ): Promise<Uint8Array> {
+  model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   model = applyAutomaticProjectWindInputs(model);
   let source: ArrayBuffer;
   if (templateBytes) {
