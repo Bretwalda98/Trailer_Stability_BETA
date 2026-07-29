@@ -22,6 +22,7 @@ import { HelpGuide } from "./workbench/HelpGuide";
 import { ModelTree } from "./workbench/ModelTree";
 import { OptimisationWorkspace } from "./workbench/OptimisationWorkspace";
 import { OptimiserDrawer } from "./workbench/OptimiserDrawer";
+import { OptimiserWizard } from "./workbench/OptimiserWizard";
 import { ReportWorkspace } from "./workbench/ReportWorkspace";
 import { ResultsInspector } from "./workbench/ResultsInspector";
 import { SetupWizard } from "./workbench/SetupWizard";
@@ -72,6 +73,7 @@ export default function TrailerWorkbench() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ text: string; type: "ok" | "error" } | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [optimiserWizardOpen, setOptimiserWizardOpen] = useState(false);
   const [wizardInitialSource, setWizardInitialSource] = useState<
     Extract<SetupSourceType, "CURRENT" | "BLANK"> | undefined
   >(undefined);
@@ -329,6 +331,7 @@ export default function TrailerWorkbench() {
           setWizardOpen(true);
         }}
         onHelp={() => setHelpOpen(true)}
+        onOptimiserSetup={() => setOptimiserWizardOpen(true)}
         onImport={handleImport}
         onExportWorkbook={handleExportWorkbook}
         onExportProject={() =>
@@ -378,6 +381,36 @@ export default function TrailerWorkbench() {
                 : "Setup applied to the active case.",
               type: "ok",
             });
+          }}
+        />
+      )}
+      {optimiserWizardOpen && (
+        <OptimiserWizard
+          activeModel={model}
+          result={engine.result}
+          calculating={engine.calculating}
+          onClose={() => setOptimiserWizardOpen(false)}
+          onApply={(settings, runOptimisation) => {
+            setModel((current) => ({
+              ...current,
+              optimiser: settings,
+            }));
+            setPersistActiveProject(true);
+            setHasLocalProject(true);
+            setOptimiserWizardOpen(false);
+            if (runOptimisation) {
+              setOptimiseAfterSetup(true);
+              setToast({
+                text: "Optimiser settings applied. The authoritative case is recalculating before the run starts.",
+                type: "ok",
+              });
+            } else {
+              setWorkspace("optimise");
+              setToast({
+                text: "Optimiser settings applied to the active case.",
+                type: "ok",
+              });
+            }
           }}
         />
       )}

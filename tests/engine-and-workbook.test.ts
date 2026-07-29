@@ -21,6 +21,14 @@ import {
 import { derivedCargoCogEnvelopeInputs } from "../app/engine/cargo-envelope";
 import { runOptimiser } from "../app/engine/optimiser";
 import {
+  canRunOptimiserWizard,
+  collectOptimiserWizardIssues,
+  createOptimiserWizardDraftPayload,
+  estimateOptimiserPlan,
+  hydrateOptimiserWizardDraftPayload,
+  optimiserStepCanContinue,
+} from "../app/engine/optimiser-wizard";
+import {
   applySharedLongitudinalPlacement,
   applyTrailerTransversePlacement,
   autoSpaceTrailers,
@@ -363,6 +371,55 @@ async function main(): Promise<void> {
   assert.ok(changed.trailers.every((trailer) => trailer.xM === 2.75));
   assert.ok(changed.groupings.every((grouping) => grouping.splitAfterAxleLine === 4));
   assert.ok(changed.groupings.every((grouping) => grouping.pinnedAxleLines.join(",") === "3,6"));
+
+  const optimiserWizardModel = createDefaultModel();
+  const optimiserWizardResult = calculateProject(optimiserWizardModel);
+  const optimiserWizardPlan = estimateOptimiserPlan(optimiserWizardModel);
+  assert.ok(optimiserWizardPlan.axleLineValues > 0);
+  assert.ok(optimiserWizardPlan.splitValues > 0);
+  assert.ok(optimiserWizardPlan.coarseCases > 0);
+  assert.ok(
+    optimiserWizardPlan.totalCasesUpper >= optimiserWizardPlan.coarseCases,
+  );
+  const optimiserWizardIssues = collectOptimiserWizardIssues(
+    optimiserWizardModel,
+    optimiserWizardModel.optimiser,
+    optimiserWizardResult,
+  );
+  assert.equal(
+    optimiserStepCanContinue(optimiserWizardIssues, "coarse"),
+    true,
+  );
+  assert.equal(canRunOptimiserWizard(optimiserWizardIssues), true);
+  const optimiserWizardDraft = createOptimiserWizardDraftPayload(
+    "pins",
+    optimiserWizardModel.optimiser,
+    "2026-07-29T12:00:00.000Z",
+  );
+  const hydratedOptimiserWizardDraft =
+    hydrateOptimiserWizardDraftPayload(
+      optimiserWizardDraft,
+      createDefaultModel().optimiser,
+    );
+  assert.equal(hydratedOptimiserWizardDraft?.step, "pins");
+  assert.equal(
+    hydratedOptimiserWizardDraft?.settings.pinSearchMode,
+    optimiserWizardModel.optimiser.pinSearchMode,
+  );
+  const invalidOptimiserSettings = structuredClone(
+    optimiserWizardModel.optimiser,
+  );
+  invalidOptimiserSettings.c89Maximum = invalidOptimiserSettings.c89Start - 1;
+  const invalidOptimiserIssues = collectOptimiserWizardIssues(
+    optimiserWizardModel,
+    invalidOptimiserSettings,
+    optimiserWizardResult,
+  );
+  assert.equal(
+    optimiserStepCanContinue(invalidOptimiserIssues, "coarse"),
+    false,
+  );
+  assert.equal(canRunOptimiserWizard(invalidOptimiserIssues), false);
 
   const relativeModel = createDefaultModel();
   relativeModel.trailers[0].placementReference = "ALL_INCLUSIVE_COG";

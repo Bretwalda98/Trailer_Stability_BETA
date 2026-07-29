@@ -45,7 +45,7 @@ test("server-renders the standalone engineering workbench", async () => {
 });
 
 test("keeps phone, offline and workbook-verification capabilities wired", async () => {
-  const [page, layout, manifest, workbench, engineHook, worker, planView, css, serviceWorker, setupWizard, windEngine, envelopeEngine] = await Promise.all([
+  const [page, layout, manifest, workbench, engineHook, worker, planView, css, serviceWorker, setupWizard, optimiserWizard, optimiserWizardEngine, windEngine, envelopeEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
@@ -56,6 +56,8 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../app/components/workbench/SetupWizard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/workbench/OptimiserWizard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/engine/optimiser-wizard.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/engine/wind.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/engine/cargo-envelope.ts", import.meta.url), "utf8"),
   ]);
@@ -71,6 +73,8 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(engineHook, /new Worker\(new URL\("\.\.\/workers\/engineering\.worker\.ts"/);
   assert.match(worker, /calculateProject/);
   assert.match(worker, /runOptimiser/);
+  assert.match(worker, /detailIncluded/);
+  assert.match(engineHook, /message\.detailIncluded/);
   assert.match(planView, /buildHydraulicRouteSegments/);
   assert.match(planView, /stabilityBoundary/);
   assert.match(css, /--bg:\s*#050505/);
@@ -84,6 +88,12 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(setupWizard, /2% of cargo length/);
   assert.match(setupWizard, /2% of cargo width/);
   assert.match(setupWizard, /Start with the cargo envelope/);
+  assert.match(workbench, /OptimiserWizard/);
+  assert.match(optimiserWizard, /GUIDED OPTIMISER SETUP/);
+  assert.match(optimiserWizard, /Apply & start optimisation/);
+  assert.match(optimiserWizard, /Run with current optimiser settings|LIVE SEARCH PLAN/);
+  assert.match(optimiserWizardEngine, /OPTIMISER_WIZARD_DRAFT_STORAGE_KEY/);
+  assert.match(optimiserWizardEngine, /estimateOptimiserPlan/);
   assert.match(windEngine, /lengthM \* heightM/);
   assert.match(windEngine, /widthM \* heightM/);
   assert.match(envelopeEngine, /CARGO_COG_ENVELOPE_FACTOR = 0\.02/);
