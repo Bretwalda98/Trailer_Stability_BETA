@@ -15,7 +15,12 @@ type WorkerResponse =
       requestId: number;
       result: ReturnType<typeof calculateProject>;
     }
-  | { type: "optimiser-update"; requestId: number; run: OptimiserRun }
+  | {
+      type: "optimiser-update";
+      requestId: number;
+      run: OptimiserRun;
+      detailIncluded: boolean;
+    }
   | { type: "optimiser-complete"; requestId: number; run: OptimiserRun }
   | { type: "error"; requestId: number; message: string; stack?: string };
 
@@ -56,11 +61,12 @@ scope.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
   optimiserController = controller;
   void runOptimiser(request.model, {
     signal: controller.signal,
-    onUpdate: (run) => {
+    onUpdate: (run, detailIncluded) => {
       post({
         type: "optimiser-update",
         requestId: request.requestId,
         run,
+        detailIncluded,
       });
     },
   })

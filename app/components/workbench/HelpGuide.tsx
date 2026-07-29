@@ -13,7 +13,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
-export const HELP_GUIDE_REVISION = "Interface revision 0.7.4 · reviewed 29 July 2026";
+export const HELP_GUIDE_REVISION = "Interface revision 0.7.5 · reviewed 29 July 2026";
 
 const GUIDE_SECTIONS = [
   {
@@ -92,8 +92,11 @@ const GUIDE_SECTIONS = [
     title: "Run and review the optimiser",
     intro: "The optimiser keeps the engineering sequence and support-settling logic for every retained case.",
     steps: [
-      "Open Optimise to configure the coarse scan, support minimum, pin search, refinement and weighting.",
-      "Select Run optimisation in the top bar. Progress, ETA, activity and ranked passes appear in the optimisation drawer.",
+      "Select Run optimisation in the top bar to open the guided optimiser wizard.",
+      "Work through goal, search range, pass rules, pin search, refinement, weighting and review. Amber fields or blocking findings must be corrected before the run can start.",
+      "The live plan shows the coarse-case count and upper estimates for pin and refinement work. Automatic hydraulic-boundary searches finalise their exact total while running.",
+      "Choose Apply & start optimisation. The settings are applied, the active case is recalculated, then progress, ETA, activity and ranked passes appear in the optimisation drawer.",
+      "Experienced users can still choose Run with current optimiser settings from the top-bar More menu, or edit every field directly in the Optimise workspace.",
       "Stop retains completed work. Apply a ranked pass only when you want it to replace the active setup.",
       "The winning pass is recalculated and verified before the run reaches 100%.",
     ],

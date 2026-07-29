@@ -26,6 +26,7 @@ interface CaseHeaderProps {
   onExportProject(): void;
   onImportProject(file: File): void;
   onHelp(): void;
+  onOptimiserSetup(): void;
   onRun(): void;
   onStop(): void;
   onReset(): void;
@@ -43,6 +44,7 @@ export function CaseHeader({
   onExportProject,
   onImportProject,
   onHelp,
+  onOptimiserSetup,
   onRun,
   onStop,
   onReset,
@@ -107,9 +109,9 @@ export function CaseHeader({
         </button>
         <button
           className={running ? "run-action running" : "run-action"}
-          aria-label={running ? "Stop optimisation" : "Run optimisation"}
+          aria-label={running ? "Stop optimisation" : "Set up and run optimisation"}
           disabled={busy}
-          onClick={running ? onStop : onRun}
+          onClick={running ? onStop : onOptimiserSetup}
         >
           {running ? <IconPlayerStop size={15} /> : <IconPlayerPlay size={15} />}
           <span>{running ? "Stop optimisation" : "Run optimisation"}</span>
@@ -130,6 +132,7 @@ export function CaseHeader({
               <button onClick={() => { onHelp(); setMenuOpen(false); }}><IconHelpCircle size={14} /> Help and user guide</button>
               <button onClick={() => { onExportProject(); setMenuOpen(false); }}><IconDownload size={14} /> Export project JSON</button>
               <button onClick={() => { projectInput.current?.click(); setMenuOpen(false); }}><IconFileImport size={14} /> Import project JSON</button>
+              {!running && <button onClick={() => { onRun(); setMenuOpen(false); }}><IconPlayerPlay size={14} /> Run with current optimiser settings</button>}
               <button onClick={() => { onReset(); setMenuOpen(false); }}><IconRefresh size={14} /> Reset example</button>
             </div>
           )}

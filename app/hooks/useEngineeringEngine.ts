@@ -7,7 +7,12 @@ import type { CalculationResult, OptimiserRun, ProjectModel } from "../engine/ty
 
 type WorkerResponse =
   | { type: "calculation"; requestId: number; result: CalculationResult }
-  | { type: "optimiser-update"; requestId: number; run: OptimiserRun }
+  | {
+      type: "optimiser-update";
+      requestId: number;
+      run: OptimiserRun;
+      detailIncluded: boolean;
+    }
   | { type: "optimiser-complete"; requestId: number; run: OptimiserRun }
   | { type: "error"; requestId: number; message: string; stack?: string };
 
@@ -76,11 +81,15 @@ export function useEngineeringEngine(model: ProjectModel): EngineeringEngineStat
       }
       if (message.type === "optimiser-update") {
         if (message.requestId !== optimiserRequestRef.current) return;
-        setRun({
+        setRun((current) => ({
           ...message.run,
-          passes: [...message.run.passes],
-          events: [...message.run.events],
-        });
+          passes: message.detailIncluded
+            ? [...message.run.passes]
+            : current.passes,
+          events: message.detailIncluded
+            ? [...message.run.events]
+            : current.events,
+        }));
         return;
       }
       if (message.type === "optimiser-complete") {

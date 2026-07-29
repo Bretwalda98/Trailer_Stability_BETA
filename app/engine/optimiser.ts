@@ -12,7 +12,7 @@ import type {
 } from "./types";
 
 export interface OptimiserCallbacks {
-  onUpdate?: (run: OptimiserRun) => void;
+  onUpdate?: (run: OptimiserRun, detailIncluded: boolean) => void;
   signal?: AbortSignal;
 }
 
@@ -591,7 +591,7 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
   );
   tracker.advance("Plan complete");
   run.state = "RUNNING";
-  callbacks.onUpdate?.({ ...run });
+  callbacks.onUpdate?.({ ...run }, true);
   let lastProgressUpdate = performance.now();
   let lastDetailedUpdate = lastProgressUpdate;
   const notify = async (force = false): Promise<void> => {
@@ -600,11 +600,20 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
     const detailInterval = Math.max(progressInterval, model.optimiser.liveRefreshSeconds * 1000);
     if (!force && now - lastProgressUpdate < progressInterval) return;
     const includeDetail = force || now - lastDetailedUpdate >= detailInterval;
-    callbacks.onUpdate?.({
-      ...run,
-      passes: includeDetail ? [...run.passes] : run.passes,
-      events: includeDetail ? [...run.events] : run.events,
-    });
+    callbacks.onUpdate?.(
+      includeDetail
+        ? {
+            ...run,
+            passes: [...run.passes],
+            events: [...run.events],
+          }
+        : {
+            ...run,
+            passes: [],
+            events: [],
+          },
+      includeDetail,
+    );
     lastProgressUpdate = now;
     if (includeDetail) lastDetailedUpdate = now;
     await yieldToBrowser();
