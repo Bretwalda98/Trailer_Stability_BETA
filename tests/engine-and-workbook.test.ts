@@ -18,6 +18,7 @@ import {
   engineeringLimitsFor,
   validateCatalogue,
 } from "../app/engine/core";
+import { derivedCargoCogEnvelopeInputs } from "../app/engine/cargo-envelope";
 import { runOptimiser } from "../app/engine/optimiser";
 import {
   applySharedLongitudinalPlacement,
@@ -94,6 +95,13 @@ async function main(): Promise<void> {
   assert.ok(model.catalogue.some((item) => item.name === "PEKZ G4"));
   assert.ok(model.catalogue.some((item) => item.name === "PEKZ G4 M78 X24 D24 TL24"));
   assert.equal(model.cargo.autoWindFromCargo, true);
+  assert.equal(model.cargo.autoCogEnvelopeFromCargo, true);
+  assert.deepEqual(derivedCargoCogEnvelopeInputs(model.cargo), {
+    envelopeX: model.cargo.lengthM * 0.02,
+    envelopeY: model.cargo.widthM * 0.02,
+  });
+  assert.equal(model.cargo.envelopeX, model.cargo.lengthM * 0.02);
+  assert.equal(model.cargo.envelopeY, model.cargo.widthM * 0.02);
   assert.deepEqual(derivedCargoWindInputs(model.cargo), {
     sideWindAreaM2: model.cargo.lengthM * model.cargo.heightM,
     frontWindAreaM2: model.cargo.widthM * model.cargo.heightM,
@@ -107,6 +115,9 @@ async function main(): Promise<void> {
   assert.equal(blankSetup.supports.length, 0);
   assert.equal(blankSetup.cargo.lengthM, 0);
   assert.equal(blankSetup.cargo.autoWindFromCargo, true);
+  assert.equal(blankSetup.cargo.autoCogEnvelopeFromCargo, true);
+  assert.equal(blankSetup.cargo.envelopeX, 0);
+  assert.equal(blankSetup.cargo.envelopeY, 0);
   assert.equal(calculateProject(blankSetup).status, "ERROR");
   const hydratedBlankSetup = hydrateProjectModel(blankSetup);
   assert.equal(hydratedBlankSetup.trailers.length, 0);
@@ -128,6 +139,18 @@ async function main(): Promise<void> {
   const manualWindResult = calculateProject(manualWind);
   assert.ok(Math.abs(autoWindResult.analysis.windShift.x - manualWindResult.analysis.windShift.x) < 1e-12);
   assert.ok(Math.abs(autoWindResult.analysis.windShift.y - manualWindResult.analysis.windShift.y) < 1e-12);
+
+  const autoEnvelope = createDefaultModel();
+  autoEnvelope.cargo.lengthM = 12;
+  autoEnvelope.cargo.widthM = 5;
+  autoEnvelope.cargo.envelopeX = 999;
+  autoEnvelope.cargo.envelopeY = 999;
+  const autoEnvelopeResult = calculateProject(autoEnvelope);
+  const manualEnvelope = structuredClone(autoEnvelope);
+  manualEnvelope.cargo.autoCogEnvelopeFromCargo = false;
+  Object.assign(manualEnvelope.cargo, derivedCargoCogEnvelopeInputs(manualEnvelope.cargo));
+  const manualEnvelopeResult = calculateProject(manualEnvelope);
+  assert.deepEqual(autoEnvelopeResult.casePoints.basic, manualEnvelopeResult.casePoints.basic);
 
   const result = calculateProject(model);
   assert.ok(Number.isFinite(result.totalMassT) && result.totalMassT > model.cargo.massT);
@@ -545,6 +568,8 @@ async function main(): Promise<void> {
   assert.equal(mainSheet.F17.v, "Third");
   assert.equal(mainSheet.J22.v, "WEIGHT-COG-REF-42");
   assert.equal(mainSheet.D48.v, "Rear-right datum");
+  assert.equal(mainSheet.E64.v, exportModel.cargo.lengthM * 0.02);
+  assert.equal(mainSheet.E65.v, exportModel.cargo.widthM * 0.02);
   assert.equal(mainSheet.C89.v, 12);
   assert.equal(formula(workbook, "Load and Stability Calculation", "C90"), "$C$89");
   assert.equal(mainSheet.D138.v, 4);

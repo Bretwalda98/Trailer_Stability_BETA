@@ -1,4 +1,5 @@
 import { builtinTrailerCatalogue } from "./trailers";
+import { applyAutomaticCargoCogEnvelopeInputs } from "../engine/cargo-envelope";
 import type { OptimiserWeights, ProjectModel } from "../engine/types";
 import {
   LONGITUDINAL_ORIENTATION_ID,
@@ -40,8 +41,9 @@ export function createDefaultModel(): ProjectModel {
       extremeY: 0,
       massT: 425.6,
       cog: { x: 5.99, y: 2.4425, z: 2.045 },
-      envelopeX: 0.24,
-      envelopeY: 0.1,
+      autoCogEnvelopeFromCargo: true,
+      envelopeX: 0.2378,
+      envelopeY: 0.0977,
       autoWindFromCargo: true,
       sideWindAreaM2: 58.20455,
       sideDragCoefficient: 1.2,
@@ -208,11 +210,11 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
     ...source,
     schemaVersion: 2,
     longitudinalOrientation: LONGITUDINAL_ORIENTATION_ID,
-    cargo: {
+    cargo: applyAutomaticCargoCogEnvelopeInputs({
       ...base.cargo,
       ...cargo,
       cog: { ...base.cargo.cog, ...objectValue(cargo.cog) },
-    },
+    }),
     packing: {
       ...base.packing,
       ...packing,
