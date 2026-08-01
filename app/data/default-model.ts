@@ -165,6 +165,25 @@ export function createDefaultModel(): ProjectModel {
       progressRefreshSeconds: 1,
       liveRefreshSeconds: 3,
     },
+    arrangementOptimiser: {
+      trailerDefinitionId: "k2400-st",
+      allow4AxleModules: true,
+      allow5AxleModules: true,
+      allow6AxleModules: true,
+      limitModuleAvailability: false,
+      available4AxleModules: 12,
+      available5AxleModules: 12,
+      available6AxleModules: 12,
+      minimumTrains: 1,
+      maximumTrains: 6,
+      maximumAxleLinesPerTrain: 44,
+      preferredCentreSpacingM: 2.9,
+      minimumClearanceM: 0.05,
+      maximumFormationWidthM: 15,
+      spacingSamples: 3,
+      spacingToleranceM: 0.05,
+      ppuPosition: "NONE",
+    },
     catalogue: builtinTrailerCatalogue.map((item) => ({ ...item })),
     analysedTrailer: 1,
     spineLoadCase: "Neutral",
@@ -197,6 +216,9 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
   >;
   const environment = objectValue(source.environment) as Partial<ProjectModel["environment"]>;
   const optimiser = objectValue(source.optimiser) as Partial<ProjectModel["optimiser"]>;
+  const arrangementOptimiser = objectValue(source.arrangementOptimiser) as Partial<
+    ProjectModel["arrangementOptimiser"]
+  >;
   const weights = objectValue(optimiser.weights) as Partial<OptimiserWeights>;
   const trailerItems = objectItems(source.trailers);
   const groupingItems = objectItems(source.groupings);
@@ -257,6 +279,10 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
       ...base.optimiser,
       ...optimiser,
       weights: { ...base.optimiser.weights, ...weights },
+    },
+    arrangementOptimiser: {
+      ...base.arrangementOptimiser,
+      ...arrangementOptimiser,
     },
     trailers: Array.isArray(source.trailers)
       ? trailerItems.map((item, index) => ({

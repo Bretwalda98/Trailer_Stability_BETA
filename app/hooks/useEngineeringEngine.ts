@@ -24,6 +24,7 @@ export interface EngineeringEngineState {
   workerReady: boolean;
   error: string | null;
   startOptimisation(): void;
+  startArrangementOptimisation(): void;
   cancelOptimisation(): void;
   resetRun(): void;
 }
@@ -160,6 +161,18 @@ export function useEngineeringEngine(model: ProjectModel): EngineeringEngineStat
     worker.postMessage({ type: "optimise", requestId, model: modelRef.current });
   }, []);
 
+  const startArrangementOptimisation = useCallback(() => {
+    const requestId = optimiserRequestRef.current + 1;
+    optimiserRequestRef.current = requestId;
+    setError(null);
+    const worker = workerRef.current;
+    if (!worker) {
+      setError("Automatic arrangement requires browser Web Worker support.");
+      return;
+    }
+    worker.postMessage({ type: "arrange", requestId, model: modelRef.current });
+  }, []);
+
   const cancelOptimisation = useCallback(() => {
     workerRef.current?.postMessage({
       type: "cancel",
@@ -177,6 +190,7 @@ export function useEngineeringEngine(model: ProjectModel): EngineeringEngineStat
     workerReady,
     error,
     startOptimisation,
+    startArrangementOptimisation,
     cancelOptimisation,
     resetRun,
   };

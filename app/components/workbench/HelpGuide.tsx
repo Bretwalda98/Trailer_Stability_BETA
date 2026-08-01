@@ -13,7 +13,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
-export const HELP_GUIDE_REVISION = "Interface revision 0.7.5 · reviewed 29 July 2026";
+export const HELP_GUIDE_REVISION = "Interface revision 0.7.6 · reviewed 1 August 2026";
 
 const GUIDE_SECTIONS = [
   {
@@ -99,6 +99,22 @@ const GUIDE_SECTIONS = [
       "Experienced users can still choose Run with current optimiser settings from the top-bar More menu, or edit every field directly in the Optimise workspace.",
       "Stop retains completed work. Apply a ranked pass only when you want it to replace the active setup.",
       "The winning pass is recalculated and verified before the run reaches 100%.",
+    ],
+  },
+  {
+    id: "arrangement",
+    label: "Auto arrangement",
+    icon: IconPlayerPlay,
+    title: "Find the minimum constructible SPMT arrangement",
+    intro: "This separate optimiser designs parallel trains before applying the exact existing engineering search to each retained formation.",
+    steps: [
+      "Open Run optimisation, then choose Find minimum trailer arrangement. The same action is also available from the top-bar More menu.",
+      "Confirm the authoritative cargo, packing, supports and route inputs, then choose the trailer family and available 4-, 5- and 6-axle-line modules.",
+      "Set train-count, stock and formation limits. A per-train axle count is eligible only when it is exactly constructible from the enabled module sizes.",
+      "Parallel trains are placed at equal offsets from the all-inclusive COG. The standard preferred spacing is 2.9 m centre-to-centre and can be changed.",
+      "The hard decision order is engineering PASS, minimum train count, minimum total axle lines, closest valid preferred spacing, then the selected engineering weighting.",
+      "A wider valid formation with fewer trains always beats adding another train. Every candidate still runs the exact support-settling, stability, spine-beam and pin logic.",
+      "Review the train, module, pitch and width columns in the results drawer, then apply the selected result to rebuild and recalculate the active case.",
     ],
   },
   {
@@ -211,7 +227,7 @@ export function HelpGuide({
 
         <footer>
           <span>{HELP_GUIDE_REVISION}</span>
-          <span>Guide coverage: setup · wind · model · results · details · optimisation · phone</span>
+          <span>Guide coverage: setup · wind · model · results · details · optimisation · arrangement · phone</span>
         </footer>
       </div>
     </dialog>

@@ -19,7 +19,20 @@ import {
   validateCatalogue,
 } from "../app/engine/core";
 import { derivedCargoCogEnvelopeInputs } from "../app/engine/cargo-envelope";
-import { runOptimiser } from "../app/engine/optimiser";
+import {
+  applyArrangementDescriptor,
+  bestModuleComposition,
+  collectArrangementIssues,
+  createArrangementDescriptor,
+  moduleCompositions,
+  spacingCandidates,
+  validAxleLineValues,
+} from "../app/engine/arrangement";
+import {
+  rankArrangementPasses,
+  runArrangementOptimiser,
+} from "../app/engine/arrangement-optimiser";
+import { passToProject, runOptimiser } from "../app/engine/optimiser";
 import {
   canRunOptimiserWizard,
   collectOptimiserWizardIssues,
@@ -110,12 +123,100 @@ async function main(): Promise<void> {
   });
   assert.equal(model.cargo.envelopeX, model.cargo.lengthM * 0.02);
   assert.equal(model.cargo.envelopeY, model.cargo.widthM * 0.02);
+  assert.equal(model.arrangementOptimiser.preferredCentreSpacingM, 2.9);
   assert.deepEqual(derivedCargoWindInputs(model.cargo), {
     sideWindAreaM2: model.cargo.lengthM * model.cargo.heightM,
     frontWindAreaM2: model.cargo.widthM * model.cargo.heightM,
     sideWindHeightM: model.cargo.heightM / 2,
     frontWindHeightM: model.cargo.heightM / 2,
   });
+
+  const arrangementSettings = structuredClone(model.arrangementOptimiser);
+  arrangementSettings.maximumAxleLinesPerTrain = 20;
+  assert.equal(bestModuleComposition(7, arrangementSettings), null);
+  assert.deepEqual(bestModuleComposition(8, arrangementSettings), {
+    modules4: 2,
+    modules5: 0,
+    modules6: 0,
+    axleLines: 8,
+    moduleCount: 2,
+  });
+  assert.equal(moduleCompositions(9, arrangementSettings)[0]?.modules4, 1);
+  assert.equal(moduleCompositions(9, arrangementSettings)[0]?.modules5, 1);
+  assert.deepEqual(
+    validAxleLineValues(arrangementSettings, 1, 4).slice(0, 6).map((item) => item.axleLines),
+    [4, 5, 6, 8, 9, 10],
+  );
+  const selectedArrangementDefinition = model.catalogue.find(
+    (item) => item.id === arrangementSettings.trailerDefinitionId,
+  )!;
+  const preferredPitches = spacingCandidates(selectedArrangementDefinition, arrangementSettings, 2);
+  assert.equal(preferredPitches[0], 2.9);
+  arrangementSettings.limitModuleAvailability = true;
+  arrangementSettings.available4AxleModules = 3;
+  arrangementSettings.available5AxleModules = 0;
+  arrangementSettings.available6AxleModules = 0;
+  assert.equal(bestModuleComposition(8, arrangementSettings, 2), null);
+  arrangementSettings.limitModuleAvailability = false;
+  const descriptor = createArrangementDescriptor(
+    selectedArrangementDefinition,
+    arrangementSettings,
+    3,
+    bestModuleComposition(8, arrangementSettings, 3)!,
+    2.9,
+  );
+  const arrangedModel = applyArrangementDescriptor(model, descriptor);
+  assert.equal(arrangedModel.trailers.length, 3);
+  assert.equal(arrangedModel.groupings.length, 3);
+  assert.deepEqual(
+    arrangedModel.trailers.map((trailer) => trailer.offsetFromReference.y),
+    [-2.9, 0, 2.9],
+  );
+  assert.ok(arrangedModel.trailers.every((trailer) => trailer.axleLines === 8));
+  assert.ok(arrangedModel.trailers.every((trailer) => trailer.placementReference === "ALL_INCLUSIVE_COG"));
+  assert.equal(collectArrangementIssues(model, model.arrangementOptimiser).length, 0);
+
+  const compactArrangementSearch = createDefaultModel();
+  compactArrangementSearch.cargo.massT = 20;
+  compactArrangementSearch.packing.massT = 0;
+  compactArrangementSearch.loosePacking = [];
+  compactArrangementSearch.arrangementOptimiser = {
+    ...compactArrangementSearch.arrangementOptimiser,
+    minimumTrains: 2,
+    maximumTrains: 2,
+    maximumAxleLinesPerTrain: 4,
+    maximumFormationWidthM: 5.8,
+    spacingSamples: 2,
+  };
+  compactArrangementSearch.optimiser = {
+    ...compactArrangementSearch.optimiser,
+    d138Start: 1,
+    d138Step: 1,
+    d138MaximumFraction: 0.25,
+    e89Step: 10,
+    pinSearchMode: "OFF",
+    deflectionCheck: "OFF",
+  };
+  const arrangementRun = await runArrangementOptimiser(compactArrangementSearch);
+  assert.equal(arrangementRun.state, "COMPLETE");
+  assert.ok(arrangementRun.passes.length > 0);
+  assert.ok(arrangementRun.passes.every((pass) => pass.arrangement?.trainCount === 2));
+  assert.ok(arrangementRun.passes.every((pass) => pass.arrangement?.axleLinesPerTrain === 4));
+  const appliedArrangement = passToProject(compactArrangementSearch, arrangementRun.passes[0]);
+  assert.equal(appliedArrangement.trailers.length, 2);
+  assert.ok(appliedArrangement.trailers.every((trailer) => trailer.axleLines === 4));
+  assert.ok(appliedArrangement.trailers.every((trailer) => trailer.placementReference === "ALL_INCLUSIVE_COG"));
+  const preferredCandidate = structuredClone(arrangementRun.passes[0]);
+  preferredCandidate.sequence = 2;
+  preferredCandidate.result.status = "PASS";
+  preferredCandidate.arrangement!.pitchM = 2.9;
+  const widerCandidate = structuredClone(preferredCandidate);
+  widerCandidate.id = `${preferredCandidate.id}-WIDE`;
+  widerCandidate.sequence = 1;
+  widerCandidate.arrangement!.pitchM = 3.5;
+  rankArrangementPasses([widerCandidate, preferredCandidate], compactArrangementSearch);
+  assert.equal(preferredCandidate.overallRank, 1);
+  assert.equal(widerCandidate.overallRank, 2);
 
   const blankSetup = createBlankSetupModel();
   assert.equal(blankSetup.trailers.length, 0);
@@ -171,7 +272,10 @@ async function main(): Promise<void> {
   assert.ok(result.groupingQuality.triangleAreaM2 > 0);
   assert.ok(result.groupingQuality.narrow || result.groupingQuality.dispersedGroups.length > 0);
   assert.notEqual(result.status, "ERROR");
-  assert.equal(result.metrics.axleLinesUsed.value, model.trailers[0].axleLines);
+  assert.equal(
+    result.metrics.axleLinesUsed.value,
+    model.trailers.filter((trailer) => trailer.enabled).reduce((sum, trailer) => sum + trailer.axleLines, 0),
+  );
   assert.ok(result.supportIterations >= 1);
   assert.deepEqual(engineeringLimitsFor("First"), {
     basicUtil: 0.7,

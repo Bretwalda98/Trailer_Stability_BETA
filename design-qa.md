@@ -162,3 +162,67 @@
 - [x] Update maintained Help content and automated regression coverage.
 
 final result: passed
+
+---
+
+# Automatic Trailer Arrangement — Design QA
+
+- Source visual truth: `test-output/design-qa-source-optimiser.png`
+- Implementation: `test-output/design-qa-implementation-arrangement.png`
+- First implementation capture: `test-output/design-qa-implementation-iteration1.png`
+- Viewport and state: desktop, 929 × 821 CSS px, optimiser goal step versus automatic-arrangement case-input step
+- Pixel dimensions: source 929 × 821 px; implementation 929 × 821 px
+- Density normalization: both captures were produced by the same browser session at the same CSS viewport and native screenshot density
+
+## Full-view comparison evidence
+
+The source and implementation were opened together for comparison at their original dimensions. The automatic-arrangement wizard preserves the established three-column technical shell, top header, step rail, form density, live-plan panel, footer actions, typography, black/white palette, blue selection state, green valid state and amber invalid-input state.
+
+The different step count and candidate table are intentional product differences. They reflect the four-step formation task and its constructible train/module search rather than the existing seven-step current-arrangement optimiser.
+
+## Focused-region evidence
+
+A separate focused crop was not required because the original 929 × 821 captures make the header, rail, form fields, live plan, status colours and footer controls legible. Interactive DOM checks additionally verified the 2.9 m field, amber invalid state, green valid state, disabled Next state, review priority order and mobile panel stacking.
+
+## Required fidelity surfaces
+
+- Fonts and typography: same application font stack, weights, sizes, uppercase technical labels and hierarchy as the source wizard; no unexpected wrapping or clipped primary labels.
+- Spacing and layout rhythm: same header/rail/form/preview/footer proportions. Candidate rows, summaries and controls use the existing border and spacing rhythm.
+- Colours and tokens: existing background, line, blue, cyan, green, amber and red tokens are reused; no new off-brand palette was introduced.
+- Image and asset quality: no raster artwork is required. All interface icons use the existing Tabler icon library; no placeholder, emoji or approximate custom asset is present.
+- Copy and content: labels describe the hard objective order, 4/5/6-AL construction rule, all-inclusive-COG centring, 2.9 m preferred spacing and exact engineering verification.
+
+## Comparison history
+
+### Iteration 1 — blocked
+
+- [P2] Live-plan vertical allocation left an oversized empty hero area and clipped the formation facts row.
+  - Fix: removed the conflicting optimiser-preview class and assigned explicit max-content tracks around the flexible candidate table.
+- [P2] The arrangement header did not follow the existing wizard title hierarchy.
+  - Fix: matched the established eyebrow plus current-step heading structure.
+- [P2] Mobile arrangement controls inherited sub-44 px input and close-button targets.
+  - Fix: added arrangement-specific 44 px minimum touch targets at the phone breakpoint.
+
+### Iteration 2 — passed
+
+The revised desktop capture shows balanced plan allocation, fully visible facts, matching header hierarchy and no horizontal overflow. The 390 × 844 responsive check stacked preview, form and footer into one column with a 390 px document width. Invalid and valid spacing states changed to amber and green respectively, and invalid data blocked navigation.
+
+## Findings
+
+No actionable P0, P1 or P2 findings remain.
+
+## Follow-up polish
+
+- [P3] A future miniature plan schematic could supplement the candidate table when users need a more visual comparison of train-count and pitch options.
+
+## Primary interactions tested
+
+- Opened the existing optimiser wizard and switched to automatic arrangement.
+- Navigated all four arrangement steps.
+- Verified the default 2.9 m preferred centre spacing.
+- Verified amber invalid and green valid input states and Next-button blocking.
+- Verified the five-level hard objective order.
+- Verified desktop and phone layout structure and absence of page-width overflow.
+- Checked the browser console; no warnings or errors were reported.
+
+final result: passed

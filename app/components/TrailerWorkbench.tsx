@@ -16,6 +16,7 @@ import { buildGeometryViewModel } from "../geometry/buildGeometryViewModel";
 import { useEngineeringEngine } from "../hooks/useEngineeringEngine";
 import { assetPath } from "../site-path";
 import { CaseHeader } from "./workbench/CaseHeader";
+import { ArrangementWizard } from "./workbench/ArrangementWizard";
 import { EngineeringDetailsDrawer } from "./workbench/EngineeringDetailsDrawer";
 import { EngineeringViewport } from "./workbench/EngineeringViewport";
 import { HelpGuide } from "./workbench/HelpGuide";
@@ -74,6 +75,7 @@ export default function TrailerWorkbench() {
   const [toast, setToast] = useState<{ text: string; type: "ok" | "error" } | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [optimiserWizardOpen, setOptimiserWizardOpen] = useState(false);
+  const [arrangementWizardOpen, setArrangementWizardOpen] = useState(false);
   const [wizardInitialSource, setWizardInitialSource] = useState<
     Extract<SetupSourceType, "CURRENT" | "BLANK"> | undefined
   >(undefined);
@@ -81,7 +83,10 @@ export default function TrailerWorkbench() {
   const [hasLocalProject, setHasLocalProject] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [persistActiveProject, setPersistActiveProject] = useState(false);
-  const [optimiseAfterSetup, setOptimiseAfterSetup] = useState(false);
+  const [optimiseAfterSetup, setOptimiseAfterSetup] = useState<
+    "CURRENT" | "ARRANGEMENT" | null
+  >(null);
+  const [resumeArrangementAfterSetup, setResumeArrangementAfterSetup] = useState(false);
   const hydratedRef = useRef(false);
 
   const engine = useEngineeringEngine(model);
@@ -149,12 +154,6 @@ export default function TrailerWorkbench() {
   useEffect(() => {
     if (engine.run.state !== "IDLE") setOptimiserOpen(true);
   }, [engine.run.state]);
-
-  useEffect(() => {
-    if (!optimiseAfterSetup || engine.authoritativeModel !== model || engine.calculating) return;
-    setOptimiseAfterSetup(false);
-    startOptimisation();
-  }, [engine.authoritativeModel, engine.calculating, model, optimiseAfterSetup]);
 
   useEffect(() => {
     if (!vm.entityById.has(selectedId)) setSelectedId("project-case");
@@ -270,6 +269,24 @@ export default function TrailerWorkbench() {
     engine.startOptimisation();
   };
 
+  const startArrangementOptimisation = () => {
+    setOptimiserStartModel(structuredClone(model));
+    setUndoModel(null);
+    setDetailsOpen(false);
+    setDetailsFullScreen(false);
+    setOptimiserOpen(true);
+    engine.resetRun();
+    engine.startArrangementOptimisation();
+  };
+
+  useEffect(() => {
+    if (!optimiseAfterSetup || engine.authoritativeModel !== model || engine.calculating) return;
+    const mode = optimiseAfterSetup;
+    setOptimiseAfterSetup(null);
+    if (mode === "ARRANGEMENT") startArrangementOptimisation();
+    else startOptimisation();
+  }, [engine.authoritativeModel, engine.calculating, model, optimiseAfterSetup]);
+
   const applyPass = (pass: PassResult) => {
     setPersistActiveProject(true);
     setUndoModel(structuredClone(model));
@@ -332,6 +349,7 @@ export default function TrailerWorkbench() {
         }}
         onHelp={() => setHelpOpen(true)}
         onOptimiserSetup={() => setOptimiserWizardOpen(true)}
+        onArrangementSetup={() => setArrangementWizardOpen(true)}
         onImport={handleImport}
         onExportWorkbook={handleExportWorkbook}
         onExportProject={() =>
@@ -374,9 +392,17 @@ export default function TrailerWorkbench() {
             setView("plan");
             setWizardOpen(false);
             setWizardInitialSource(undefined);
-            setOptimiseAfterSetup(runOptimisation);
+            if (resumeArrangementAfterSetup) {
+              setResumeArrangementAfterSetup(false);
+              setArrangementWizardOpen(true);
+              setOptimiseAfterSetup(null);
+            } else {
+              setOptimiseAfterSetup(runOptimisation ? "CURRENT" : null);
+            }
             setToast({
-              text: runOptimisation
+              text: resumeArrangementAfterSetup
+                ? "Case inputs applied. Continue the automatic-arrangement setup."
+                : runOptimisation
                 ? "Setup applied. The authoritative case is recalculating before optimisation starts."
                 : "Setup applied to the active case.",
               type: "ok",
@@ -389,6 +415,10 @@ export default function TrailerWorkbench() {
           activeModel={model}
           result={engine.result}
           calculating={engine.calculating}
+          onFindArrangement={() => {
+            setOptimiserWizardOpen(false);
+            setArrangementWizardOpen(true);
+          }}
           onClose={() => setOptimiserWizardOpen(false)}
           onApply={(settings, runOptimisation) => {
             setModel((current) => ({
@@ -399,7 +429,7 @@ export default function TrailerWorkbench() {
             setHasLocalProject(true);
             setOptimiserWizardOpen(false);
             if (runOptimisation) {
-              setOptimiseAfterSetup(true);
+              setOptimiseAfterSetup("CURRENT");
               setToast({
                 text: "Optimiser settings applied. The authoritative case is recalculating before the run starts.",
                 type: "ok",
@@ -410,6 +440,39 @@ export default function TrailerWorkbench() {
                 text: "Optimiser settings applied to the active case.",
                 type: "ok",
               });
+            }
+          }}
+        />
+      )}
+      {arrangementWizardOpen && (
+        <ArrangementWizard
+          activeModel={model}
+          result={engine.result}
+          calculating={engine.calculating}
+          onClose={() => setArrangementWizardOpen(false)}
+          onEditCase={() => {
+            setArrangementWizardOpen(false);
+            setResumeArrangementAfterSetup(true);
+            setWizardInitialSource("CURRENT");
+            setWizardOpen(true);
+          }}
+          onApply={(settings, runOptimisation) => {
+            setModel((current) => ({
+              ...current,
+              arrangementOptimiser: settings,
+            }));
+            setPersistActiveProject(true);
+            setHasLocalProject(true);
+            setArrangementWizardOpen(false);
+            if (runOptimisation) {
+              setOptimiseAfterSetup("ARRANGEMENT");
+              setToast({
+                text: "Arrangement settings applied. The authoritative case is recalculating before the search starts.",
+                type: "ok",
+              });
+            } else {
+              setWorkspace("optimise");
+              setToast({ text: "Automatic-arrangement settings saved.", type: "ok" });
             }
           }}
         />
