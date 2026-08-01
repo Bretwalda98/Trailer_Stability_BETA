@@ -3,6 +3,7 @@ import {
   applySharedSplit,
   applySharedX,
   calculateProject,
+  engineeringLimitsFor,
 } from "./core";
 import {
   applyArrangementDescriptor,
@@ -10,7 +11,6 @@ import {
   collectArrangementIssues,
   createArrangementDescriptor,
   formationPitchBounds,
-  mathematicalPitchSeeds,
   minimumTotalAxleLines,
   spacingCandidates,
   validAxleLineValues,
@@ -25,6 +25,95 @@ import type {
 } from "./types";
 
 const EPS = 1e-9;
+
+export interface HydraulicYPitchBound {
+  feasible: boolean;
+  requiredSpanM: number;
+  minimumPitchM: number;
+  minimumAvailableSpanM: number;
+  maximumAvailableSpanM: number;
+}
+
+function hydraulicGroupYSpan(result: ReturnType<typeof calculateProject>): number {
+  if (result.groups.length !== 3) return 0;
+  const values = result.groups.map((group) => group.point.y);
+  return Math.max(...values) - Math.min(...values);
+}
+
+/**
+ * A necessary lateral-width bound. The full basic, slope and dynamic point
+ * clouds already contain the COG envelope and force shifts. Each point also
+ * needs enough horizontal reserve to achieve its configured minimum tipping
+ * angle at the all-inclusive COG height.
+ */
+export function requiredHydraulicGroupYSpan(
+  model: ProjectModel,
+  result: ReturnType<typeof calculateProject>,
+): number {
+  const limits = engineeringLimitsFor(model.engineeringDegree);
+  const heightM = Math.max(0, result.combinedCog.z);
+  const requiredFor = (
+    points: Array<{ y: number }>,
+    minimumAngleDeg: number,
+  ): number => {
+    if (!points.length) return Number.POSITIVE_INFINITY;
+    const values = points.map((point) => point.y);
+    const pointCloudSpan = Math.max(...values) - Math.min(...values);
+    const angularReserve = heightM * Math.tan((minimumAngleDeg * Math.PI) / 180);
+    return pointCloudSpan + 2 * angularReserve;
+  };
+  return Math.max(
+    requiredFor(result.casePoints.basic, limits.basicAngle),
+    requiredFor(result.casePoints.slope, limits.slopeAngle),
+    requiredFor(result.casePoints.dynamic, limits.dynamicAngle),
+  );
+}
+
+export function deriveHydraulicYPitchBound(
+  model: ProjectModel,
+  minimumPitchM: number,
+  maximumPitchM: number,
+  minimumResult: ReturnType<typeof calculateProject>,
+  maximumResult: ReturnType<typeof calculateProject>,
+): HydraulicYPitchBound {
+  const minimumAvailableSpanM = hydraulicGroupYSpan(minimumResult);
+  const maximumAvailableSpanM = hydraulicGroupYSpan(maximumResult);
+  const requiredSpanM = Math.max(
+    requiredHydraulicGroupYSpan(model, minimumResult),
+    requiredHydraulicGroupYSpan(model, maximumResult),
+  );
+  if (
+    !Number.isFinite(requiredSpanM) ||
+    maximumAvailableSpanM + EPS < requiredSpanM
+  ) {
+    return {
+      feasible: false,
+      requiredSpanM,
+      minimumPitchM: maximumPitchM,
+      minimumAvailableSpanM,
+      maximumAvailableSpanM,
+    };
+  }
+  const pitchRange = maximumPitchM - minimumPitchM;
+  const spanRange = maximumAvailableSpanM - minimumAvailableSpanM;
+  const solvedMinimum =
+    requiredSpanM <= minimumAvailableSpanM + EPS ||
+    pitchRange <= EPS ||
+    spanRange <= EPS
+      ? minimumPitchM
+      : minimumPitchM +
+        (pitchRange * (requiredSpanM - minimumAvailableSpanM)) / spanRange;
+  return {
+    feasible: true,
+    requiredSpanM,
+    minimumPitchM: Math.max(
+      minimumPitchM,
+      Math.min(maximumPitchM, solvedMinimum),
+    ),
+    minimumAvailableSpanM,
+    maximumAvailableSpanM,
+  };
+}
 
 function mathematicalPitchEvaluationUpperBound(
   definition: ProjectModel["catalogue"][number],
@@ -392,7 +481,10 @@ export async function runArrangementOptimiser(
         );
         continue;
       }
-      for (const { axleLines, composition } of axleValues) {
+      const evaluateAxleBucket = async ({
+        axleLines,
+        composition,
+      }: (typeof axleValues)[number]): Promise<boolean> => {
         throwIfStopped(callbacks.signal);
         const pitchBounds = formationPitchBounds(definition, settings, trainCount);
         if (!pitchBounds) {
@@ -404,26 +496,99 @@ export async function runArrangementOptimiser(
             `${trainCount} trains at ${axleLines} AL/train exceed the configured overall width at minimum clearance.`,
             "WARN",
           );
-          continue;
+          return false;
         }
         let bucketHasPass = false;
         if (settings.searchMode === "MATHEMATICAL_BRANCH_BOUND") {
-          const tested = new Map<string, boolean>();
-          const testPitch = async (pitchM: number): Promise<boolean> => {
+          const resultAtPitch = (pitchM: number) => {
+            const descriptor = createArrangementDescriptor(
+              definition,
+              settings,
+              trainCount,
+              composition,
+              pitchM,
+            );
+            return calculateProject(applyArrangementDescriptor(model, descriptor));
+          };
+          const minimumPitchResult = resultAtPitch(pitchBounds.minimumPitchM);
+          const maximumPitchResult =
+            Math.abs(pitchBounds.maximumPitchM - pitchBounds.minimumPitchM) <= EPS
+              ? minimumPitchResult
+              : resultAtPitch(pitchBounds.maximumPitchM);
+          const hydraulicYBound = deriveHydraulicYPitchBound(
+            model,
+            pitchBounds.minimumPitchM,
+            pitchBounds.maximumPitchM,
+            minimumPitchResult,
+            maximumPitchResult,
+          );
+          if (!hydraulicYBound.feasible) {
+            addEvent(
+              run,
+              started,
+              "Bound",
+              "Hydraulic Y-span bound rejected formation",
+              `${trainCount} train${trainCount === 1 ? "" : "s"} at ${axleLines} AL/train can provide at most ${hydraulicYBound.maximumAvailableSpanM.toFixed(3)} m between outer hydraulic group centres, but the all-inclusive COG height, envelope, dynamic shifts and minimum tipping angles require at least ${hydraulicYBound.requiredSpanM.toFixed(3)} m.`,
+              "INFO",
+            );
+            return false;
+          }
+          const effectivePitchBounds = {
+            minimumPitchM: hydraulicYBound.minimumPitchM,
+            maximumPitchM: pitchBounds.maximumPitchM,
+            preferredPitchM: Math.max(
+              hydraulicYBound.minimumPitchM,
+              Math.min(
+                pitchBounds.maximumPitchM,
+                pitchBounds.preferredPitchM,
+              ),
+            ),
+          };
+          if (hydraulicYBound.minimumPitchM > pitchBounds.minimumPitchM + EPS) {
+            addEvent(
+              run,
+              started,
+              "Bound",
+              "Minimum hydraulic Y spacing solved",
+              `Pitch values below ${hydraulicYBound.minimumPitchM.toFixed(3)} m cannot provide the required ${hydraulicYBound.requiredSpanM.toFixed(3)} m hydraulic Y span and were removed before exact calculations.`,
+              "INFO",
+            );
+          }
+          const tested = new Map<string, { passed: boolean; caseCount: number }>();
+          const testPitch = async (
+            pitchM: number,
+          ): Promise<{ passed: boolean; caseCount: number }> => {
             const bounded = Math.max(
-              pitchBounds.minimumPitchM,
-              Math.min(pitchBounds.maximumPitchM, pitchM),
+              effectivePitchBounds.minimumPitchM,
+              Math.min(effectivePitchBounds.maximumPitchM, pitchM),
             );
             const rounded = Math.round(bounded * 1e9) / 1e9;
             const key = rounded.toFixed(9);
             const previous = tested.get(key);
             if (previous !== undefined) return previous;
+            const passCountBefore = run.passes.length;
             const passed = await evaluateFormation(trainCount, axleLines, composition, rounded);
-            tested.set(key, passed);
-            return passed;
+            const outcome = {
+              passed,
+              caseCount: run.passes.length - passCountBefore,
+            };
+            tested.set(key, outcome);
+            return outcome;
           };
-          const preferred = pitchBounds.preferredPitchM;
-          if (await testPitch(preferred)) {
+          const preferred = effectivePitchBounds.preferredPitchM;
+          const widestOutcome = await testPitch(effectivePitchBounds.maximumPitchM);
+          if (!widestOutcome.passed && widestOutcome.caseCount === 0) {
+            addEvent(
+              run,
+              started,
+              "Bound",
+              "Widest hydraulic formation has no feasible X interval",
+              `At the maximum ${effectivePitchBounds.maximumPitchM.toFixed(3)} m pitch, no trailer-X case can satisfy both the complete stability boundaries and minimum support footprint. Narrower pitches are geometrically dominated for this axle count.`,
+              "INFO",
+            );
+            return false;
+          }
+          if ((await testPitch(preferred)).passed) {
             bucketHasPass = true;
             addEvent(
               run,
@@ -435,13 +600,21 @@ export async function runArrangementOptimiser(
             );
           } else {
             const passingSeeds: number[] = [];
-            for (const seed of mathematicalPitchSeeds(definition, settings, trainCount).slice(1)) {
-              if (await testPitch(seed)) passingSeeds.push(seed);
+            for (const seed of [
+              effectivePitchBounds.maximumPitchM,
+              effectivePitchBounds.minimumPitchM,
+            ]) {
+              if ((await testPitch(seed)).passed) passingSeeds.push(seed);
             }
             if (!passingSeeds.length) {
-              for (const seed of spacingCandidates(definition, settings, trainCount)) {
+              for (const seed of [
+                ...spacingCandidates(definition, settings, trainCount).filter(
+                  (value) => value >= effectivePitchBounds.minimumPitchM - EPS,
+                ),
+                effectivePitchBounds.minimumPitchM,
+              ]) {
                 if (tested.has(seed.toFixed(9))) continue;
-                if (await testPitch(seed)) passingSeeds.push(seed);
+                if ((await testPitch(seed)).passed) passingSeeds.push(seed);
               }
             }
             for (const seed of passingSeeds) {
@@ -453,7 +626,7 @@ export async function runArrangementOptimiser(
                 iterations < 48
               ) {
                 const midpoint = (passingPitch + failingPitch) / 2;
-                if (await testPitch(midpoint)) passingPitch = midpoint;
+                if ((await testPitch(midpoint)).passed) passingPitch = midpoint;
                 else failingPitch = midpoint;
                 iterations += 1;
               }
@@ -473,8 +646,8 @@ export async function runArrangementOptimiser(
               run,
               started,
               "Bound",
-              "Higher axle and train branches pruned",
-              `${trainCount} train${trainCount === 1 ? "" : "s"} at ${axleLines} AL/train is feasible. Larger axle counts at this train level and every higher train-count level are lexicographically worse.`,
+              "Feasible axle bucket established",
+              `${trainCount} train${trainCount === 1 ? "" : "s"} at ${axleLines} AL/train has at least one exact passing formation.`,
               "INFO",
             );
           }
@@ -508,10 +681,86 @@ export async function runArrangementOptimiser(
             );
           }
         }
-        if (bucketHasPass) {
-          winningTrainCount = trainCount;
-          winningAxleLines = axleLines;
-          break;
+        return bucketHasPass;
+      };
+
+      interface AxleBucketOutcome {
+        passed: boolean;
+        necessaryGateFailure: boolean;
+      }
+      const bucketOutcomes = new Map<number, AxleBucketOutcome>();
+      const evaluateAxleIndex = async (index: number): Promise<AxleBucketOutcome> => {
+        const previous = bucketOutcomes.get(index);
+        if (previous) return previous;
+        const passStart = run.passes.length;
+        const passed = await evaluateAxleBucket(axleValues[index]);
+        const evaluated = run.passes.slice(passStart);
+        const outcome = {
+          passed,
+          necessaryGateFailure:
+            evaluated.length === 0 ||
+            evaluated.every(
+              (pass) =>
+                pass.result.status === "GEOMETRY_FAIL" ||
+                pass.result.status === "SUPPORT_FAIL",
+            ),
+        };
+        bucketOutcomes.set(index, outcome);
+        return outcome;
+      };
+      const selectWinningAxleIndex = (index: number) => {
+        winningTrainCount = trainCount;
+        winningAxleLines = axleValues[index].axleLines;
+        addEvent(
+          run,
+          started,
+          "Bound",
+          "Minimum axle-line boundary solved",
+          `${trainCount} train${trainCount === 1 ? "" : "s"} require ${axleValues[index].axleLines} AL/train within the tested 4/5/6-AL module compositions. Higher axle and train branches are lexicographically worse.`,
+          "BEST",
+        );
+      };
+
+      if (settings.searchMode === "MATHEMATICAL_BRANCH_BOUND") {
+        const lowerOutcome = await evaluateAxleIndex(0);
+        if (lowerOutcome.passed) {
+          selectWinningAxleIndex(0);
+        } else if (axleValues.length > 1) {
+          const maximumIndex = axleValues.length - 1;
+          const upperOutcome = await evaluateAxleIndex(maximumIndex);
+          if (upperOutcome.passed) {
+            let failingIndex = 0;
+            let passingIndex = maximumIndex;
+            while (passingIndex - failingIndex > 1) {
+              const midpointIndex = Math.floor((failingIndex + passingIndex) / 2);
+              if ((await evaluateAxleIndex(midpointIndex)).passed) passingIndex = midpointIndex;
+              else failingIndex = midpointIndex;
+            }
+            selectWinningAxleIndex(passingIndex);
+          } else if (upperOutcome.necessaryGateFailure) {
+            addEvent(
+              run,
+              started,
+              "Bound",
+              "Maximum axle formation failed necessary gates",
+              `${trainCount} train${trainCount === 1 ? "" : "s"} at the maximum ${axleValues[maximumIndex].axleLines} AL/train still cannot satisfy the stability/support geometry gates. Smaller axle formations at this train count were pruned from the fast search; Legacy Grid remains available for exhaustive non-monotonic checking.`,
+              "INFO",
+            );
+          } else {
+            for (let index = 1; index < maximumIndex; index += 1) {
+              if ((await evaluateAxleIndex(index)).passed) {
+                selectWinningAxleIndex(index);
+                break;
+              }
+            }
+          }
+        }
+      } else {
+        for (let index = 0; index < axleValues.length; index += 1) {
+          if ((await evaluateAxleIndex(index)).passed) {
+            selectWinningAxleIndex(index);
+            break;
+          }
         }
       }
       if (winningTrainCount !== null) break;
