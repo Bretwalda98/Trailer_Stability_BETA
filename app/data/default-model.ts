@@ -166,6 +166,7 @@ export function createDefaultModel(): ProjectModel {
       liveRefreshSeconds: 3,
     },
     arrangementOptimiser: {
+      searchMode: "MATHEMATICAL_BRANCH_BOUND",
       trailerDefinitionId: "k2400-st",
       allow4AxleModules: true,
       allow5AxleModules: true,

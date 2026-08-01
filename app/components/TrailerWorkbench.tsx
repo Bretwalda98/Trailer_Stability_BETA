@@ -16,7 +16,10 @@ import { buildGeometryViewModel } from "../geometry/buildGeometryViewModel";
 import { useEngineeringEngine } from "../hooks/useEngineeringEngine";
 import { assetPath } from "../site-path";
 import { CaseHeader } from "./workbench/CaseHeader";
-import { ArrangementWizard } from "./workbench/ArrangementWizard";
+import {
+  ARRANGEMENT_WIZARD_DRAFT_KEY,
+  ArrangementWizard,
+} from "./workbench/ArrangementWizard";
 import { EngineeringDetailsDrawer } from "./workbench/EngineeringDetailsDrawer";
 import { EngineeringViewport } from "./workbench/EngineeringViewport";
 import { HelpGuide } from "./workbench/HelpGuide";
@@ -76,6 +79,9 @@ export default function TrailerWorkbench() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [optimiserWizardOpen, setOptimiserWizardOpen] = useState(false);
   const [arrangementWizardOpen, setArrangementWizardOpen] = useState(false);
+  const [arrangementWizardInitialSource, setArrangementWizardInitialSource] = useState<
+    "CURRENT" | "BLANK"
+  >("CURRENT");
   const [wizardInitialSource, setWizardInitialSource] = useState<
     Extract<SetupSourceType, "CURRENT" | "BLANK"> | undefined
   >(undefined);
@@ -86,7 +92,6 @@ export default function TrailerWorkbench() {
   const [optimiseAfterSetup, setOptimiseAfterSetup] = useState<
     "CURRENT" | "ARRANGEMENT" | null
   >(null);
-  const [resumeArrangementAfterSetup, setResumeArrangementAfterSetup] = useState(false);
   const hydratedRef = useRef(false);
 
   const engine = useEngineeringEngine(model);
@@ -259,6 +264,13 @@ export default function TrailerWorkbench() {
     setWizardOpen(true);
   };
 
+  const startNewFastArrangement = () => {
+    localStorage.removeItem(ARRANGEMENT_WIZARD_DRAFT_KEY);
+    setArrangementWizardInitialSource("BLANK");
+    setStartupOpen(false);
+    setArrangementWizardOpen(true);
+  };
+
   const startOptimisation = () => {
     setOptimiserStartModel(structuredClone(model));
     setUndoModel(null);
@@ -349,7 +361,10 @@ export default function TrailerWorkbench() {
         }}
         onHelp={() => setHelpOpen(true)}
         onOptimiserSetup={() => setOptimiserWizardOpen(true)}
-        onArrangementSetup={() => setArrangementWizardOpen(true)}
+        onArrangementSetup={() => {
+          setArrangementWizardInitialSource("CURRENT");
+          setArrangementWizardOpen(true);
+        }}
         onImport={handleImport}
         onExportWorkbook={handleExportWorkbook}
         onExportProject={() =>
@@ -368,6 +383,7 @@ export default function TrailerWorkbench() {
         open={startupOpen}
         busy={busy}
         hasLocalProject={hasLocalProject}
+        onFastArrangement={startNewFastArrangement}
         onNewSetup={startNewSetup}
         onOpenFile={handleStartupFile}
         onContinue={() => setStartupOpen(false)}
@@ -392,17 +408,9 @@ export default function TrailerWorkbench() {
             setView("plan");
             setWizardOpen(false);
             setWizardInitialSource(undefined);
-            if (resumeArrangementAfterSetup) {
-              setResumeArrangementAfterSetup(false);
-              setArrangementWizardOpen(true);
-              setOptimiseAfterSetup(null);
-            } else {
-              setOptimiseAfterSetup(runOptimisation ? "CURRENT" : null);
-            }
+            setOptimiseAfterSetup(runOptimisation ? "CURRENT" : null);
             setToast({
-              text: resumeArrangementAfterSetup
-                ? "Case inputs applied. Continue the automatic-arrangement setup."
-                : runOptimisation
+              text: runOptimisation
                 ? "Setup applied. The authoritative case is recalculating before optimisation starts."
                 : "Setup applied to the active case.",
               type: "ok",
@@ -417,6 +425,7 @@ export default function TrailerWorkbench() {
           calculating={engine.calculating}
           onFindArrangement={() => {
             setOptimiserWizardOpen(false);
+            setArrangementWizardInitialSource("CURRENT");
             setArrangementWizardOpen(true);
           }}
           onClose={() => setOptimiserWizardOpen(false)}
@@ -447,23 +456,19 @@ export default function TrailerWorkbench() {
       {arrangementWizardOpen && (
         <ArrangementWizard
           activeModel={model}
-          result={engine.result}
           calculating={engine.calculating}
-          onClose={() => setArrangementWizardOpen(false)}
-          onEditCase={() => {
+          initialSourceType={arrangementWizardInitialSource}
+          onClose={() => {
             setArrangementWizardOpen(false);
-            setResumeArrangementAfterSetup(true);
-            setWizardInitialSource("CURRENT");
-            setWizardOpen(true);
+            setArrangementWizardInitialSource("CURRENT");
           }}
-          onApply={(settings, runOptimisation) => {
-            setModel((current) => ({
-              ...current,
-              arrangementOptimiser: settings,
-            }));
+          onApply={(nextModel, runOptimisation) => {
+            setModel(nextModel);
             setPersistActiveProject(true);
             setHasLocalProject(true);
+            if (arrangementWizardInitialSource === "BLANK") setSourceBytes(null);
             setArrangementWizardOpen(false);
+            setArrangementWizardInitialSource("CURRENT");
             if (runOptimisation) {
               setOptimiseAfterSetup("ARRANGEMENT");
               setToast({

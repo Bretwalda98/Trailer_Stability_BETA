@@ -6,9 +6,10 @@ import {
   IconCheck,
   IconChevronLeft,
   IconChevronRight,
-  IconEdit,
+  IconGauge,
   IconLoader2,
   IconPlayerPlay,
+  IconPlus,
   IconRoute,
   IconTargetArrow,
   IconTrash,
@@ -16,34 +17,40 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { applyAutomaticCargoCogEnvelopeInputs, derivedCargoCogEnvelopeInputs } from "../../engine/cargo-envelope";
 import {
   collectArrangementIssues,
   minimumTotalAxleLines,
   spacingCandidates,
   validAxleLineValues,
 } from "../../engine/arrangement";
+import { createBlankSetupModel } from "../../engine/setup";
 import type {
   ArrangementOptimiserSettings,
-  CalculationResult,
+  CargoSupport,
+  PackingInput,
   ProjectModel,
 } from "../../engine/types";
+import { applyAutomaticCargoWindInputs, derivedCargoWindInputs } from "../../engine/wind";
+import { hydrateProjectModel } from "../../data/default-model";
 
-const DRAFT_KEY = "trailer-stability-arrangement-wizard-v1";
-type StepId = "case" | "trailer" | "formation" | "review";
+export const ARRANGEMENT_WIZARD_DRAFT_KEY = "trailer-stability-arrangement-wizard-v2";
+type StepId = "cargo" | "packing" | "trailer" | "search" | "review";
+type InitialSource = "CURRENT" | "BLANK";
 
 const STEPS: Array<{ id: StepId; label: string; description: string; icon: ReactNode }> = [
-  { id: "case", label: "Case inputs", description: "Cargo, packing and supports", icon: <IconBox size={17} /> },
-  { id: "trailer", label: "Trailer stock", description: "Model and 4/5/6-AL modules", icon: <IconTruck size={17} /> },
-  { id: "formation", label: "Formation limits", description: "Train count, clearance and width", icon: <IconRoute size={17} /> },
-  { id: "review", label: "Review & run", description: "Lexicographic search preflight", icon: <IconCheck size={17} /> },
+  { id: "cargo", label: "Cargo", description: "Envelope, mass and COG", icon: <IconBox size={17} /> },
+  { id: "packing", label: "Packing & supports", description: "Packing, deck and load supports", icon: <IconGauge size={17} /> },
+  { id: "trailer", label: "Trailer stock", description: "Model, modules and PPU", icon: <IconTruck size={17} /> },
+  { id: "search", label: "Math search", description: "Bounds, spacing and method", icon: <IconRoute size={17} /> },
+  { id: "review", label: "Review & run", description: "Preflight and start", icon: <IconCheck size={17} /> },
 ];
 
 interface ArrangementWizardProps {
   activeModel: ProjectModel;
-  result: CalculationResult;
   calculating: boolean;
-  onEditCase(): void;
-  onApply(settings: ArrangementOptimiserSettings, run: boolean): void;
+  initialSourceType?: InitialSource;
+  onApply(model: ProjectModel, run: boolean): void;
   onClose(): void;
 }
 
@@ -71,10 +78,11 @@ function NumberField({
   onChange(value: number): void;
 }) {
   const [text, setText] = useState(String(value));
-  useEffect(() => setText(String(value)), [value]);
-  const number = Number(text);
+  const [editing, setEditing] = useState(false);
+  const displayedText = editing ? text : String(value);
+  const number = Number(displayedText);
   const inferred =
-    text.trim() !== "" &&
+    displayedText.trim() !== "" &&
     Number.isFinite(number) &&
     (min === undefined || number >= min) &&
     (max === undefined || number <= max);
@@ -86,23 +94,48 @@ function NumberField({
         <input
           type="number"
           inputMode="decimal"
-          value={text}
+          value={displayedText}
           min={min}
           max={max}
           step={step}
           disabled={disabled}
+          onFocus={() => {
+            setText(String(value));
+            setEditing(true);
+          }}
           onChange={(event) => {
             setText(event.target.value);
             const next = Number(event.target.value);
             if (event.target.value.trim() && Number.isFinite(next)) onChange(next);
           }}
           onBlur={() => {
+            setEditing(false);
             if (!inferred) setText(String(value));
           }}
         />
         {unit && <em>{unit}</em>}
       </div>
       {hint && <small>{hint}</small>}
+    </label>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  required,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  required?: boolean;
+  onChange(value: string): void;
+}) {
+  const valid = !required || value.trim().length > 0;
+  return (
+    <label className={`wizard-field is-${valid ? "valid" : "invalid"}`}>
+      <span>{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
 }
@@ -118,7 +151,10 @@ function FormSection({
 }) {
   return (
     <section className="wizard-form-section">
-      <header><b>{title}</b>{description && <span>{description}</span>}</header>
+      <header>
+        <h3>{title}</h3>
+        {description && <p>{description}</p>}
+      </header>
       {children}
     </section>
   );
@@ -133,61 +169,96 @@ function moduleText(modules4: number, modules5: number, modules6: number): strin
 }
 
 function issueStep(id: string): StepId {
-  if (["cargo", "supports"].includes(id)) return "case";
-  if (["catalogue-model", "module-sizes", "module-availability"].includes(id)) return "trailer";
-  return "formation";
+  if (["cargo", "case-name", "cargo-cog"].includes(id)) return "cargo";
+  if (["packing", "supports"].includes(id)) return "packing";
+  if (["catalogue-model", "module-sizes", "module-availability", "ppu-data"].includes(id)) return "trailer";
+  return "search";
+}
+
+function blankOrCurrent(activeModel: ProjectModel, source: InitialSource): ProjectModel {
+  const model = source === "BLANK" ? createBlankSetupModel() : structuredClone(activeModel);
+  return {
+    ...model,
+    arrangementOptimiser: {
+      ...model.arrangementOptimiser,
+      searchMode: source === "BLANK" ? "MATHEMATICAL_BRANCH_BOUND" : model.arrangementOptimiser.searchMode,
+      trailerDefinitionId: source === "BLANK" ? "" : model.arrangementOptimiser.trailerDefinitionId,
+      ppuPosition: source === "BLANK" ? "NONE" : model.arrangementOptimiser.ppuPosition,
+    },
+  };
+}
+
+function supportId(): string {
+  return `support-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 export function ArrangementWizard({
   activeModel,
-  result,
   calculating,
-  onEditCase,
+  initialSourceType = "CURRENT",
   onApply,
   onClose,
 }: ArrangementWizardProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [settings, setSettings] = useState<ArrangementOptimiserSettings>(() =>
-    structuredClone(activeModel.arrangementOptimiser),
+  const [draftModel, setDraftModel] = useState<ProjectModel>(() =>
+    blankOrCurrent(activeModel, initialSourceType),
   );
-  const [step, setStep] = useState<StepId>("case");
+  const [step, setStep] = useState<StepId>("cargo");
   const [initialised, setInitialised] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
 
-  const update = (patch: Partial<ArrangementOptimiserSettings>) =>
-    setSettings((current) => ({ ...current, ...patch }));
+  const settings = draftModel.arrangementOptimiser;
+  const updateSettings = (patch: Partial<ArrangementOptimiserSettings>) =>
+    setDraftModel((current) => ({
+      ...current,
+      arrangementOptimiser: { ...current.arrangementOptimiser, ...patch },
+    }));
+  const updateCargo = (patch: Partial<ProjectModel["cargo"]>) =>
+    setDraftModel((current) => ({
+      ...current,
+      cargo: applyAutomaticCargoWindInputs(
+        applyAutomaticCargoCogEnvelopeInputs({ ...current.cargo, ...patch }),
+      ),
+    }));
+  const updatePacking = (patch: Partial<PackingInput>) =>
+    setDraftModel((current) => ({
+      ...current,
+      packing: { ...current.packing, ...patch },
+    }));
+
   const issues = useMemo(
-    () => collectArrangementIssues(activeModel, settings),
-    [activeModel, settings],
+    () => collectArrangementIssues(draftModel, settings),
+    [draftModel, settings],
   );
   const blocking = issues.filter((item) => item.severity === "blocking");
   const stepIssues = issues.filter((item) => issueStep(item.id) === step);
   const stepIndex = STEPS.findIndex((item) => item.id === step);
-  const definition = activeModel.catalogue.find((item) => item.id === settings.trailerDefinitionId);
-  const capacityLowerBound = useMemo(
-    () => minimumTotalAxleLines(activeModel, settings),
-    [activeModel, settings],
-  );
+  const definition = draftModel.catalogue.find((item) => item.id === settings.trailerDefinitionId);
   const planRows = useMemo(() => {
     if (!definition) return [];
     return Array.from(
       { length: Math.max(0, settings.maximumTrains - settings.minimumTrains + 1) },
       (_, offset) => settings.minimumTrains + offset,
     ).map((trainCount) => {
+      const capacityLowerBound = minimumTotalAxleLines(draftModel, settings, trainCount);
       const minimumPerTrain = Math.ceil(capacityLowerBound / trainCount);
       const values = validAxleLineValues(settings, trainCount, minimumPerTrain);
       const first = values[0];
       const pitches = spacingCandidates(definition, settings, trainCount);
       return {
         trainCount,
+        capacityLowerBound,
         first,
         pitches: pitches.length,
         searches: values.length * pitches.length,
       };
     });
-  }, [capacityLowerBound, definition, settings]);
+  }, [definition, draftModel, settings]);
   const plannedSearches = planRows.reduce((sum, row) => sum + row.searches, 0);
+  const minimumCapacityStart = planRows.length
+    ? Math.min(...planRows.map((row) => row.capacityLowerBound))
+    : minimumTotalAxleLines(draftModel, settings);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -198,67 +269,176 @@ export function ArrangementWizard({
   }, []);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(DRAFT_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as {
-          settings?: Partial<ArrangementOptimiserSettings>;
-          step?: StepId;
-          updatedAt?: string;
-        };
-        if (parsed.settings) {
-          setSettings({ ...activeModel.arrangementOptimiser, ...parsed.settings });
+    const timer = window.setTimeout(() => {
+      try {
+        const stored = localStorage.getItem(ARRANGEMENT_WIZARD_DRAFT_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored) as {
+            model?: ProjectModel;
+            settings?: Partial<ArrangementOptimiserSettings>;
+            step?: StepId;
+            updatedAt?: string;
+          };
+          if (parsed.model) setDraftModel(hydrateProjectModel(parsed.model));
+          else if (parsed.settings) {
+            setDraftModel((current) => ({
+              ...current,
+              arrangementOptimiser: { ...current.arrangementOptimiser, ...parsed.settings },
+            }));
+          }
+          if (STEPS.some((item) => item.id === parsed.step)) setStep(parsed.step!);
+          if (parsed.updatedAt) setDraftSavedAt(parsed.updatedAt);
         }
-        if (STEPS.some((item) => item.id === parsed.step)) setStep(parsed.step!);
-        if (parsed.updatedAt) setDraftSavedAt(parsed.updatedAt);
+      } catch {
+        setNotice("The unfinished mathematical-search draft could not be read. Fresh values were loaded.");
+      } finally {
+        setInitialised(true);
       }
-    } catch {
-      setNotice("The unfinished arrangement draft could not be read. Current settings were loaded.");
-    } finally {
-      setInitialised(true);
-    }
-  }, [activeModel.arrangementOptimiser]);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (!initialised) return;
     const timer = window.setTimeout(() => {
       try {
         const updatedAt = new Date().toISOString();
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({ version: 1, step, settings, updatedAt }));
+        localStorage.setItem(
+          ARRANGEMENT_WIZARD_DRAFT_KEY,
+          JSON.stringify({ version: 2, step, model: draftModel, updatedAt }),
+        );
         setDraftSavedAt(updatedAt);
       } catch {
-        setNotice("This browser could not autosave the arrangement draft.");
+        setNotice("This browser could not autosave the mathematical-search draft.");
       }
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [initialised, settings, step]);
+  }, [draftModel, initialised, step]);
 
   const canContinue = stepIssues.every((item) => item.severity !== "blocking");
   const canRun = blocking.length === 0 && plannedSearches > 0 && !calculating;
   const currentStep = STEPS[stepIndex];
 
-  const renderCase = () => (
+  const centreCargoCog = () => updateCargo({
+    cog: {
+      x: draftModel.cargo.extremeX + draftModel.cargo.lengthM / 2,
+      y: draftModel.cargo.extremeY + draftModel.cargo.widthM / 2,
+      z: draftModel.cargo.heightM / 2,
+    },
+  });
+
+  const createRecommendedSupports = () => {
+    const length = Math.max(0, draftModel.cargo.lengthM);
+    const start = draftModel.cargo.extremeX;
+    const supports = Array.from({ length: 4 }, (_, index): CargoSupport => ({
+      id: supportId(),
+      xM: start + (length * (index + 1)) / 5,
+      widthM: 0.5,
+      allowed: true,
+      active: true,
+    }));
+    setDraftModel((current) => ({ ...current, supports }));
+  };
+
+  const renderCargo = () => (
     <>
-      <FormSection
-        title="Authoritative load definition"
-        description="The automatic arrangement uses the current cargo, packing, support and route inputs without replacing them."
-      >
-        <dl className="arrangement-case-summary">
-          <div><dt>Cargo</dt><dd><b>{activeModel.cargo.name || "Untitled"}</b><span>{activeModel.cargo.massT.toFixed(2)} t</span></dd></div>
-          <div><dt>Envelope</dt><dd><b>{activeModel.cargo.lengthM.toFixed(3)} × {activeModel.cargo.widthM.toFixed(3)} × {activeModel.cargo.heightM.toFixed(3)} m</b><span>COG {activeModel.cargo.cog.x.toFixed(3)}, {activeModel.cargo.cog.y.toFixed(3)}, {activeModel.cargo.cog.z.toFixed(3)}</span></dd></div>
-          <div><dt>Packing</dt><dd><b>{activeModel.packing.massT.toFixed(2)} t · {activeModel.packing.heightM.toFixed(3)} m high</b><span>{activeModel.loosePacking.length} loose-packing row{activeModel.loosePacking.length === 1 ? "" : "s"}</span></dd></div>
-          <div><dt>Supports</dt><dd><b>{activeModel.supports.filter((item) => item.allowed).length} allowed</b><span>Minimum {activeModel.optimiser.minimumActiveSupports} active after settling</span></dd></div>
-        </dl>
-        <button type="button" className="arrangement-edit-case" onClick={onEditCase}>
-          <IconEdit size={15} /> Edit cargo, packing and supports
-        </button>
+      <FormSection title="Cargo case" description="Start with the load that the optimiser must support.">
+        <div className="wizard-field-grid two">
+          <TextField label="Case / cargo name" value={draftModel.cargo.name} required onChange={(name) => updateCargo({ name })} />
+          <TextField label="Client reference" value={draftModel.cargo.clientReference} onChange={(clientReference) => updateCargo({ clientReference })} />
+        </div>
       </FormSection>
-      <FormSection title="Current engineering snapshot">
-        <div className="arrangement-metric-strip">
-          <span><small>All-inclusive mass</small><b>{result.totalMassT.toFixed(2)} t</b></span>
-          <span><small>Load COG</small><b>{result.loadCog.x.toFixed(2)}, {result.loadCog.y.toFixed(2)}</b></span>
-          <span><small>Current supports</small><b>{result.activeSupportCount}</b></span>
-          <span><small>Current status</small><b className={result.status === "PASS" ? "ok" : "nok"}>{result.status.replaceAll("_", " ")}</b></span>
+      <FormSection title="Cargo geometry and mass" description="All coordinates use the rear-left load datum; rear is lower X and front is higher X.">
+        <div className="wizard-field-grid three">
+          <NumberField label="Length" value={draftModel.cargo.lengthM} unit="m" min={0} valid={draftModel.cargo.lengthM > 0} onChange={(lengthM) => updateCargo({ lengthM })} />
+          <NumberField label="Width" value={draftModel.cargo.widthM} unit="m" min={0} valid={draftModel.cargo.widthM > 0} onChange={(widthM) => updateCargo({ widthM })} />
+          <NumberField label="Height" value={draftModel.cargo.heightM} unit="m" min={0} valid={draftModel.cargo.heightM > 0} onChange={(heightM) => updateCargo({ heightM })} />
+          <NumberField label="Rear X extreme" value={draftModel.cargo.extremeX} unit="m" onChange={(extremeX) => updateCargo({ extremeX })} />
+          <NumberField label="Left Y extreme" value={draftModel.cargo.extremeY} unit="m" onChange={(extremeY) => updateCargo({ extremeY })} />
+          <NumberField label="Cargo mass" value={draftModel.cargo.massT} unit="t" min={0} valid={draftModel.cargo.massT > 0} onChange={(massT) => updateCargo({ massT })} />
+        </div>
+      </FormSection>
+      <FormSection title="Cargo COG">
+        <div className="wizard-field-grid three">
+          <NumberField label="COG X" value={draftModel.cargo.cog.x} unit="m" onChange={(x) => updateCargo({ cog: { ...draftModel.cargo.cog, x } })} />
+          <NumberField label="COG Y" value={draftModel.cargo.cog.y} unit="m" onChange={(y) => updateCargo({ cog: { ...draftModel.cargo.cog, y } })} />
+          <NumberField label="COG Z" value={draftModel.cargo.cog.z} unit="m" min={0} onChange={(z) => updateCargo({ cog: { ...draftModel.cargo.cog, z } })} />
+        </div>
+        <div className="arrangement-inline-actions">
+          <button type="button" onClick={centreCargoCog}><IconTargetArrow size={14} /> Centre COG in cargo</button>
+        </div>
+      </FormSection>
+      <FormSection title="Automatic load allowances" description="Both are enabled for a new mathematical-search case.">
+        <label className="wizard-toggle">
+          <input
+            type="checkbox"
+            checked={draftModel.cargo.autoCogEnvelopeFromCargo}
+            onChange={(event) => updateCargo({
+              autoCogEnvelopeFromCargo: event.target.checked,
+              ...(event.target.checked ? derivedCargoCogEnvelopeInputs(draftModel.cargo) : {}),
+            })}
+          />
+          <span><b>Auto-calculate COG envelope</b><small>±2% of cargo length and width</small></span>
+        </label>
+        <label className="wizard-toggle">
+          <input
+            type="checkbox"
+            checked={draftModel.cargo.autoWindFromCargo}
+            onChange={(event) => updateCargo({
+              autoWindFromCargo: event.target.checked,
+              ...(event.target.checked ? derivedCargoWindInputs(draftModel.cargo) : {}),
+            })}
+          />
+          <span><b>Auto-calculate wind areas</b><small>Cargo projected areas acting at half cargo height</small></span>
+        </label>
+      </FormSection>
+    </>
+  );
+
+  const renderPacking = () => (
+    <>
+      <FormSection title="Packing and trailer deck" description="Packing mass and COG are included in the all-inclusive load calculation.">
+        <div className="wizard-field-grid three">
+          <NumberField label="Packing mass" value={draftModel.packing.massT} unit="t" min={0} onChange={(massT) => updatePacking({ massT })} />
+          <NumberField label="Packing height" value={draftModel.packing.heightM} unit="m" min={0} onChange={(heightM) => updatePacking({ heightM })} />
+          <NumberField label="Trailer deck height" value={draftModel.trailerDeckHeightM} unit="m" min={0.001} valid={draftModel.trailerDeckHeightM > 0} onChange={(trailerDeckHeightM) => setDraftModel((current) => ({ ...current, trailerDeckHeightM }))} />
+          <NumberField label="Packing COG X" value={draftModel.packing.cog.x} unit="m" onChange={(x) => updatePacking({ cog: { ...draftModel.packing.cog, x } })} />
+          <NumberField label="Packing COG Y" value={draftModel.packing.cog.y} unit="m" onChange={(y) => updatePacking({ cog: { ...draftModel.packing.cog, y } })} />
+          <NumberField label="Packing COG Z" value={draftModel.packing.cog.z} unit="m" min={0} onChange={(z) => updatePacking({ cog: { ...draftModel.packing.cog, z } })} />
+        </div>
+      </FormSection>
+      <FormSection title="Cargo packing supports" description="Support reactions are settled after every arrangement change. At least the configured minimum must remain active.">
+        <div className="arrangement-inline-actions">
+          <button type="button" onClick={createRecommendedSupports}><IconTargetArrow size={14} /> Create 4 evenly spaced supports</button>
+          <button
+            type="button"
+            disabled={draftModel.supports.length >= 10}
+            onClick={() => setDraftModel((current) => ({
+              ...current,
+              supports: [...current.supports, {
+                id: supportId(),
+                xM: current.cargo.extremeX + current.cargo.lengthM / 2,
+                widthM: 0.5,
+                allowed: true,
+                active: true,
+              }],
+            }))}
+          ><IconPlus size={14} /> Add support</button>
+        </div>
+        <div className="fast-support-list">
+          {draftModel.supports.map((support, index) => (
+            <div className="fast-support-row" key={support.id}>
+              <b>S{index + 1}</b>
+              <NumberField label="X location" value={support.xM} unit="m" onChange={(xM) => setDraftModel((current) => ({ ...current, supports: current.supports.map((item) => item.id === support.id ? { ...item, xM } : item) }))} />
+              <NumberField label="Width" value={support.widthM} unit="m" min={0.001} valid={support.widthM > 0} onChange={(widthM) => setDraftModel((current) => ({ ...current, supports: current.supports.map((item) => item.id === support.id ? { ...item, widthM } : item) }))} />
+              <label className="fast-support-allowed"><input type="checkbox" checked={support.allowed} onChange={(event) => setDraftModel((current) => ({ ...current, supports: current.supports.map((item) => item.id === support.id ? { ...item, allowed: event.target.checked, active: event.target.checked } : item) }))} /><span>Allowed</span></label>
+              <button type="button" className="icon-button" aria-label={`Remove support ${index + 1}`} onClick={() => setDraftModel((current) => ({ ...current, supports: current.supports.filter((item) => item.id !== support.id) }))}><IconTrash size={14} /></button>
+            </div>
+          ))}
+          {!draftModel.supports.length && <p className="fast-support-empty">No packing supports entered. Add them manually or create four evenly spaced supports.</p>}
+        </div>
+        <div className="wizard-field-grid two">
+          <NumberField label="Minimum active supports" value={draftModel.optimiser.minimumActiveSupports} min={2} max={10} step={1} valid={Number.isInteger(draftModel.optimiser.minimumActiveSupports) && draftModel.optimiser.minimumActiveSupports >= 2 && draftModel.optimiser.minimumActiveSupports <= 10} onChange={(minimumActiveSupports) => setDraftModel((current) => ({ ...current, optimiser: { ...current.optimiser, minimumActiveSupports: Math.round(minimumActiveSupports) } }))} />
         </div>
       </FormSection>
     </>
@@ -266,23 +446,29 @@ export function ArrangementWizard({
 
   const renderTrailer = () => (
     <>
-      <FormSection
-        title="Trailer family"
-        description="Every automatically generated parallel train uses this same catalogue model."
-      >
+      <FormSection title="Trailer family" description="Every generated parallel train uses the same selected catalogue model.">
         <label className={`wizard-field is-${definition ? "valid" : "invalid"}`}>
           <span>SPMT trailer model</span>
-          <select value={settings.trailerDefinitionId} onChange={(event) => update({ trailerDefinitionId: event.target.value })}>
+          <select value={settings.trailerDefinitionId} onChange={(event) => updateSettings({ trailerDefinitionId: event.target.value })}>
             <option value="">Select trailer…</option>
-            {activeModel.catalogue.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}
+            {draftModel.catalogue.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}
           </select>
-          {definition && <small>{definition.axleCapacityT.toFixed(1)} t/AL capacity · {definition.trailerWidthM.toFixed(3)} m wide · {definition.axleSpacingM.toFixed(3)} m pitch</small>}
+          {definition && <small>{definition.axleCapacityT.toFixed(1)} t/AL capacity · {definition.trailerWidthM.toFixed(3)} m wide · {definition.axleSpacingM.toFixed(3)} m AL spacing</small>}
+        </label>
+        <NumberField label="Trailer deck height" value={draftModel.trailerDeckHeightM} unit="m" min={0.001} valid={draftModel.trailerDeckHeightM > 0} onChange={(trailerDeckHeightM) => setDraftModel((current) => ({ ...current, trailerDeckHeightM }))} />
+      </FormSection>
+      <FormSection title="Power-pack unit">
+        <label className="wizard-field is-valid">
+          <span>PPU location on every train</span>
+          <select value={settings.ppuPosition} onChange={(event) => updateSettings({ ppuPosition: event.target.value as ArrangementOptimiserSettings["ppuPosition"] })}>
+            <option value="NONE">No PPU included</option>
+            <option value="REAR">Rear end · lower X · left in plan</option>
+            <option value="FRONT">Front end · higher X · right in plan</option>
+          </select>
+          <small>The PPU mass is included in the minimum axle-line capacity bound.</small>
         </label>
       </FormSection>
-      <FormSection
-        title="Available module sizes"
-        description="A per-train axle-line value is considered only when it can be made exactly from enabled 4-, 5- and 6-AL modules."
-      >
+      <FormSection title="Available 4/5/6-AL modules" description="Only axle-line totals that can be built exactly from these module sizes are searched.">
         <div className="arrangement-module-grid">
           {([4, 5, 6] as const).map((size) => {
             const allowedKey = `allow${size}AxleModules` as const;
@@ -290,71 +476,57 @@ export function ArrangementWizard({
             const allowed = settings[allowedKey];
             return (
               <div key={size} className={allowed ? "selected" : ""}>
-                <label>
-                  <input type="checkbox" checked={allowed} onChange={(event) => update({ [allowedKey]: event.target.checked })} />
-                  <span><b>{size} AL</b><small>SPMT module</small></span>
-                </label>
-                <NumberField
-                  label="Available"
-                  value={settings[availabilityKey]}
-                  min={0}
-                  step={1}
-                  disabled={!settings.limitModuleAvailability || !allowed}
-                  valid={!settings.limitModuleAvailability || (Number.isInteger(settings[availabilityKey]) && settings[availabilityKey] >= 0)}
-                  onChange={(value) => update({ [availabilityKey]: Math.round(value) })}
-                />
+                <label><input type="checkbox" checked={allowed} onChange={(event) => updateSettings({ [allowedKey]: event.target.checked })} /><span><b>{size} AL</b><small>SPMT module</small></span></label>
+                <NumberField label="Available" value={settings[availabilityKey]} min={0} step={1} disabled={!settings.limitModuleAvailability || !allowed} valid={!settings.limitModuleAvailability || (Number.isInteger(settings[availabilityKey]) && settings[availabilityKey] >= 0)} onChange={(value) => updateSettings({ [availabilityKey]: Math.round(value) })} />
               </div>
             );
           })}
         </div>
-        <label className="wizard-toggle arrangement-stock-toggle">
-          <input type="checkbox" checked={settings.limitModuleAvailability} onChange={(event) => update({ limitModuleAvailability: event.target.checked })} />
-          <span><b>Limit by available stock</b><small>When off, enabled module sizes are treated as unlimited.</small></span>
-        </label>
-      </FormSection>
-      <FormSection title="Power-pack arrangement">
-        <label className="wizard-field is-valid">
-          <span>PPU position on every train</span>
-          <select value={settings.ppuPosition} onChange={(event) => update({ ppuPosition: event.target.value as ArrangementOptimiserSettings["ppuPosition"] })}>
-            <option value="NONE">No PPU included</option>
-            <option value="REAR">Rear end · left side in plan</option>
-            <option value="FRONT">Front end · right side in plan</option>
-          </select>
-        </label>
+        <label className="wizard-toggle arrangement-stock-toggle"><input type="checkbox" checked={settings.limitModuleAvailability} onChange={(event) => updateSettings({ limitModuleAvailability: event.target.checked })} /><span><b>Limit by available stock</b><small>When off, enabled module sizes are unlimited.</small></span></label>
       </FormSection>
     </>
   );
 
-  const renderFormation = () => (
+  const renderSearch = () => (
     <>
-      <FormSection
-        title="Economic search bounds"
-        description="The optimiser stops at the first train-count and axle-count level that can produce a complete engineering PASS."
-      >
-        <div className="wizard-field-grid two">
-          <NumberField label="Minimum trains" value={settings.minimumTrains} min={1} max={12} step={1} valid={Number.isInteger(settings.minimumTrains) && settings.minimumTrains >= 1 && settings.minimumTrains <= settings.maximumTrains} onChange={(value) => update({ minimumTrains: Math.round(value) })} />
-          <NumberField label="Maximum trains" value={settings.maximumTrains} min={1} max={12} step={1} valid={Number.isInteger(settings.maximumTrains) && settings.maximumTrains >= settings.minimumTrains && settings.maximumTrains <= 12} onChange={(value) => update({ maximumTrains: Math.round(value) })} />
-          <NumberField label="Maximum AL per train" value={settings.maximumAxleLinesPerTrain} min={4} max={99} step={1} valid={Number.isInteger(settings.maximumAxleLinesPerTrain) && settings.maximumAxleLinesPerTrain >= 4} onChange={(value) => update({ maximumAxleLinesPerTrain: Math.round(value) })} />
-          <NumberField label="Equal-spacing samples" value={settings.spacingSamples} min={2} max={7} step={1} valid={Number.isInteger(settings.spacingSamples) && settings.spacingSamples >= 2 && settings.spacingSamples <= 7} onChange={(value) => update({ spacingSamples: Math.round(value) })} />
-        </div>
+      <FormSection title="Search method" description="The mathematical solver removes impossible formations first, solves the allowable X/Y region, then verifies retained cases with the full engineering engine.">
+        <label className="wizard-field is-valid">
+          <span>Arrangement search method</span>
+          <select value={settings.searchMode} onChange={(event) => updateSettings({ searchMode: event.target.value as ArrangementOptimiserSettings["searchMode"] })}>
+            <option value="MATHEMATICAL_BRANCH_BOUND">Mathematical branch &amp; bound · recommended</option>
+            <option value="ADAPTIVE_BOUNDED">Legacy fast bounded search</option>
+            <option value="LEGACY_GRID">Legacy full grid search</option>
+          </select>
+          <small>{settings.searchMode === "MATHEMATICAL_BRANCH_BOUND"
+            ? "Uses capacity and module lower bounds, solves stability-feasible X limits, and converges on the closest passing pitch to the selected tolerance."
+            : settings.searchMode === "ADAPTIVE_BOUNDED"
+              ? "Retains the previous preferred-and-limiting-value bounded search."
+              : "Retains the previous complete coarse sampling sequence."}</small>
+        </label>
       </FormSection>
-      <FormSection
-        title="Physical formation envelope"
-        description="Actual catalogue widths are used. Touching is allowed only when clearance is set to zero; positive overlap is always rejected."
-      >
+      <FormSection title="Economic bounds" description="Train count is the first hard priority, followed by total axle lines.">
         <div className="wizard-field-grid three">
-          <NumberField label="Preferred centre spacing" value={settings.preferredCentreSpacingM} unit="m" min={0.1} step={0.1} valid={settings.preferredCentreSpacingM > 0} onChange={(preferredCentreSpacingM) => update({ preferredCentreSpacingM })} />
-          <NumberField label="Minimum train clearance" value={settings.minimumClearanceM} unit="m" min={0} step={0.01} onChange={(minimumClearanceM) => update({ minimumClearanceM })} />
-          <NumberField label="Maximum overall width" value={settings.maximumFormationWidthM} unit="m" min={0.1} step={0.1} onChange={(maximumFormationWidthM) => update({ maximumFormationWidthM })} />
-          <NumberField label="Fine spacing tolerance" value={settings.spacingToleranceM} unit="m" min={0.001} step={0.01} onChange={(spacingToleranceM) => update({ spacingToleranceM })} />
+          <NumberField label="Minimum trains" value={settings.minimumTrains} min={1} max={12} step={1} valid={Number.isInteger(settings.minimumTrains) && settings.minimumTrains >= 1 && settings.minimumTrains <= settings.maximumTrains} onChange={(value) => updateSettings({ minimumTrains: Math.round(value) })} />
+          <NumberField label="Maximum trains" value={settings.maximumTrains} min={1} max={12} step={1} valid={Number.isInteger(settings.maximumTrains) && settings.maximumTrains >= settings.minimumTrains && settings.maximumTrains <= 12} onChange={(value) => updateSettings({ maximumTrains: Math.round(value) })} />
+          <NumberField label="Maximum AL per train" value={settings.maximumAxleLinesPerTrain} min={4} max={99} step={1} valid={Number.isInteger(settings.maximumAxleLinesPerTrain) && settings.maximumAxleLinesPerTrain >= 4} onChange={(value) => updateSettings({ maximumAxleLinesPerTrain: Math.round(value) })} />
         </div>
       </FormSection>
-      <FormSection title="Search rules">
+      <FormSection title="Formation spacing" description="Fewer trains remains preferable to adding a train, even when the passing spacing is wider than 2.9 m.">
+        <div className="wizard-field-grid three">
+          <NumberField label="Preferred centre spacing" value={settings.preferredCentreSpacingM} unit="m" min={0.1} step={0.1} valid={settings.preferredCentreSpacingM > 0} onChange={(preferredCentreSpacingM) => updateSettings({ preferredCentreSpacingM })} />
+          <NumberField label="Minimum train clearance" value={settings.minimumClearanceM} unit="m" min={0} step={0.01} onChange={(minimumClearanceM) => updateSettings({ minimumClearanceM })} />
+          <NumberField label="Maximum overall width" value={settings.maximumFormationWidthM} unit="m" min={0.1} step={0.1} onChange={(maximumFormationWidthM) => updateSettings({ maximumFormationWidthM })} />
+          <NumberField label="Spacing seed count" value={settings.spacingSamples} min={2} max={7} step={1} valid={Number.isInteger(settings.spacingSamples) && settings.spacingSamples >= 2 && settings.spacingSamples <= 7} onChange={(value) => updateSettings({ spacingSamples: Math.round(value) })} />
+          <NumberField label="Convergence tolerance" value={settings.spacingToleranceM} unit="m" min={0.001} step={0.01} onChange={(spacingToleranceM) => updateSettings({ spacingToleranceM })} />
+        </div>
+      </FormSection>
+      <FormSection title="Mathematical planner sequence">
         <ol className="arrangement-rule-list">
-          <li><b>1</b><span>Try train counts from {settings.minimumTrains} upward.</span></li>
-          <li><b>2</b><span>For each count, try only constructible AL totals in ascending order.</span></li>
-          <li><b>3</b><span>Place identical trains at equal offsets from the all-inclusive COG.</span></li>
-          <li><b>4</b><span>Run exact split, X-position, support and pin logic for every retained case.</span></li>
+          <li><b>1</b><span>Calculate gross capacity bounds including packing, tare, PPU and configured axle utilisation.</span></li>
+          <li><b>2</b><span>Generate only constructible 4/5/6-AL module combinations.</span></li>
+          <li><b>3</b><span>Intersect the stability inequalities to solve the longitudinal X interval for every load-case COG point.</span></li>
+          <li><b>4</b><span>Test 2.9 m first, then bisect only the pitch interval that can improve the current result.</span></li>
+          <li><b>5</b><span>Run a complete final engineering search on the winning formation before it can rank first.</span></li>
         </ol>
       </FormSection>
     </>
@@ -362,58 +534,62 @@ export function ArrangementWizard({
 
   const renderReview = () => (
     <>
-      <FormSection title="Automatic arrangement preflight">
+      <FormSection title="Mathematical arrangement preflight">
         {blocking.length ? (
-          <div className="wizard-issue-list">
-            {blocking.map((issue) => <div key={issue.id} className="blocking"><IconX size={14} /><span><b>{issue.title}</b><small>{issue.detail}</small></span></div>)}
-          </div>
+          <div className="wizard-issue-list">{blocking.map((issue) => <div key={issue.id} className="blocking"><IconX size={14} /><span><b>{issue.title}</b><small>{issue.detail}</small></span></div>)}</div>
         ) : (
-          <div className="arrangement-ready"><IconCheck size={18} /><span><b>Ready to find the minimum arrangement</b><small>Every recorded candidate will use the complete calculation and iterative support-settling process.</small></span></div>
+          <div className="arrangement-ready"><IconCheck size={18} /><span><b>Ready to search for the minimum SPMT arrangement</b><small>Every retained case still runs the complete engineering and iterative support-settling calculation.</small></span></div>
         )}
       </FormSection>
-      <FormSection title="Objective order" description="These priorities are hard ordered and cannot be reversed by pass weighting.">
+      <FormSection title="Hard objective order">
         <div className="arrangement-objectives">
-          <span><i>1</i><b>Engineering PASS</b><small>All active limits and support rules</small></span>
+          <span><i>1</i><b>Engineering PASS</b><small>All active checks and minimum supports</small></span>
           <span><i>2</i><b>Minimum trains</b><small>First feasible train-count level</small></span>
-          <span><i>3</i><b>Minimum total AL</b><small>First constructible axle-count level</small></span>
-          <span><i>4</i><b>Preferred centre spacing</b><small>Closest valid pitch to {settings.preferredCentreSpacingM.toFixed(2)} m</small></span>
-          <span><i>5</i><b>Best pass rating</b><small>Current engineering weighting</small></span>
+          <span><i>3</i><b>Minimum total AL</b><small>First buildable axle-count level</small></span>
+          <span><i>4</i><b>Preferred spacing</b><small>Closest pass to {settings.preferredCentreSpacingM.toFixed(2)} m</small></span>
+          <span><i>5</i><b>Best rating</b><small>Current engineering weighting</small></span>
         </div>
       </FormSection>
     </>
   );
 
-  const form = step === "case" ? renderCase() : step === "trailer" ? renderTrailer() : step === "formation" ? renderFormation() : renderReview();
+  const form = step === "cargo"
+    ? renderCargo()
+    : step === "packing"
+      ? renderPacking()
+      : step === "trailer"
+        ? renderTrailer()
+        : step === "search"
+          ? renderSearch()
+          : renderReview();
 
   const discard = () => {
-    if (!window.confirm("Discard this automatic-arrangement draft?")) return;
-    localStorage.removeItem(DRAFT_KEY);
+    if (!window.confirm("Discard this fast-arrangement draft?")) return;
+    localStorage.removeItem(ARRANGEMENT_WIZARD_DRAFT_KEY);
     onClose();
   };
+  const reset = () => {
+    setDraftModel(blankOrCurrent(activeModel, initialSourceType));
+    setStep("cargo");
+  };
   const apply = (run: boolean) => {
-    if (run && !canRun) return;
-    localStorage.removeItem(DRAFT_KEY);
-    onApply(structuredClone(settings), run);
+    if (blocking.length > 0 || (run && !canRun)) return;
+    localStorage.removeItem(ARRANGEMENT_WIZARD_DRAFT_KEY);
+    onApply(hydrateProjectModel(structuredClone(draftModel)), run);
   };
 
   return (
     <dialog ref={dialogRef} className="setup-wizard-dialog arrangement-wizard-dialog" aria-labelledby="arrangement-wizard-title" onCancel={(event) => { event.preventDefault(); onClose(); }}>
       <div className="setup-wizard-shell optimiser-wizard-shell arrangement-wizard-shell">
         <header className="setup-wizard-header">
-          <div><span>AUTOMATIC TRAILER ARRANGEMENT</span><h2 id="arrangement-wizard-title">{currentStep.label}</h2></div>
+          <div><span>MATHEMATICAL TRAILER ARRANGEMENT</span><h2 id="arrangement-wizard-title">{currentStep.label}</h2></div>
           <div className="setup-wizard-mobile-progress"><span>{stepIndex + 1} / {STEPS.length} · {currentStep.label}</span><div><i style={{ width: `${((stepIndex + 1) / STEPS.length) * 100}%` }} /></div></div>
           <button type="button" className="icon-button" aria-label="Save draft and close" onClick={onClose}><IconX size={16} /></button>
         </header>
-        <nav className="setup-wizard-rail" aria-label="Arrangement setup steps">
-          <div className="setup-wizard-rail-title"><span>ARRANGEMENT</span><b>Find minimum SPMT formation</b></div>
-          <ol>
-            {STEPS.map((item, index) => {
-              const active = item.id === step;
-              const complete = index < stepIndex;
-              return <li key={item.id}><button type="button" className={`${active ? "active" : ""}${complete ? " complete" : ""}`} onClick={() => setStep(item.id)}><i>{complete ? <IconCheck size={13} /> : item.icon}</i><span><b>{item.label}</b><small>{item.description}</small></span></button></li>;
-            })}
-          </ol>
-          <div className="setup-wizard-rail-footer"><span><i className="ok" /> Existing engineering engine</span><span>{draftSavedAt ? `Draft saved ${new Date(draftSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Draft autosave pending"}</span></div>
+        <nav className="setup-wizard-rail" aria-label="Mathematical arrangement setup steps">
+          <div className="setup-wizard-rail-title"><span>MATHEMATICAL SEARCH</span><b>Find minimum SPMT formation</b></div>
+          <ol>{STEPS.map((item, index) => { const active = item.id === step; const complete = index < stepIndex; return <li key={item.id}><button type="button" className={`${active ? "active" : ""}${complete ? " complete" : ""}`} onClick={() => setStep(item.id)}><i>{complete ? <IconCheck size={13} /> : item.icon}</i><span><b>{item.label}</b><small>{item.description}</small></span></button></li>; })}</ol>
+          <div className="setup-wizard-rail-footer"><span><i className="ok" /> Exact retained calculations</span><span>{draftSavedAt ? `Draft saved ${new Date(draftSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Draft autosave pending"}</span></div>
         </nav>
         <section className="setup-wizard-form-pane" aria-label={`${currentStep.label} inputs`}>
           <div className="setup-wizard-form-heading"><span>STEP {stepIndex + 1} / {STEPS.length}</span><h2>{currentStep.label}</h2><p>{currentStep.description}</p></div>
@@ -421,19 +597,20 @@ export function ArrangementWizard({
           {form}
           {step !== "review" && stepIssues.length > 0 && <FormSection title="Step preflight"><div className="wizard-issue-list">{stepIssues.map((issue) => <div key={issue.id} className={issue.severity}><IconAlertTriangle size={14} /><span><b>{issue.title}</b><small>{issue.detail}</small></span></div>)}</div></FormSection>}
         </section>
-        <section className="setup-wizard-preview arrangement-wizard-preview" aria-label="Automatic arrangement plan">
-          <div className="setup-wizard-preview-status"><div><span>LIVE ARRANGEMENT PLAN</span><b>{activeModel.cargo.name || "Untitled case"}</b></div><div className={calculating ? "working" : "ready"}>{calculating && <IconLoader2 size={14} />}<span>{calculating ? "Current case updating" : "Authoritative inputs ready"}</span></div></div>
-          <div className="arrangement-preview-hero"><span>OPTIMISTIC CAPACITY START</span><b>{capacityLowerBound} <small>total AL</small></b><p>The exact search starts at the next module-constructible value for each train count.</p></div>
+        <section className="setup-wizard-preview arrangement-wizard-preview" aria-label="Mathematical arrangement plan">
+          <div className="setup-wizard-preview-status"><div><span>LIVE MATHEMATICAL PLAN</span><b>{draftModel.cargo.name || "New arrangement case"}</b></div><div className={calculating ? "working" : "ready"}>{calculating && <IconLoader2 size={14} />}<span>{calculating ? "Active case updating" : "Draft inputs ready"}</span></div></div>
+          <div className="arrangement-preview-hero"><span>CAPACITY-DERIVED START</span><b>{minimumCapacityStart} <small>total AL</small></b><p>Gross load, trailer tare, selected PPU mass and the axle-utilisation limit are included before module rounding.</p></div>
           <div className="arrangement-plan-table">
-            <header><b>First constructible candidates</b><span>{plannedSearches.toLocaleString()} upper formation searches</span></header>
-            {planRows.map((row) => <div key={row.trainCount}><span><b>{row.trainCount}</b><small>train{row.trainCount === 1 ? "" : "s"}</small></span><span><b>{row.first?.axleLines ?? "—"} AL/train</b><small>{row.first ? moduleText(row.first.composition.modules4, row.first.composition.modules5, row.first.composition.modules6) : "No stock combination"}</small></span><span><b>{row.first ? row.first.axleLines * row.trainCount : "—"} total AL</b><small>{row.pitches} equal-spacing sample{row.pitches === 1 ? "" : "s"}</small></span></div>)}
+            <header><b>First buildable candidates</b><span>{settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? `${plannedSearches.toLocaleString()} bounded formation levels` : settings.searchMode === "ADAPTIVE_BOUNDED" ? `${plannedSearches.toLocaleString()} bounded seed cases` : `${plannedSearches.toLocaleString()} legacy formation searches`}</span></header>
+            {planRows.map((row) => <div key={row.trainCount}><span><b>{row.trainCount}</b><small>train{row.trainCount === 1 ? "" : "s"}</small></span><span><b>{row.first?.axleLines ?? "—"} AL/train</b><small>{row.first ? moduleText(row.first.composition.modules4, row.first.composition.modules5, row.first.composition.modules6) : "No stock combination"}</small></span><span><b>{row.first ? row.first.axleLines * row.trainCount : "—"} total AL</b><small>{row.pitches} spacing seed{row.pitches === 1 ? "" : "s"}</small></span></div>)}
+            {!planRows.length && <p className="fast-support-empty">Select a trailer and enter valid search bounds to create the plan.</p>}
           </div>
-          <div className="arrangement-preview-facts"><span><small>Selected trailer</small><b>{definition?.name ?? "Not selected"}</b></span><span><small>Preferred spacing</small><b>{settings.preferredCentreSpacingM.toFixed(2)} m centres</b></span><span><small>Maximum width</small><b>{settings.maximumFormationWidthM.toFixed(2)} m</b></span><span><small>Allowed modules</small><b>{[settings.allow4AxleModules && "4", settings.allow5AxleModules && "5", settings.allow6AxleModules && "6"].filter(Boolean).join(" / ") || "None"} AL</b></span><span><small>Centre reference</small><b>All-inclusive COG</b></span></div>
+          <div className="arrangement-preview-facts"><span><small>Payload mass</small><b>{(draftModel.cargo.massT + draftModel.packing.massT + draftModel.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0)).toFixed(2)} t</b></span><span><small>Selected trailer</small><b>{definition?.name ?? "Not selected"}</b></span><span><small>Deck height</small><b>{draftModel.trailerDeckHeightM.toFixed(3)} m</b></span><span><small>PPU</small><b>{settings.ppuPosition === "NONE" ? "None" : settings.ppuPosition === "REAR" ? "Rear" : "Front"}</b></span><span><small>Allowed supports</small><b>{draftModel.supports.filter((item) => item.allowed).length}</b></span><span><small>Search</small><b>{settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? "Math branch & bound" : settings.searchMode === "ADAPTIVE_BOUNDED" ? "Legacy bounded" : "Legacy grid"}</b></span></div>
           <div className="setup-wizard-preview-findings">{blocking.length ? <span className="blocking"><IconX size={13} /> {blocking.length} blocking</span> : <span className="valid"><IconCheck size={13} /> Search valid</span>}</div>
         </section>
         <footer className="setup-wizard-footer">
-          <div className="setup-wizard-footer-secondary"><button type="button" className="wizard-discard" onClick={discard}><IconTrash size={14} /> Discard</button><button type="button" onClick={() => { setSettings(structuredClone(activeModel.arrangementOptimiser)); setStep("case"); }}><IconTargetArrow size={14} /> Reset current</button><button type="button" disabled={blocking.length > 0} onClick={() => apply(false)}>Save settings & close</button></div>
-          <div className="setup-wizard-footer-primary">{stepIndex > 0 && <button type="button" onClick={() => setStep(STEPS[stepIndex - 1].id)}><IconChevronLeft size={15} /> Back</button>}{step !== "review" ? <button type="button" className="wizard-primary" disabled={!canContinue} onClick={() => setStep(STEPS[Math.min(STEPS.length - 1, stepIndex + 1)].id)}>Next <IconChevronRight size={15} /></button> : <button type="button" className="wizard-primary optimiser-start-action" disabled={!canRun} onClick={() => apply(true)}><IconPlayerPlay size={15} /> Find minimum arrangement</button>}</div>
+          <div className="setup-wizard-footer-secondary"><button type="button" className="wizard-discard" onClick={discard}><IconTrash size={14} /> Discard</button><button type="button" onClick={reset}><IconTargetArrow size={14} /> Reset {initialSourceType === "BLANK" ? "blank" : "current"}</button><button type="button" disabled={blocking.length > 0} onClick={() => apply(false)}>Save case & close</button></div>
+          <div className="setup-wizard-footer-primary">{stepIndex > 0 && <button type="button" onClick={() => setStep(STEPS[stepIndex - 1].id)}><IconChevronLeft size={15} /> Back</button>}{step !== "review" ? <button type="button" className="wizard-primary" disabled={!canContinue} onClick={() => setStep(STEPS[Math.min(STEPS.length - 1, stepIndex + 1)].id)}>Next <IconChevronRight size={15} /></button> : <button type="button" className="wizard-primary optimiser-start-action" disabled={!canRun} onClick={() => apply(true)}><IconPlayerPlay size={15} /> Run mathematical search</button>}</div>
         </footer>
       </div>
     </dialog>

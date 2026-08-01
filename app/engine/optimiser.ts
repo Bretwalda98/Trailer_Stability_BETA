@@ -15,6 +15,12 @@ import type {
 export interface OptimiserCallbacks {
   onUpdate?: (run: OptimiserRun, detailIncluded: boolean) => void;
   signal?: AbortSignal;
+  /** Internal arrangement-search mode. Full grid search remains the default. */
+  boundedConvergence?: boolean;
+  /** Solves the stability-feasible X interval before exact case evaluation. */
+  mathematicalConvergence?: boolean;
+  /** Stops after feasibility is established; the winning formation is fully searched later. */
+  feasibilityOnly?: boolean;
 }
 
 interface PlannedCase {
@@ -373,10 +379,40 @@ function triangleFractions(point: { x: number; y: number }, polygon: Array<{ x: 
   return [first, second, 1 - first - second];
 }
 
+function boundedProbeValues(
+  values: number[],
+  preferred: number,
+  maximum = 7,
+): number[] {
+  if (values.length <= maximum) return values;
+  const nearestIndex = values.reduce(
+    (best, value, index) =>
+      Math.abs(value - preferred) < Math.abs(values[best] - preferred) ? index : best,
+    0,
+  );
+  const indexes = [
+    nearestIndex,
+    values.length - 1,
+    0,
+    Math.round((values.length - 1) / 2),
+    Math.round((values.length - 1) / 4),
+    Math.round(((values.length - 1) * 3) / 4),
+    nearestIndex - 1,
+    nearestIndex + 1,
+  ];
+  const selected = new Set<number>();
+  for (const index of indexes) {
+    if (index >= 0 && index < values.length) selected.add(values[index]);
+    if (selected.size >= maximum) break;
+  }
+  return [...selected];
+}
+
 function automaticE89Cases(
   model: ProjectModel,
   c89: number,
   d138: number,
+  boundedConvergence = false,
 ): PlannedCase[] {
   const probe0: PlannedCase = { c89, d138, e89: 0, phase: "COARSE_SCAN" };
   const probe1: PlannedCase = { c89, d138, e89: 1, phase: "COARSE_SCAN" };
@@ -401,7 +437,10 @@ function automaticE89Cases(
   if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum > maximum) return [];
   minimum -= Math.max(0, model.optimiser.boundaryToleranceM);
   maximum += Math.max(0, model.optimiser.boundaryToleranceM);
-  const values = range(minimum, maximum, model.optimiser.e89Step);
+  const completeValues = range(minimum, maximum, model.optimiser.e89Step);
+  const values = boundedConvergence
+    ? boundedProbeValues(completeValues, (minimum + maximum) / 2)
+    : completeValues;
   return values.map((e89) => ({
     c89,
     d138,
@@ -416,7 +455,94 @@ function automaticE89Cases(
   }));
 }
 
-function planCoarseCases(model: ProjectModel): PlannedCase[] {
+export interface StabilityXInterval {
+  minimumM: number;
+  maximumM: number;
+}
+
+function stabilityConstraintPoints(result: CalculationResult): Array<{ x: number; y: number }> {
+  return [
+    result.combinedCog,
+    ...result.casePoints.basic,
+    ...result.casePoints.slope,
+    ...result.casePoints.dynamic,
+  ];
+}
+
+/**
+ * Intersects every triangular barycentric inequality at X=0 and X=1. For a
+ * fixed axle/split geometry these coordinates are affine in shared trailer X,
+ * so the result is the complete stability-feasible longitudinal interval.
+ */
+export function deriveStabilityXInterval(
+  result0: CalculationResult,
+  result1: CalculationResult,
+): StabilityXInterval | null {
+  if (result0.stabilityPolygon.length !== 3 || result1.stabilityPolygon.length !== 3) return null;
+  const points0 = stabilityConstraintPoints(result0);
+  const points1 = stabilityConstraintPoints(result1);
+  if (points0.length !== points1.length) return null;
+  let minimumM = Number.NEGATIVE_INFINITY;
+  let maximumM = Number.POSITIVE_INFINITY;
+  for (let pointIndex = 0; pointIndex < points0.length; pointIndex += 1) {
+    const fractions0 = triangleFractions(points0[pointIndex], result0.stabilityPolygon);
+    const fractions1 = triangleFractions(points1[pointIndex], result1.stabilityPolygon);
+    if (fractions0.length !== 3 || fractions1.length !== 3) return null;
+    for (let fractionIndex = 0; fractionIndex < 3; fractionIndex += 1) {
+      const intercept = fractions0[fractionIndex];
+      const slope = fractions1[fractionIndex] - intercept;
+      if (Math.abs(slope) < 1e-12) {
+        if (intercept < -1e-12) return null;
+        continue;
+      }
+      const boundary = -intercept / slope;
+      if (slope > 0) minimumM = Math.max(minimumM, boundary);
+      else maximumM = Math.min(maximumM, boundary);
+    }
+  }
+  if (!Number.isFinite(minimumM) || !Number.isFinite(maximumM) || minimumM > maximumM) return null;
+  return { minimumM, maximumM };
+}
+
+function mathematicalE89Cases(
+  model: ProjectModel,
+  c89: number,
+  d138: number,
+): PlannedCase[] {
+  const probe0: PlannedCase = { c89, d138, e89: 0, phase: "COARSE_SCAN" };
+  const probe1: PlannedCase = { c89, d138, e89: 1, phase: "COARSE_SCAN" };
+  const result0 = calculateProject(caseModel(model, probe0));
+  const result1 = calculateProject(caseModel(model, probe1));
+  const interval = deriveStabilityXInterval(result0, result1);
+  if (!interval) return [];
+  const tolerance = Math.max(0, model.optimiser.boundaryToleranceM);
+  const minimum = interval.minimumM - tolerance;
+  const maximum = interval.maximumM + tolerance;
+  const midpoint = (minimum + maximum) / 2;
+  const values = [
+    midpoint,
+    minimum,
+    maximum,
+    minimum + (maximum - minimum) / 4,
+    minimum + (3 * (maximum - minimum)) / 4,
+  ];
+  return [...new Set(values.map((value) => round(value, 9)))].map((e89) => ({
+    c89,
+    d138,
+    e89,
+    phase: "COARSE_SCAN",
+    cachedResult:
+      Math.abs(e89) < 1e-10
+        ? result0
+        : Math.abs(e89 - 1) < 1e-10
+          ? result1
+          : undefined,
+  }));
+}
+
+type CoarsePlanningMode = "FULL" | "BOUNDED" | "MATHEMATICAL";
+
+function planCoarseCases(model: ProjectModel, mode: CoarsePlanningMode = "FULL"): PlannedCase[] {
   const settings = model.optimiser;
   const cases: PlannedCase[] = [];
   for (const c89 of range(settings.c89Start, settings.c89Maximum, settings.c89Step).map(Math.round)) {
@@ -426,14 +552,34 @@ function planCoarseCases(model: ProjectModel): PlannedCase[] {
         ? c89 - 1
         : Math.min(c89 - 1, Math.floor(c89 * settings.d138MaximumFraction)),
     );
-    for (const d138 of range(settings.d138Start, maximumD, settings.d138Step).map(Math.round)) {
+    const completeSplits = range(settings.d138Start, maximumD, settings.d138Step).map(Math.round);
+    const splitValues = mode !== "FULL"
+      ? boundedProbeValues(
+          completeSplits,
+          Math.max(settings.d138Start, Math.round(c89 / 3)),
+          mode === "MATHEMATICAL" ? 5 : 7,
+        )
+      : completeSplits;
+    for (const d138 of splitValues) {
       if (d138 < 1 || d138 >= c89) continue;
       if (settings.e89RangeMode === "MANUAL") {
-        for (const e89 of range(settings.e89Minimum, settings.e89Maximum, settings.e89Step)) {
+        const completeValues = range(settings.e89Minimum, settings.e89Maximum, settings.e89Step);
+        const e89Values = mode !== "FULL"
+          ? boundedProbeValues(
+              completeValues,
+              (settings.e89Minimum + settings.e89Maximum) / 2,
+              mode === "MATHEMATICAL" ? 5 : 7,
+            )
+          : completeValues;
+        for (const e89 of e89Values) {
           cases.push({ c89, d138, e89, phase: "COARSE_SCAN" });
         }
       } else {
-        cases.push(...automaticE89Cases(model, c89, d138));
+        cases.push(...(
+          mode === "MATHEMATICAL"
+            ? mathematicalE89Cases(model, c89, d138)
+            : automaticE89Cases(model, c89, d138, mode === "BOUNDED")
+        ));
       }
     }
   }
@@ -566,7 +712,12 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
   run.runReference = runReference();
   run.state = "PLANNING";
   run.startedAt = new Date().toISOString();
-  const coarseCases = planCoarseCases(model);
+  const planningMode: CoarsePlanningMode = callbacks.mathematicalConvergence
+    ? "MATHEMATICAL"
+    : callbacks.boundedConvergence
+      ? "BOUNDED"
+      : "FULL";
+  const coarseCases = planCoarseCases(model, planningMode);
   const pinUpper =
     model.optimiser.pinSearchMode === "OFF"
       ? 0
@@ -587,7 +738,7 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
     "",
     "Plan",
     "Run plan created",
-    `${coarseCases.length} coarse cases; pin upper bound ${pinUpper}; refinement upper bound ${refinementUpper}.`,
+    `${coarseCases.length} ${planningMode === "MATHEMATICAL" ? "mathematically bounded" : planningMode === "BOUNDED" ? "bounded-probe" : "coarse"} cases; pin upper bound ${pinUpper}; refinement upper bound ${refinementUpper}.`,
     "INFO",
   );
   tracker.advance("Plan complete");
@@ -681,9 +832,53 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
         break;
     }
 
+    if (
+      planningMode !== "FULL" &&
+      !run.passes.some((pass) => pass.result.status === "PASS")
+    ) {
+      const tested = new Set(
+        run.passes.map((pass) => `${pass.c89}|${pass.d138}|${pass.e89.toFixed(9)}|${pass.pinnedAxleLines.join(",")}`),
+      );
+      const fallbackCases = planCoarseCases(model, "FULL").filter(
+        (planned) =>
+          !tested.has(
+            `${planned.c89}|${planned.d138}|${planned.e89.toFixed(9)}|${(planned.pins ?? []).join(",")}`,
+          ),
+      );
+      if (fallbackCases.length) {
+        tracker.adjustOverallPlanned(fallbackCases.length);
+        tracker.setPhase(
+          "COARSE_SCAN",
+          Math.max(1, fallbackCases.length),
+          "No reduced-search pass; exact grid fallback",
+        );
+        event(
+          run,
+          started,
+          "COARSE_SCAN",
+          "",
+          "Fallback",
+          "Reduced probes found no pass",
+          `${fallbackCases.length} remaining exact cases were restored so the search cannot miss an isolated feasible region.`,
+          "INFO",
+        );
+        for (const planned of fallbackCases) {
+          if (callbacks.signal?.aborted) throw new DOMException("Stopped by user", "AbortError");
+          const pass = await evaluate(planned);
+          tracker.advance(pass.caseReference);
+          if (pass.result.status === "PASS") {
+            rankPasses(run.passes, model);
+            await notify();
+            break;
+          }
+          await notify();
+        }
+      }
+    }
+
     rankPasses(run.passes, model);
     let best = run.passes.find((item) => item.overallRank === 1) ?? null;
-    if (best && model.optimiser.pinSearchMode !== "OFF" && pinUpper > 0) {
+    if (best && !callbacks.feasibilityOnly && model.optimiser.pinSearchMode !== "OFF" && pinUpper > 0) {
       const rankedCandidates = run.passes
         .filter((item) => item.overallRank !== null)
         .sort((a, b) => (a.overallRank ?? Infinity) - (b.overallRank ?? Infinity));
@@ -754,7 +949,7 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
 
     rankPasses(run.passes, model);
     best = run.passes.find((item) => item.overallRank === 1) ?? null;
-    if (best) {
+    if (best && !callbacks.feasibilityOnly) {
       const ranked = run.passes
         .filter((item) => item.overallRank !== null)
         .sort((a, b) => (a.overallRank ?? Infinity) - (b.overallRank ?? Infinity));

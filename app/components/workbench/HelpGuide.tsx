@@ -13,7 +13,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
-export const HELP_GUIDE_REVISION = "Interface revision 0.7.6 · reviewed 1 August 2026";
+export const HELP_GUIDE_REVISION = "Interface revision 0.7.8 · reviewed 1 August 2026";
 
 const GUIDE_SECTIONS = [
   {
@@ -23,7 +23,7 @@ const GUIDE_SECTIONS = [
     title: "Set up a calculation-ready case",
     intro: "Use the guided setup when creating, importing or revising a transport case.",
     steps: [
-      "At startup, choose Start new setup or Open saved file. Continue saved case resumes the project stored on this device.",
+      "At startup, choose Mathematical arrangement optimiser, Build an arrangement manually, or Open saved file. Continue saved case resumes the project stored on this device.",
       "Select Set up case in the top bar whenever you want to reopen the wizard.",
       "Blank case starts with no cargo, trailers, hydraulics or supports on the drawing. The arrangement appears only as you enter setup data.",
       "Work through case basics, cargo, packing, trailers, hydraulics, supports and review.",
@@ -108,12 +108,17 @@ const GUIDE_SECTIONS = [
     title: "Find the minimum constructible SPMT arrangement",
     intro: "This separate optimiser designs parallel trains before applying the exact existing engineering search to each retained formation.",
     steps: [
-      "Open Run optimisation, then choose Find minimum trailer arrangement. The same action is also available from the top-bar More menu.",
-      "Confirm the authoritative cargo, packing, supports and route inputs, then choose the trailer family and available 4-, 5- and 6-axle-line modules.",
+      "Choose Mathematical arrangement optimiser on the start screen, or Open mathematical arrangement wizard from the top-bar More menu.",
+      "Enter the cargo, cargo COG, packing, trailer deck height and packing supports. New mathematical-search cases begin blank and do not insert a trailer arrangement before the search finishes.",
+      "Choose the trailer family, PPU location and available 4-, 5- and 6-axle-line modules.",
       "Set train-count, stock and formation limits. A per-train axle count is eligible only when it is exactly constructible from the enabled module sizes.",
       "Parallel trains are placed at equal offsets from the all-inclusive COG. The standard preferred spacing is 2.9 m centre-to-centre and can be changed.",
       "The hard decision order is engineering PASS, minimum train count, minimum total axle lines, closest valid preferred spacing, then the selected engineering weighting.",
-      "A wider valid formation with fewer trains always beats adding another train. Every candidate still runs the exact support-settling, stability, spine-beam and pin logic.",
+      "Mathematical branch-and-bound calculates the payload capacity lower bound, rejects unbuildable 4/5/6-AL totals, solves the stability-feasible X interval and converges on the closest passing Y pitch.",
+      "The preferred 2.9 m pitch is tested first. If it fails, the solver brackets and bisects the feasible boundary to the selected tolerance instead of stepping through every spacing.",
+      "The winning formation then receives a complete legacy-grid engineering search, including support settling, split, X, pin and refinement logic, before it can be ranked first.",
+      "A wider valid formation with fewer trains always beats adding another train. Every retained candidate still runs the exact support-settling, stability, spine-beam and pin logic.",
+      "Choose Legacy full grid search inside the wizard, or use the existing optimiser controls, whenever the previous search sequence is required.",
       "Review the train, module, pitch and width columns in the results drawer, then apply the selected result to rebuild and recalculate the active case.",
     ],
   },

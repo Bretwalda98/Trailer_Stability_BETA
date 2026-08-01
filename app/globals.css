@@ -2718,6 +2718,13 @@ input[type="checkbox"] {
   background: #0b1b2b;
 }
 
+.startup-choice-options > button.startup-fast-arrangement {
+  grid-column: 1 / -1;
+  min-height: 104px;
+  border-color: #3389d7;
+  background: #0a1d30;
+}
+
 .startup-choice-options span,
 .startup-continue span {
   display: grid;
@@ -3368,6 +3375,10 @@ input[type="checkbox"] {
 
   .startup-choice-options {
     grid-template-columns: 1fr;
+  }
+
+  .startup-choice-options > button.startup-fast-arrangement {
+    grid-column: 1;
   }
 
   .startup-choice-options > button {
@@ -4816,6 +4827,59 @@ input[type="checkbox"] {
 .arrangement-module-grid > div > label small { color: var(--text-faint); font-size: 8px; }
 .arrangement-stock-toggle { margin-top: 8px; }
 
+.arrangement-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.arrangement-inline-actions button {
+  min-height: 34px;
+  border-color: #315679;
+  background: #0a1723;
+  color: #c7def7;
+}
+
+.fast-support-list {
+  display: grid;
+  gap: 5px;
+  margin: 9px 0;
+}
+
+.fast-support-row {
+  display: grid;
+  grid-template-columns: 28px minmax(92px, 1fr) minmax(82px, 0.8fr) 64px 30px;
+  align-items: end;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  background: #080a0b;
+}
+
+.fast-support-row > b {
+  align-self: center;
+  color: #8eb9ff;
+  font-size: 10px;
+}
+
+.fast-support-allowed {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-dim);
+  font-size: 8px;
+}
+
+.fast-support-empty {
+  margin: 0;
+  border: 1px dashed var(--line-strong);
+  padding: 10px;
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
 .arrangement-rule-list {
   display: grid;
   gap: 5px;
@@ -4944,7 +5008,7 @@ input[type="checkbox"] {
 
 .arrangement-preview-facts {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   padding: 1px 0 0;
   border-top: 1px solid var(--line);
@@ -5325,6 +5389,15 @@ input[type="checkbox"] {
 }
 
 @media (max-width: 900px) {
+  .fast-support-row {
+    grid-template-columns: 24px minmax(0, 1fr) minmax(0, 0.8fr) 58px 44px;
+  }
+
+  .fast-support-row .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
   .setup-wizard-dialog {
     inset: var(--header-height) 0 0;
     height: calc(100dvh - var(--header-height));

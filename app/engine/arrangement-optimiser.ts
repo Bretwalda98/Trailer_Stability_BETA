@@ -9,6 +9,8 @@ import {
   arrangementSummary,
   collectArrangementIssues,
   createArrangementDescriptor,
+  formationPitchBounds,
+  mathematicalPitchSeeds,
   minimumTotalAxleLines,
   spacingCandidates,
   validAxleLineValues,
@@ -23,6 +25,18 @@ import type {
 } from "./types";
 
 const EPS = 1e-9;
+
+function mathematicalPitchEvaluationUpperBound(
+  definition: ProjectModel["catalogue"][number],
+  settings: ProjectModel["arrangementOptimiser"],
+  trainCount: number,
+): number {
+  const bounds = formationPitchBounds(definition, settings, trainCount);
+  if (!bounds || trainCount === 1) return bounds ? 1 : 0;
+  const span = Math.max(0, bounds.maximumPitchM - bounds.minimumPitchM);
+  const tolerance = Math.max(1e-6, settings.spacingToleranceM);
+  return 3 + 2 * Math.max(0, Math.ceil(Math.log2(Math.max(1, span / tolerance))));
+}
 
 export function rankArrangementPasses(passes: PassResult[], model: ProjectModel): PassResult[] {
   rankPasses(passes, model);
@@ -217,25 +231,22 @@ export async function runArrangementOptimiser(
   }
 
   const definition = model.catalogue.find((item) => item.id === settings.trailerDefinitionId)!;
-  const totalAxleLowerBound = minimumTotalAxleLines(model, settings);
-  const plans = Array.from(
+  const plannedFormationUpperBound = Array.from(
     {
       length: Math.max(0, settings.maximumTrains - settings.minimumTrains + 1),
     },
     (_, offset) => settings.minimumTrains + offset,
   ).flatMap((trainCount) => {
+    const totalAxleLowerBound = minimumTotalAxleLines(model, settings, trainCount);
     const minimumPerTrain = Math.ceil(totalAxleLowerBound / trainCount);
-    return validAxleLineValues(settings, trainCount, minimumPerTrain).flatMap(({ axleLines, composition }) =>
-      spacingCandidates(definition, settings, trainCount).map((pitchM) => ({
-        trainCount,
-        composition,
-        pitchM,
-        axleLines,
-      })),
-    );
-  });
-  run.progress.overallPlanned = Math.max(1, plans.length + 1);
-  run.progress.phasePlanned = Math.max(1, plans.length);
+    const axleBuckets = validAxleLineValues(settings, trainCount, minimumPerTrain).length;
+    const pitchesPerBucket = settings.searchMode === "MATHEMATICAL_BRANCH_BOUND"
+      ? mathematicalPitchEvaluationUpperBound(definition, settings, trainCount)
+      : spacingCandidates(definition, settings, trainCount).length;
+    return axleBuckets * pitchesPerBucket;
+  }).reduce((sum, count) => sum + count, 0);
+  run.progress.overallPlanned = Math.max(1, plannedFormationUpperBound + 1);
+  run.progress.phasePlanned = Math.max(1, plannedFormationUpperBound);
   run.progress.phase = "FORMATION_SEARCH";
   run.progress.runState = "RUNNING";
   run.state = "RUNNING";
@@ -244,7 +255,7 @@ export async function runArrangementOptimiser(
     started,
     "Planning",
     "Arrangement search planned",
-    `Minimum static-capacity estimate ${totalAxleLowerBound} total AL; ${plans.length} exact formation searches available before lexicographic stopping.`,
+    `${settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? "Mathematical branch-and-bound" : settings.searchMode === "ADAPTIVE_BOUNDED" ? "Legacy bounded convergence" : "Legacy grid search"}; ${plannedFormationUpperBound} upper formation evaluations before capacity, buildability and lexicographic pruning.`,
   );
   await notify(true, true);
 
@@ -252,15 +263,139 @@ export async function runArrangementOptimiser(
   let winningTrainCount: number | null = null;
   let winningAxleLines: number | null = null;
 
+  const evaluateFormation = async (
+    trainCount: number,
+    axleLines: number,
+    composition: Parameters<typeof createArrangementDescriptor>[3],
+    pitchM: number,
+    finalVerification = false,
+    verificationTemplate?: PassResult,
+  ): Promise<boolean> => {
+    throwIfStopped(callbacks.signal);
+    if (completedUnits + 1 >= run.progress.overallPlanned) {
+      run.progress.overallPlanned = completedUnits + 2;
+    }
+    const descriptor = createArrangementDescriptor(
+      definition,
+      settings,
+      trainCount,
+      composition,
+      pitchM,
+    );
+    const arranged = applyArrangementDescriptor(model, descriptor);
+    const mathematical = settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" && !finalVerification;
+    const exactModel: ProjectModel = {
+      ...arranged,
+      optimiser: {
+        ...arranged.optimiser,
+        stopAtFirstPass: mathematical,
+        afterFirstPass: mathematical ? "STOP" : "CONTINUE_SCAN",
+        fineFirstPassReference: "",
+        fineSecondPassReference: "",
+      },
+    };
+    const unitStarted = performance.now();
+    run.progress.reference = arrangementSummary(descriptor);
+    addEvent(
+      run,
+      started,
+      finalVerification ? "Final" : "Formation",
+      finalVerification ? "Running complete winning-formation verification" : "Testing exact arrangement",
+      arrangementSummary(descriptor),
+    );
+    const inner = await runOptimiser(exactModel, {
+      signal: callbacks.signal,
+      boundedConvergence: settings.searchMode === "ADAPTIVE_BOUNDED" && !finalVerification,
+      mathematicalConvergence: mathematical,
+      feasibilityOnly: mathematical,
+      onUpdate: async (innerRun) => {
+        const innerFraction = Math.max(0, Math.min(1, innerRun.progress.overallPercent / 100));
+        run.progress.overallCompleted = completedUnits + innerFraction;
+        run.progress.overallPercent = Math.min(
+          99,
+          (run.progress.overallCompleted / Math.max(1, run.progress.overallPlanned)) * 100,
+        );
+        run.progress.phaseCompleted = innerRun.progress.overallCompleted;
+        run.progress.phasePlanned = Math.max(1, innerRun.progress.overallPlanned);
+        run.progress.phasePercent = innerRun.progress.overallPercent;
+        run.progress.currentEtaMs = innerRun.progress.overallEtaMs;
+        run.progress.reference = `${trainCount} train${trainCount === 1 ? "" : "s"} · ${axleLines} AL/train · ${innerRun.progress.reference}`;
+        await notify();
+      },
+    });
+    if (inner.state === "STOPPED") throw new DOMException("Stopped by user", "AbortError");
+    appendInnerRun(run, inner, descriptor, unitStarted - started);
+    completedUnits += 1;
+    run.progress.overallCompleted = completedUnits;
+    run.progress.overallPercent = Math.min(
+      99,
+      (completedUnits / Math.max(1, run.progress.overallPlanned)) * 100,
+    );
+    run.progress.phaseCompleted = completedUnits;
+    run.progress.phasePlanned = Math.max(1, run.progress.overallPlanned - 1);
+    run.progress.phasePercent = Math.min(100, (completedUnits / run.progress.phasePlanned) * 100);
+    rankArrangementPasses(run.passes, model);
+    let hasPass = inner.passes.some((pass) => pass.result.status === "PASS");
+    if (finalVerification && verificationTemplate) {
+      let verificationModel = applyArrangementDescriptor(model, descriptor);
+      verificationModel = applySharedSplit(verificationModel, verificationTemplate.d138);
+      verificationModel = applySharedX(verificationModel, verificationTemplate.e89);
+      verificationModel = applySharedPins(verificationModel, verificationTemplate.pinnedAxleLines);
+      const verificationStarted = performance.now();
+      const verificationResult = calculateProject(verificationModel);
+      run.passes.push(makeRefinementPass(
+        run,
+        descriptor,
+        verificationTemplate,
+        verificationResult,
+        performance.now() - verificationStarted,
+      ));
+      hasPass ||= verificationResult.status === "PASS";
+      rankArrangementPasses(run.passes, model);
+      addEvent(
+        run,
+        started,
+        "Final",
+        verificationResult.status === "PASS" ? "Winning case reapplied and verified" : "Winning case recheck failed",
+        `Split ${verificationTemplate.d138}, X ${verificationTemplate.e89.toFixed(6)} m and pins ${verificationTemplate.pinnedAxleLines.join(", ") || "none"}; ${verificationResult.failDetail || "exact result verified"}.`,
+        verificationResult.status === "PASS" ? "PASS" : "ERROR",
+      );
+    }
+    if (hasPass) {
+      addEvent(
+        run,
+        started,
+        finalVerification ? "Final" : "Formation",
+        finalVerification ? "Winning formation fully verified" : "Minimum-level pass found",
+        `${arrangementSummary(descriptor)} produced at least one exact valid pass.`,
+        "PASS",
+      );
+    }
+    await notify(true, true);
+    return hasPass;
+  };
+
   try {
     for (let trainCount = settings.minimumTrains; trainCount <= settings.maximumTrains; trainCount += 1) {
       throwIfStopped(callbacks.signal);
+      const totalAxleLowerBound = minimumTotalAxleLines(model, settings, trainCount);
       const minimumPerTrain = Math.ceil(totalAxleLowerBound / trainCount);
       const axleValues = validAxleLineValues(settings, trainCount, minimumPerTrain);
+      if (!axleValues.length) {
+        addEvent(
+          run,
+          started,
+          "Bound",
+          "Train count rejected by capacity or stock bound",
+          `${trainCount} train${trainCount === 1 ? "" : "s"} require at least ${totalAxleLowerBound} total AL, but no enabled 4/5/6-AL module composition fits the configured per-train and stock limits.`,
+          "INFO",
+        );
+        continue;
+      }
       for (const { axleLines, composition } of axleValues) {
         throwIfStopped(callbacks.signal);
-        const pitches = spacingCandidates(definition, settings, trainCount);
-        if (!pitches.length) {
+        const pitchBounds = formationPitchBounds(definition, settings, trainCount);
+        if (!pitchBounds) {
           addEvent(
             run,
             started,
@@ -272,76 +407,106 @@ export async function runArrangementOptimiser(
           continue;
         }
         let bucketHasPass = false;
-        for (const pitchM of pitches) {
-          throwIfStopped(callbacks.signal);
-          const descriptor = createArrangementDescriptor(
-            definition,
-            settings,
-            trainCount,
-            composition,
-            pitchM,
-          );
-          const arranged = applyArrangementDescriptor(model, descriptor);
-          const exactModel: ProjectModel = {
-            ...arranged,
-            optimiser: {
-              ...arranged.optimiser,
-              stopAtFirstPass: false,
-              afterFirstPass: "CONTINUE_SCAN",
-              fineFirstPassReference: "",
-              fineSecondPassReference: "",
-            },
+        if (settings.searchMode === "MATHEMATICAL_BRANCH_BOUND") {
+          const tested = new Map<string, boolean>();
+          const testPitch = async (pitchM: number): Promise<boolean> => {
+            const bounded = Math.max(
+              pitchBounds.minimumPitchM,
+              Math.min(pitchBounds.maximumPitchM, pitchM),
+            );
+            const rounded = Math.round(bounded * 1e9) / 1e9;
+            const key = rounded.toFixed(9);
+            const previous = tested.get(key);
+            if (previous !== undefined) return previous;
+            const passed = await evaluateFormation(trainCount, axleLines, composition, rounded);
+            tested.set(key, passed);
+            return passed;
           };
-          const unitStarted = performance.now();
-          run.progress.reference = arrangementSummary(descriptor);
-          addEvent(
-            run,
-            started,
-            "Formation",
-            "Testing exact arrangement",
-            arrangementSummary(descriptor),
-          );
-          const inner = await runOptimiser(exactModel, {
-            signal: callbacks.signal,
-            onUpdate: async (innerRun) => {
-              const innerFraction = Math.max(0, Math.min(1, innerRun.progress.overallPercent / 100));
-              run.progress.overallCompleted = completedUnits + innerFraction;
-              run.progress.overallPercent = Math.min(
-                99,
-                (run.progress.overallCompleted / Math.max(1, run.progress.overallPlanned)) * 100,
-              );
-              run.progress.phaseCompleted = innerRun.progress.overallCompleted;
-              run.progress.phasePlanned = Math.max(1, innerRun.progress.overallPlanned);
-              run.progress.phasePercent = innerRun.progress.overallPercent;
-              run.progress.currentEtaMs = innerRun.progress.overallEtaMs;
-              run.progress.reference = `${trainCount} train${trainCount === 1 ? "" : "s"} · ${axleLines} AL/train · ${innerRun.progress.reference}`;
-              await notify();
-            },
-          });
-          if (inner.state === "STOPPED") throw new DOMException("Stopped by user", "AbortError");
-          appendInnerRun(run, inner, descriptor, unitStarted - started);
-          completedUnits += 1;
-          run.progress.overallCompleted = completedUnits;
-          run.progress.overallPercent = Math.min(
-            99,
-            (completedUnits / Math.max(1, run.progress.overallPlanned)) * 100,
-          );
-          run.progress.phaseCompleted = completedUnits;
-          run.progress.phasePlanned = Math.max(1, run.progress.overallPlanned - 1);
-          run.progress.phasePercent = Math.min(100, (completedUnits / run.progress.phasePlanned) * 100);
-          rankArrangementPasses(run.passes, model);
-          if (inner.passes.some((pass) => pass.result.status === "PASS")) {
+          const preferred = pitchBounds.preferredPitchM;
+          if (await testPitch(preferred)) {
             bucketHasPass = true;
             addEvent(
               run,
               started,
-              "Formation",
-              "Minimum-level pass found",
-              `${arrangementSummary(descriptor)} produced at least one exact valid pass. Remaining equal-priority spacings will be compared.`,
-              "PASS",
+              "Bound",
+              "Preferred pitch is feasible",
+              `${preferred.toFixed(3)} m is the exact closest possible pitch to the configured preference; all other Y positions are dominated.`,
+              "BEST",
+            );
+          } else {
+            const passingSeeds: number[] = [];
+            for (const seed of mathematicalPitchSeeds(definition, settings, trainCount).slice(1)) {
+              if (await testPitch(seed)) passingSeeds.push(seed);
+            }
+            if (!passingSeeds.length) {
+              for (const seed of spacingCandidates(definition, settings, trainCount)) {
+                if (tested.has(seed.toFixed(9))) continue;
+                if (await testPitch(seed)) passingSeeds.push(seed);
+              }
+            }
+            for (const seed of passingSeeds) {
+              let failingPitch = preferred;
+              let passingPitch = seed;
+              let iterations = 0;
+              while (
+                Math.abs(passingPitch - failingPitch) > settings.spacingToleranceM + EPS &&
+                iterations < 48
+              ) {
+                const midpoint = (passingPitch + failingPitch) / 2;
+                if (await testPitch(midpoint)) passingPitch = midpoint;
+                else failingPitch = midpoint;
+                iterations += 1;
+              }
+              bucketHasPass = true;
+              addEvent(
+                run,
+                started,
+                "Bound",
+                "Pitch feasibility boundary solved",
+                `Converged from ${seed.toFixed(3)} m to ${passingPitch.toFixed(3)} m, within ${settings.spacingToleranceM.toFixed(3)} m of the closest passing boundary to the preferred pitch.`,
+                "PASS",
+              );
+            }
+          }
+          if (bucketHasPass) {
+            addEvent(
+              run,
+              started,
+              "Bound",
+              "Higher axle and train branches pruned",
+              `${trainCount} train${trainCount === 1 ? "" : "s"} at ${axleLines} AL/train is feasible. Larger axle counts at this train level and every higher train-count level are lexicographically worse.`,
+              "INFO",
             );
           }
-          await notify(true, true);
+        } else {
+          const pitches = spacingCandidates(definition, settings, trainCount);
+          let passingDistance = Number.POSITIVE_INFINITY;
+          let skippedPitches = 0;
+          for (const pitchM of pitches) {
+            const pitchDistance = Math.abs(pitchM - settings.preferredCentreSpacingM);
+            if (
+              settings.searchMode === "ADAPTIVE_BOUNDED" &&
+              bucketHasPass &&
+              pitchDistance > passingDistance + EPS
+            ) {
+              skippedPitches += 1;
+              continue;
+            }
+            if (await evaluateFormation(trainCount, axleLines, composition, pitchM)) {
+              bucketHasPass = true;
+              passingDistance = Math.min(passingDistance, pitchDistance);
+            }
+          }
+          if (skippedPitches > 0) {
+            addEvent(
+              run,
+              started,
+              "Formation",
+              "Dominated spacings pruned",
+              `${skippedPitches} spacing candidate${skippedPitches === 1 ? " was" : "s were"} farther from the preferred ${settings.preferredCentreSpacingM.toFixed(3)} m pitch than an already verified passing formation.`,
+              "INFO",
+            );
+          }
         }
         if (bucketHasPass) {
           winningTrainCount = trainCount;
@@ -354,7 +519,13 @@ export async function runArrangementOptimiser(
 
     rankArrangementPasses(run.passes, model);
     let best = run.passes.find((pass) => pass.overallRank === 1) ?? null;
-    if (best?.arrangement && winningTrainCount !== null && winningAxleLines !== null) {
+    if (
+      settings.searchMode !== "MATHEMATICAL_BRANCH_BOUND" &&
+      best?.arrangement &&
+      winningTrainCount !== null &&
+      winningAxleLines !== null &&
+      Math.abs(best.arrangement.pitchM - settings.preferredCentreSpacingM) > settings.spacingToleranceM
+    ) {
       run.progress.phase = "REFINEMENT";
       run.progress.reference = "Refining equal train spacing";
       const minimumPitch =
@@ -437,6 +608,30 @@ export async function runArrangementOptimiser(
           await notify();
         }
         step /= 2;
+      }
+    }
+
+    if (settings.searchMode === "MATHEMATICAL_BRANCH_BOUND") {
+      rankArrangementPasses(run.passes, model);
+      best = run.passes.find((pass) => pass.overallRank === 1) ?? null;
+      if (best?.arrangement) {
+        run.progress.phase = "FINALISING";
+        run.progress.reference = "Complete search of the winning formation";
+        const arrangement = best.arrangement;
+        await evaluateFormation(
+          arrangement.trainCount,
+          arrangement.axleLinesPerTrain,
+          {
+            modules4: arrangement.modules4,
+            modules5: arrangement.modules5,
+            modules6: arrangement.modules6,
+            axleLines: arrangement.axleLinesPerTrain,
+            moduleCount: arrangement.moduleCountPerTrain,
+          },
+          arrangement.pitchM,
+          true,
+          best,
+        );
       }
     }
 

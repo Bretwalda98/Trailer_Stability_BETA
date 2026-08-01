@@ -22,6 +22,12 @@ export interface ArrangementIssue {
   detail: string;
 }
 
+export interface FormationPitchBounds {
+  minimumPitchM: number;
+  maximumPitchM: number;
+  preferredPitchM: number;
+}
+
 const EPS = 1e-9;
 
 function integer(value: number, minimum: number, maximum: number): number {
@@ -110,16 +116,70 @@ export function validAxleLineValues(
 export function minimumTotalAxleLines(
   model: ProjectModel,
   settings: ArrangementOptimiserSettings,
+  trainCount = settings.minimumTrains,
 ): number {
   const definition = selectedDefinition(model, settings);
   if (!definition) return 4;
+  const trains = integer(trainCount, 1, 12);
   const carriedMassT =
     model.cargo.massT +
     model.packing.massT +
     model.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0);
-  const netCapacityPerLine = definition.axleCapacityT - definition.axleWeightT;
+  const utilisationLimit =
+    typeof model.optimiser.maximumAxleUtilisation === "number"
+      ? Math.max(EPS, model.optimiser.maximumAxleUtilisation)
+      : 1;
+  const ppuMassT =
+    settings.ppuPosition === "NONE"
+      ? 0
+      : Math.max(0, definition.ppuWeightT ?? 0) * trains;
+  const netCapacityPerLine =
+    definition.axleCapacityT * utilisationLimit - definition.axleWeightT;
   if (!(netCapacityPerLine > EPS)) return settings.maximumAxleLinesPerTrain * settings.maximumTrains;
-  return Math.max(4, Math.ceil(carriedMassT / netCapacityPerLine));
+  return Math.max(4, Math.ceil((carriedMassT + ppuMassT) / netCapacityPerLine));
+}
+
+/** Exact geometric pitch limits for equal, symmetric parallel trains. */
+export function formationPitchBounds(
+  definition: TrailerDefinition,
+  settings: ArrangementOptimiserSettings,
+  trainCount: number,
+): FormationPitchBounds | null {
+  const trains = integer(trainCount, 1, 12);
+  if (trains === 1) {
+    return { minimumPitchM: 0, maximumPitchM: 0, preferredPitchM: 0 };
+  }
+  const minimumPitchM = definition.trailerWidthM + Math.max(0, settings.minimumClearanceM);
+  const maximumPitchM =
+    (Math.max(0, settings.maximumFormationWidthM) - definition.trailerWidthM) /
+    (trains - 1);
+  if (maximumPitchM + EPS < minimumPitchM) return null;
+  return {
+    minimumPitchM,
+    maximumPitchM,
+    preferredPitchM: Math.max(
+      minimumPitchM,
+      Math.min(maximumPitchM, settings.preferredCentreSpacingM),
+    ),
+  };
+}
+
+/**
+ * Preferred pitch plus the two exact geometric limits. These establish the
+ * branch-and-bound brackets without stepping through the complete Y range.
+ */
+export function mathematicalPitchSeeds(
+  definition: TrailerDefinition,
+  settings: ArrangementOptimiserSettings,
+  trainCount: number,
+): number[] {
+  const bounds = formationPitchBounds(definition, settings, trainCount);
+  if (!bounds) return [];
+  return [...new Set([
+    bounds.preferredPitchM,
+    bounds.maximumPitchM,
+    bounds.minimumPitchM,
+  ].map((value) => Math.round(value * 1e9) / 1e9))];
 }
 
 export function spacingCandidates(
@@ -129,21 +189,17 @@ export function spacingCandidates(
 ): number[] {
   const trains = integer(trainCount, 1, 12);
   if (trains === 1) return [0];
-  const minimumPitch = definition.trailerWidthM + Math.max(0, settings.minimumClearanceM);
-  const maximumPitch =
-    (Math.max(0, settings.maximumFormationWidthM) - definition.trailerWidthM) /
-    (trains - 1);
-  if (maximumPitch + EPS < minimumPitch) return [];
+  const bounds = formationPitchBounds(definition, settings, trains);
+  if (!bounds) return [];
+  const minimumPitch = bounds.minimumPitchM;
+  const maximumPitch = bounds.maximumPitchM;
   const count = integer(settings.spacingSamples, 2, 7);
   if (Math.abs(maximumPitch - minimumPitch) < EPS) return [maximumPitch];
   const values = Array.from(
     { length: count },
     (_, index) => minimumPitch + ((maximumPitch - minimumPitch) * index) / (count - 1),
   );
-  const preferredPitch = Math.max(
-    minimumPitch,
-    Math.min(maximumPitch, settings.preferredCentreSpacingM),
-  );
+  const preferredPitch = bounds.preferredPitchM;
   values.push(preferredPitch);
   // The standard 2.9 m pitch (or the configured equivalent) is tried first.
   // Train count remains the hard outer priority, so a wider valid formation is
@@ -264,6 +320,14 @@ export function collectArrangementIssues(
 ): ArrangementIssue[] {
   const issues: ArrangementIssue[] = [];
   const definition = selectedDefinition(model, settings);
+  if (!["MATHEMATICAL_BRANCH_BOUND", "ADAPTIVE_BOUNDED", "LEGACY_GRID"].includes(settings.searchMode)) {
+    issues.push({
+      id: "search-mode",
+      severity: "blocking",
+      title: "Select a valid arrangement search mode",
+      detail: "Use mathematical branch-and-bound, legacy bounded search or the legacy grid search.",
+    });
+  }
   if (!definition) {
     issues.push({
       id: "catalogue-model",
@@ -355,6 +419,51 @@ export function collectArrangementIssues(
       severity: "blocking",
       title: "Cargo definition is incomplete",
       detail: "Enter positive cargo mass, length and width values in case setup.",
+    });
+  }
+  if (!model.cargo.name.trim()) {
+    issues.push({
+      id: "case-name",
+      severity: "blocking",
+      title: "Enter a case or cargo name",
+      detail: "The mathematical arrangement run needs a reference that can be used in its case log.",
+    });
+  }
+  const cargo = model.cargo;
+  if (
+    cargo.cog.x < cargo.extremeX - EPS ||
+    cargo.cog.x > cargo.extremeX + cargo.lengthM + EPS ||
+    cargo.cog.y < cargo.extremeY - EPS ||
+    cargo.cog.y > cargo.extremeY + cargo.widthM + EPS ||
+    cargo.cog.z < -EPS ||
+    cargo.cog.z > cargo.heightM + EPS
+  ) {
+    issues.push({
+      id: "cargo-cog",
+      severity: "blocking",
+      title: "Cargo COG is outside the cargo envelope",
+      detail: "Enter a cargo COG within its defined length, width and height.",
+    });
+  }
+  if (
+    !(model.trailerDeckHeightM > 0) ||
+    !(model.packing.massT >= 0) ||
+    !(model.packing.heightM >= 0) ||
+    ![model.packing.cog.x, model.packing.cog.y, model.packing.cog.z].every(Number.isFinite)
+  ) {
+    issues.push({
+      id: "packing",
+      severity: "blocking",
+      title: "Packing or deck definition is incomplete",
+      detail: "Enter non-negative packing values and a positive trailer deck height.",
+    });
+  }
+  if (definition && settings.ppuPosition !== "NONE" && !(definition.ppuWeightT !== null && definition.ppuWeightT >= 0)) {
+    issues.push({
+      id: "ppu-data",
+      severity: "blocking",
+      title: "Selected trailer has no usable PPU mass",
+      detail: "Choose no PPU or select a catalogue trailer with verified PPU data.",
     });
   }
   if (definition) {

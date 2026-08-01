@@ -38,6 +38,8 @@ test("server-renders the standalone engineering workbench", async () => {
   assert.match(html, /Engineering details/);
   assert.match(html, /Run optimisation/);
   assert.match(html, /How would you like to start/);
+  assert.match(html, /Mathematical arrangement optimiser/);
+  assert.match(html, /Build an arrangement manually/);
   assert.match(html, /Open saved file/);
   assert.match(html, /Results and selected item inspector/);
   assert.match(html, /manifest\.webmanifest/);
@@ -99,11 +101,16 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(optimiserWizardEngine, /OPTIMISER_WIZARD_DRAFT_STORAGE_KEY/);
   assert.match(optimiserWizardEngine, /estimateOptimiserPlan/);
   assert.match(workbench, /ArrangementWizard/);
-  assert.match(arrangementWizard, /AUTOMATIC TRAILER ARRANGEMENT/);
+  assert.match(arrangementWizard, /MATHEMATICAL TRAILER ARRANGEMENT/);
+  assert.match(arrangementWizard, /Mathematical branch/);
+  assert.match(arrangementWizard, /Trailer deck height/);
+  assert.match(arrangementWizard, /PPU location on every train/);
   assert.match(arrangementWizard, /Preferred centre spacing/);
   assert.match(arrangementEngine, /settings\.preferredCentreSpacingM/);
+  assert.match(arrangementEngine, /mathematicalPitchSeeds/);
   assert.match(arrangementEngine, /modules4 \* 4 \+ modules5 \* 5 \+ modules6 \* 6/);
   assert.match(arrangementOptimiser, /runOptimiser\(exactModel/);
+  assert.match(arrangementOptimiser, /Pitch feasibility boundary solved/);
   assert.match(arrangementOptimiser, /trainCount - rightArrangement\.trainCount/);
   assert.match(windEngine, /lengthM \* heightM/);
   assert.match(windEngine, /widthM \* heightM/);
