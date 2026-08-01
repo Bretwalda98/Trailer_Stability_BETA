@@ -224,8 +224,13 @@ export interface OptimiserSettings {
 }
 
 export type ArrangementPpuPosition = "NONE" | "REAR" | "FRONT";
+export type ArrangementSearchMode =
+  | "MATHEMATICAL_BRANCH_BOUND"
+  | "ADAPTIVE_BOUNDED"
+  | "LEGACY_GRID";
 
 export interface ArrangementOptimiserSettings {
+  searchMode: ArrangementSearchMode;
   trailerDefinitionId: string;
   allow4AxleModules: boolean;
   allow5AxleModules: boolean;

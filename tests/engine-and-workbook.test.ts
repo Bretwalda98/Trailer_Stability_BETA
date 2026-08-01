@@ -24,6 +24,9 @@ import {
   bestModuleComposition,
   collectArrangementIssues,
   createArrangementDescriptor,
+  formationPitchBounds,
+  mathematicalPitchSeeds,
+  minimumTotalAxleLines,
   moduleCompositions,
   spacingCandidates,
   validAxleLineValues,
@@ -32,7 +35,7 @@ import {
   rankArrangementPasses,
   runArrangementOptimiser,
 } from "../app/engine/arrangement-optimiser";
-import { passToProject, runOptimiser } from "../app/engine/optimiser";
+import { deriveStabilityXInterval, passToProject, runOptimiser } from "../app/engine/optimiser";
 import {
   canRunOptimiserWizard,
   collectOptimiserWizardIssues,
@@ -124,6 +127,7 @@ async function main(): Promise<void> {
   assert.equal(model.cargo.envelopeX, model.cargo.lengthM * 0.02);
   assert.equal(model.cargo.envelopeY, model.cargo.widthM * 0.02);
   assert.equal(model.arrangementOptimiser.preferredCentreSpacingM, 2.9);
+  assert.equal(model.arrangementOptimiser.searchMode, "MATHEMATICAL_BRANCH_BOUND");
   assert.deepEqual(derivedCargoWindInputs(model.cargo), {
     sideWindAreaM2: model.cargo.lengthM * model.cargo.heightM,
     frontWindAreaM2: model.cargo.widthM * model.cargo.heightM,
@@ -152,6 +156,28 @@ async function main(): Promise<void> {
   )!;
   const preferredPitches = spacingCandidates(selectedArrangementDefinition, arrangementSettings, 2);
   assert.equal(preferredPitches[0], 2.9);
+  const pitchBounds = formationPitchBounds(selectedArrangementDefinition, arrangementSettings, 2);
+  assert.ok(pitchBounds);
+  assert.equal(pitchBounds.preferredPitchM, 2.9);
+  assert.deepEqual(
+    mathematicalPitchSeeds(selectedArrangementDefinition, arrangementSettings, 2),
+    [pitchBounds.preferredPitchM, pitchBounds.maximumPitchM, pitchBounds.minimumPitchM],
+  );
+  const capacityBoundModel = structuredClone(model);
+  capacityBoundModel.cargo.massT = 100;
+  capacityBoundModel.packing.massT = 10;
+  capacityBoundModel.loosePacking = [{ id: "capacity-packing", type: "Packing", massT: 5, startXM: 0, endXM: 1 }];
+  capacityBoundModel.optimiser.maximumAxleUtilisation = 0.8;
+  arrangementSettings.ppuPosition = "FRONT";
+  const expectedCapacityBound = Math.max(
+    4,
+    Math.ceil(
+      (115 + 2 * (selectedArrangementDefinition.ppuWeightT ?? 0)) /
+        (selectedArrangementDefinition.axleCapacityT * 0.8 - selectedArrangementDefinition.axleWeightT),
+    ),
+  );
+  assert.equal(minimumTotalAxleLines(capacityBoundModel, arrangementSettings, 2), expectedCapacityBound);
+  arrangementSettings.ppuPosition = "NONE";
   arrangementSettings.limitModuleAvailability = true;
   arrangementSettings.available4AxleModules = 3;
   arrangementSettings.available5AxleModules = 0;
@@ -180,12 +206,22 @@ async function main(): Promise<void> {
   compactArrangementSearch.cargo.massT = 20;
   compactArrangementSearch.packing.massT = 0;
   compactArrangementSearch.loosePacking = [];
+  compactArrangementSearch.environment = {
+    ...compactArrangementSearch.environment,
+    routeLongitudinalSlopeDeg: 0,
+    routeTransverseSlopeDeg: 0,
+    longitudinalSlopeDeg: 0,
+    transverseSlopeDeg: 0,
+    longitudinalAccelerationMps2: 0,
+    transverseAccelerationMps2: 0,
+    windSpeedMps: 0,
+  };
   compactArrangementSearch.arrangementOptimiser = {
     ...compactArrangementSearch.arrangementOptimiser,
     minimumTrains: 2,
     maximumTrains: 2,
     maximumAxleLinesPerTrain: 4,
-    maximumFormationWidthM: 5.8,
+    maximumFormationWidthM: 9,
     spacingSamples: 2,
   };
   compactArrangementSearch.optimiser = {
@@ -193,15 +229,40 @@ async function main(): Promise<void> {
     d138Start: 1,
     d138Step: 1,
     d138MaximumFraction: 0.25,
-    e89Step: 10,
+    e89Step: 0.5,
     pinSearchMode: "OFF",
     deflectionCheck: "OFF",
+    minimumActiveSupports: 1,
   };
   const arrangementRun = await runArrangementOptimiser(compactArrangementSearch);
   assert.equal(arrangementRun.state, "COMPLETE");
   assert.ok(arrangementRun.passes.length > 0);
   assert.ok(arrangementRun.passes.every((pass) => pass.arrangement?.trainCount === 2));
   assert.ok(arrangementRun.passes.every((pass) => pass.arrangement?.axleLinesPerTrain === 4));
+  assert.ok(arrangementRun.events.some((item) => item.detail.includes("Mathematical branch-and-bound")));
+  assert.ok(arrangementRun.events.some((item) => item.message === "Winning formation fully verified"));
+  const mathematicalBest = arrangementRun.passes.find((pass) => pass.overallRank === 1);
+  assert.ok(mathematicalBest?.arrangement);
+  assert.equal(mathematicalBest.arrangement.trainCount, 2);
+  assert.equal(mathematicalBest.arrangement.totalAxleLines, 8);
+  const legacyArrangementSearch = structuredClone(compactArrangementSearch);
+  legacyArrangementSearch.arrangementOptimiser.searchMode = "LEGACY_GRID";
+  const legacyArrangementRun = await runArrangementOptimiser(legacyArrangementSearch);
+  assert.equal(legacyArrangementRun.state, "COMPLETE");
+  assert.ok(legacyArrangementRun.passes.length > 0);
+  assert.ok(legacyArrangementRun.events.some((item) => item.detail.includes("Legacy grid search")));
+  const legacyBest = legacyArrangementRun.passes.find((pass) => pass.overallRank === 1);
+  assert.ok(arrangementRun.passes.length < legacyArrangementRun.passes.length);
+  assert.equal(mathematicalBest.arrangement.trainCount, legacyBest?.arrangement?.trainCount);
+  assert.equal(mathematicalBest.arrangement.totalAxleLines, legacyBest?.arrangement?.totalAxleLines);
+  const intervalProbe = applyArrangementDescriptor(compactArrangementSearch, mathematicalBest.arrangement);
+  const splitProbe = applySharedSplit(intervalProbe, mathematicalBest.d138);
+  const interval = deriveStabilityXInterval(
+    calculateProject(applySharedX(splitProbe, 0)),
+    calculateProject(applySharedX(splitProbe, 1)),
+  );
+  assert.ok(interval);
+  assert.ok(interval.minimumM <= interval.maximumM);
   const appliedArrangement = passToProject(compactArrangementSearch, arrangementRun.passes[0]);
   assert.equal(appliedArrangement.trailers.length, 2);
   assert.ok(appliedArrangement.trailers.every((trailer) => trailer.axleLines === 4));

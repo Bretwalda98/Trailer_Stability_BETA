@@ -135,8 +135,8 @@ export function CaseHeader({
               <button onClick={() => { onHelp(); setMenuOpen(false); }}><IconHelpCircle size={14} /> Help and user guide</button>
               <button onClick={() => { onExportProject(); setMenuOpen(false); }}><IconDownload size={14} /> Export project JSON</button>
               <button onClick={() => { projectInput.current?.click(); setMenuOpen(false); }}><IconFileImport size={14} /> Import project JSON</button>
-              {!running && <button onClick={() => { onRun(); setMenuOpen(false); }}><IconPlayerPlay size={14} /> Run with current optimiser settings</button>}
-              {!running && <button onClick={() => { onArrangementSetup(); setMenuOpen(false); }}><IconTargetArrow size={14} /> Find minimum trailer arrangement</button>}
+              {!running && <button onClick={() => { onArrangementSetup(); setMenuOpen(false); }}><IconTargetArrow size={14} /> Open mathematical arrangement wizard</button>}
+              {!running && <button onClick={() => { onRun(); setMenuOpen(false); }}><IconPlayerPlay size={14} /> Run legacy optimiser with current settings</button>}
               <button onClick={() => { onReset(); setMenuOpen(false); }}><IconRefresh size={14} /> Reset example</button>
             </div>
           )}

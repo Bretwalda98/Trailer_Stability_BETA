@@ -6,6 +6,7 @@ import {
   IconLoader2,
   IconPlus,
   IconRestore,
+  IconTargetArrow,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -13,6 +14,7 @@ interface StartupChooserProps {
   open: boolean;
   busy: boolean;
   hasLocalProject: boolean;
+  onFastArrangement(): void;
   onNewSetup(): void;
   onOpenFile(file: File): Promise<boolean>;
   onContinue(): void;
@@ -22,6 +24,7 @@ export function StartupChooser({
   open,
   busy,
   hasLocalProject,
+  onFastArrangement,
   onNewSetup,
   onOpenFile,
   onContinue,
@@ -67,11 +70,19 @@ export function StartupChooser({
         </header>
 
         <div className="startup-choice-options">
-          <button ref={newSetupRef} className="startup-primary" disabled={busy} onClick={onNewSetup}>
+          <button ref={newSetupRef} className="startup-primary startup-fast-arrangement" disabled={busy} onClick={onFastArrangement}>
+            <IconTargetArrow size={22} />
+            <span>
+              <b>Mathematical arrangement optimiser</b>
+              <small>Find the fewest trains and axle lines using capacity bounds, exact module rules and solved X/Y limits.</small>
+            </span>
+          </button>
+
+          <button disabled={busy} onClick={onNewSetup}>
             <IconPlus size={22} />
             <span>
-              <b>Start new setup</b>
-              <small>Open the seven-step wizard with an empty canvas and no preset arrangement.</small>
+              <b>Build an arrangement manually</b>
+              <small>Use the complete legacy seven-step case, trailer and hydraulics setup.</small>
             </span>
           </button>
 
@@ -98,7 +109,7 @@ export function StartupChooser({
 
         <footer>
           <IconFileImport size={14} />
-          Files are processed locally in this browser.
+          Files and engineering calculations stay local in this browser. Legacy optimiser controls remain available after opening a case.
         </footer>
 
         <input
