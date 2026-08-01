@@ -74,7 +74,7 @@ export function StartupChooser({
             <IconTargetArrow size={22} />
             <span>
               <b>Mathematical arrangement optimiser</b>
-              <small>Find the fewest trains and axle lines using capacity bounds, exact module rules and solved X/Y limits.</small>
+              <small>Find the fewest trains and axle lines using capacity bounds, exact module rules, COG-height stability spacing and solved X/Y limits.</small>
             </span>
           </button>
 

@@ -498,7 +498,7 @@ export function ArrangementWizard({
             <option value="LEGACY_GRID">Legacy full grid search</option>
           </select>
           <small>{settings.searchMode === "MATHEMATICAL_BRANCH_BOUND"
-            ? "Uses capacity and module lower bounds, solves stability-feasible X limits, and converges on the closest passing pitch to the selected tolerance."
+            ? "Uses lower/upper axle bounds, the COG-height and dynamic hydraulic Y-span requirement, stability-feasible X limits and support-footprint pruning before converging on a passing pitch."
             : settings.searchMode === "ADAPTIVE_BOUNDED"
               ? "Retains the previous preferred-and-limiting-value bounded search."
               : "Retains the previous complete coarse sampling sequence."}</small>

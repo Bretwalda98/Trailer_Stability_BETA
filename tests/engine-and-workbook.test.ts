@@ -32,7 +32,9 @@ import {
   validAxleLineValues,
 } from "../app/engine/arrangement";
 import {
+  deriveHydraulicYPitchBound,
   rankArrangementPasses,
+  requiredHydraulicGroupYSpan,
   runArrangementOptimiser,
 } from "../app/engine/arrangement-optimiser";
 import { deriveStabilityXInterval, passToProject, runOptimiser } from "../app/engine/optimiser";
@@ -278,6 +280,111 @@ async function main(): Promise<void> {
   rankArrangementPasses([widerCandidate, preferredCandidate], compactArrangementSearch);
   assert.equal(preferredCandidate.overallRank, 1);
   assert.equal(widerCandidate.overallRank, 2);
+
+  const largeCargoSearch = createDefaultModel();
+  largeCargoSearch.cargo = {
+    ...largeCargoSearch.cargo,
+    name: "25 m x 16 m x 16 m overhanging cargo",
+    lengthM: 25,
+    widthM: 16,
+    heightM: 16,
+    extremeX: 0,
+    extremeY: 0,
+    massT: 100,
+    cog: { x: 12.5, y: 8, z: 8 },
+    autoWindFromCargo: true,
+    sideWindAreaM2: 400,
+    frontWindAreaM2: 256,
+    sideWindHeightM: 8,
+    frontWindHeightM: 8,
+    autoCogEnvelopeFromCargo: true,
+    envelopeX: 0.5,
+    envelopeY: 0.32,
+  };
+  largeCargoSearch.packing.massT = 0;
+  largeCargoSearch.loosePacking = [];
+  largeCargoSearch.supports = largeCargoSearch.supports.map((support, index) => ({
+    ...support,
+    xM: 5 * (index + 1),
+    allowed: true,
+  }));
+  assert.equal(
+    collectArrangementIssues(
+      largeCargoSearch,
+      largeCargoSearch.arrangementOptimiser,
+    ).some((issue) => issue.severity === "blocking"),
+    false,
+    "Cargo may legitimately overhang the selected trailer formation in X and Y.",
+  );
+  const largeDefinition = largeCargoSearch.catalogue.find(
+    (item) => item.id === largeCargoSearch.arrangementOptimiser.trailerDefinitionId,
+  )!;
+  const largeComposition = bestModuleComposition(
+    44,
+    largeCargoSearch.arrangementOptimiser,
+    1,
+  )!;
+  const singleTrainBounds = formationPitchBounds(
+    largeDefinition,
+    largeCargoSearch.arrangementOptimiser,
+    1,
+  )!;
+  const singleTrainResult = calculateProject(
+    applyArrangementDescriptor(
+      largeCargoSearch,
+      createArrangementDescriptor(
+        largeDefinition,
+        largeCargoSearch.arrangementOptimiser,
+        1,
+        largeComposition,
+        0,
+      ),
+    ),
+  );
+  const singleTrainYBound = deriveHydraulicYPitchBound(
+    largeCargoSearch,
+    singleTrainBounds.minimumPitchM,
+    singleTrainBounds.maximumPitchM,
+    singleTrainResult,
+    singleTrainResult,
+  );
+  assert.ok(requiredHydraulicGroupYSpan(largeCargoSearch, singleTrainResult) > 0);
+  assert.equal(singleTrainYBound.feasible, false);
+  assert.ok(singleTrainYBound.requiredSpanM > singleTrainYBound.maximumAvailableSpanM);
+  const largeSearchStarted = performance.now();
+  const largeCargoRun = await runArrangementOptimiser(largeCargoSearch);
+  const largeSearchDurationMs = performance.now() - largeSearchStarted;
+  assert.equal(largeCargoRun.state, "COMPLETE");
+  assert.ok(largeSearchDurationMs < 15_000);
+  assert.ok(largeCargoRun.passes.length < 1_000);
+  assert.ok(
+    largeCargoRun.events.some(
+      (item) => item.message === "Hydraulic Y-span bound rejected formation",
+    ),
+  );
+  assert.ok(
+    largeCargoRun.events.some(
+      (item) => item.message === "Maximum axle formation failed necessary gates",
+    ),
+  );
+  assert.equal(
+    largeCargoRun.events.some(
+      (item) => item.message === "Reduced probes found no pass",
+    ),
+    false,
+  );
+  const rejectedLargeCases = largeCargoRun.passes.filter(
+    (pass) => pass.result.status !== "PASS",
+  );
+  const compactRejectedProbes = rejectedLargeCases.filter(
+    (pass) =>
+      pass.result.beam.points.length === 0 &&
+      pass.result.axlePoints.length === 0 &&
+      pass.result.spineAxlePoints.length === 0,
+  );
+  const detailedRejectedCases = rejectedLargeCases.length - compactRejectedProbes.length;
+  assert.ok(compactRejectedProbes.length > 0);
+  assert.ok(detailedRejectedCases < 200);
 
   const blankSetup = createBlankSetupModel();
   assert.equal(blankSetup.trailers.length, 0);

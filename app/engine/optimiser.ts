@@ -460,6 +460,38 @@ export interface StabilityXInterval {
   maximumM: number;
 }
 
+function supportGeometryAllowsCase(
+  model: ProjectModel,
+  result0: CalculationResult,
+  result1: CalculationResult,
+  e89: number,
+): boolean {
+  const analysedIndex = Math.max(
+    0,
+    Math.min(model.trailers.length - 1, Math.round(model.analysedTrailer) - 1),
+  );
+  const trailer0 = result0.resolvedTrailers.find((item) => item.index === analysedIndex)
+    ?? result0.resolvedTrailers[0];
+  const trailer1 = result1.resolvedTrailers.find((item) => item.index === analysedIndex)
+    ?? result1.resolvedTrailers[0];
+  if (!trailer0 || !trailer1) return false;
+  const startM = trailer0.startXM + (trailer1.startXM - trailer0.startXM) * e89;
+  const lengthM = trailer0.lengthM + (trailer1.lengthM - trailer0.lengthM) * e89;
+  const required = Math.max(
+    2,
+    Math.min(10, Math.round(model.optimiser.minimumActiveSupports)),
+  );
+  const geometricallyAvailable = model.supports
+    .filter((support) => support.allowed && Number.isFinite(support.xM))
+    .slice(0, 10)
+    .filter(
+      (support) =>
+        support.xM - support.widthM / 2 >= startM - 1e-9 &&
+        support.xM + support.widthM / 2 <= startM + lengthM + 1e-9,
+    ).length;
+  return geometricallyAvailable >= required;
+}
+
 function stabilityConstraintPoints(result: CalculationResult): Array<{ x: number; y: number }> {
   return [
     result.combinedCog,
@@ -526,18 +558,20 @@ function mathematicalE89Cases(
     minimum + (maximum - minimum) / 4,
     minimum + (3 * (maximum - minimum)) / 4,
   ];
-  return [...new Set(values.map((value) => round(value, 9)))].map((e89) => ({
-    c89,
-    d138,
-    e89,
-    phase: "COARSE_SCAN",
-    cachedResult:
-      Math.abs(e89) < 1e-10
-        ? result0
-        : Math.abs(e89 - 1) < 1e-10
-          ? result1
-          : undefined,
-  }));
+  return [...new Set(values.map((value) => round(value, 9)))]
+    .filter((e89) => supportGeometryAllowsCase(model, result0, result1, e89))
+    .map((e89) => ({
+      c89,
+      d138,
+      e89,
+      phase: "COARSE_SCAN",
+      cachedResult:
+        Math.abs(e89) < 1e-10
+          ? result0
+          : Math.abs(e89 - 1) < 1e-10
+            ? result1
+            : undefined,
+    }));
 }
 
 type CoarsePlanningMode = "FULL" | "BOUNDED" | "MATHEMATICAL";
@@ -584,6 +618,66 @@ function planCoarseCases(model: ProjectModel, mode: CoarsePlanningMode = "FULL")
     }
   }
   return cases;
+}
+
+interface StabilityPrunedPlan {
+  cases: PlannedCase[];
+  fullCaseCount: number;
+  splitCount: number;
+  feasibleSplitCount: number;
+  supportPrunedCount: number;
+}
+
+/**
+ * Restores the exact legacy step grid only where a PASS remains
+ * mathematically possible. Any point outside the intersection returned by
+ * deriveStabilityXInterval must fail the stability geometry check, so removing
+ * it cannot remove a valid result.
+ */
+function planStabilityPrunedExactCases(model: ProjectModel): StabilityPrunedPlan {
+  const completeCases = planCoarseCases(model, "FULL");
+  const bySplit = new Map<string, PlannedCase[]>();
+  for (const planned of completeCases) {
+    const key = `${planned.c89}|${planned.d138}`;
+    const current = bySplit.get(key);
+    if (current) current.push(planned);
+    else bySplit.set(key, [planned]);
+  }
+
+  const tolerance = Math.max(0, model.optimiser.boundaryToleranceM) + 1e-9;
+  const cases: PlannedCase[] = [];
+  let feasibleSplitCount = 0;
+  let supportPrunedCount = 0;
+  for (const splitCases of bySplit.values()) {
+    const first = splitCases[0];
+    const result0 = calculateProject(
+      caseModel(model, { ...first, e89: 0, cachedResult: undefined }),
+    );
+    const result1 = calculateProject(
+      caseModel(model, { ...first, e89: 1, cachedResult: undefined }),
+    );
+    const interval = deriveStabilityXInterval(result0, result1);
+    if (!interval) continue;
+    feasibleSplitCount += 1;
+    const minimum = interval.minimumM - tolerance;
+    const maximum = interval.maximumM + tolerance;
+    for (const planned of splitCases) {
+      if (planned.e89 < minimum || planned.e89 > maximum) continue;
+      if (!supportGeometryAllowsCase(model, result0, result1, planned.e89)) {
+        supportPrunedCount += 1;
+        continue;
+      }
+      cases.push({ ...planned, cachedResult: undefined });
+    }
+  }
+
+  return {
+    cases,
+    fullCaseCount: completeCases.length,
+    splitCount: bySplit.size,
+    feasibleSplitCount,
+    supportPrunedCount,
+  };
 }
 
 function event(
@@ -649,6 +743,25 @@ function makePass(
     plannedWork: run.progress.overallPlanned,
     elapsedMs: run.progress.elapsedMs,
     calculationMode,
+  };
+}
+
+/**
+ * Arrangement feasibility runs can evaluate thousands of rejected formations.
+ * Their scalar metrics, settled supports and engineering extrema are retained in
+ * the permanent case log, but keeping every diagram sample would exhaust a
+ * browser tab's memory. Passing probes and the final winning verification keep
+ * their complete point data.
+ */
+function compactRejectedFeasibilityResult(result: CalculationResult): CalculationResult {
+  return {
+    ...result,
+    axlePoints: [],
+    spineAxlePoints: [],
+    beam: {
+      ...result.beam,
+      points: [],
+    },
   };
 }
 
@@ -790,10 +903,14 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
       ...planned,
       pins: [...(evaluatedModel.groupings[0]?.pinnedAxleLines ?? planned.pins ?? [])],
     };
+    const retainedResult =
+      callbacks.feasibilityOnly && result.status !== "PASS"
+        ? compactRejectedFeasibilityResult(result)
+        : result;
     const pass = makePass(
       run,
       actual,
-      result,
+      retainedResult,
       performance.now() - caseStarted,
       model.optimiser.calculationMode,
     );
@@ -836,42 +953,73 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
       planningMode !== "FULL" &&
       !run.passes.some((pass) => pass.result.status === "PASS")
     ) {
-      const tested = new Set(
-        run.passes.map((pass) => `${pass.c89}|${pass.d138}|${pass.e89.toFixed(9)}|${pass.pinnedAxleLines.join(",")}`),
-      );
-      const fallbackCases = planCoarseCases(model, "FULL").filter(
-        (planned) =>
-          !tested.has(
-            `${planned.c89}|${planned.d138}|${planned.e89.toFixed(9)}|${(planned.pins ?? []).join(",")}`,
-          ),
-      );
-      if (fallbackCases.length) {
-        tracker.adjustOverallPlanned(fallbackCases.length);
-        tracker.setPhase(
-          "COARSE_SCAN",
-          Math.max(1, fallbackCases.length),
-          "No reduced-search pass; exact grid fallback",
-        );
+      if (planningMode === "MATHEMATICAL" && callbacks.feasibilityOnly) {
         event(
           run,
           started,
           "COARSE_SCAN",
           "",
-          "Fallback",
-          "Reduced probes found no pass",
-          `${fallbackCases.length} remaining exact cases were restored so the search cannot miss an isolated feasible region.`,
+          "Bound",
+          "Fast formation probes found no pass",
+          "The stability-interval, support-footprint and boundary probes found no feasible case. The automatic arrangement search will continue to the next formation without expanding this rejected probe into the exhaustive Legacy Grid.",
           "INFO",
         );
-        for (const planned of fallbackCases) {
-          if (callbacks.signal?.aborted) throw new DOMException("Stopped by user", "AbortError");
-          const pass = await evaluate(planned);
-          tracker.advance(pass.caseReference);
-          if (pass.result.status === "PASS") {
-            rankPasses(run.passes, model);
+      } else {
+        const tested = new Set(
+          run.passes.map((pass) => `${pass.c89}|${pass.d138}|${pass.e89.toFixed(9)}|${pass.pinnedAxleLines.join(",")}`),
+        );
+        const mathematicalPlan = planningMode === "MATHEMATICAL"
+          ? planStabilityPrunedExactCases(model)
+          : null;
+        const fallbackCases = (mathematicalPlan?.cases ?? planCoarseCases(model, "FULL")).filter(
+          (planned) =>
+            !tested.has(
+              `${planned.c89}|${planned.d138}|${planned.e89.toFixed(9)}|${(planned.pins ?? []).join(",")}`,
+            ),
+        );
+        if (fallbackCases.length) {
+          tracker.adjustOverallPlanned(fallbackCases.length);
+          tracker.setPhase(
+            "COARSE_SCAN",
+            Math.max(1, fallbackCases.length),
+            "No reduced-search pass; exact grid fallback",
+          );
+          event(
+            run,
+            started,
+            "COARSE_SCAN",
+            "",
+            "Fallback",
+            planningMode === "MATHEMATICAL"
+              ? "Mathematical probes found no pass"
+              : "Reduced probes found no pass",
+            planningMode === "MATHEMATICAL"
+              ? `${fallbackCases.length} exact legacy-step cases remain inside the complete stability-feasible X intervals across ${mathematicalPlan?.feasibleSplitCount ?? 0} of ${mathematicalPlan?.splitCount ?? 0} configured splits; ${Math.max(0, (mathematicalPlan?.fullCaseCount ?? 0) - (mathematicalPlan?.cases.length ?? 0) - (mathematicalPlan?.supportPrunedCount ?? 0))} stability-impossible and ${mathematicalPlan?.supportPrunedCount ?? 0} support-geometry-impossible cases were pruned.`
+              : `${fallbackCases.length} remaining exact cases were restored so the search cannot miss an isolated feasible region.`,
+            "INFO",
+          );
+          for (const planned of fallbackCases) {
+            if (callbacks.signal?.aborted) throw new DOMException("Stopped by user", "AbortError");
+            const pass = await evaluate(planned);
+            tracker.advance(pass.caseReference);
+            if (pass.result.status === "PASS") {
+              rankPasses(run.passes, model);
+              await notify();
+              break;
+            }
             await notify();
-            break;
           }
-          await notify();
+        } else if (planningMode === "MATHEMATICAL") {
+          event(
+            run,
+            started,
+            "COARSE_SCAN",
+            "",
+            "Bound",
+            "No stability-feasible legacy-step case",
+            `${Math.max(0, mathematicalPlan?.fullCaseCount ?? 0)} configured exact cases were checked against every basic, slope, dynamic and COG-envelope stability inequality plus the minimum support-footprint gate; none can pass both necessary geometry checks.`,
+            "INFO",
+          );
         }
       }
     }
