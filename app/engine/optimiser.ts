@@ -1,4 +1,5 @@
 import { applySharedAxleLines, applySharedPins, applySharedSplit, applySharedX, calculateProject } from "./core";
+import { applyArrangementDescriptor } from "./arrangement";
 import type {
   ActivityEvent,
   CalculationResult,
@@ -897,7 +898,10 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
 }
 
 export function passToProject(base: ProjectModel, pass: PassResult): ProjectModel {
-  let model = applySharedAxleLines(cloneModel(base), pass.c89);
+  let model = pass.arrangement
+    ? applyArrangementDescriptor(cloneModel(base), pass.arrangement)
+    : applySharedAxleLines(cloneModel(base), pass.c89);
+  model = applySharedAxleLines(model, pass.c89);
   model = applySharedSplit(model, pass.d138);
   model = applySharedX(model, pass.e89);
   return applySharedPins(model, pass.pinnedAxleLines);
@@ -921,6 +925,15 @@ export function exportPassesCsv(passes: PassResult[]): string {
     "Case Ref",
     "Phase",
     "Status",
+    "Arrangement Trains",
+    "Arrangement AL / Train",
+    "Arrangement Total AL",
+    "4 AL Modules / Train",
+    "5 AL Modules / Train",
+    "6 AL Modules / Train",
+    "Train Pitch m",
+    "Formation Clearance m",
+    "Formation Width m",
     "Axle Lines",
     "Split After",
     "Trailer X Position",
@@ -1014,6 +1027,15 @@ export function exportPassesCsv(passes: PassResult[]): string {
       pass.caseReference,
       pass.phase,
       pass.result.status,
+      pass.arrangement?.trainCount ?? "",
+      pass.arrangement?.axleLinesPerTrain ?? "",
+      pass.arrangement?.totalAxleLines ?? "",
+      pass.arrangement?.modules4 ?? "",
+      pass.arrangement?.modules5 ?? "",
+      pass.arrangement?.modules6 ?? "",
+      pass.arrangement?.pitchM ?? "",
+      pass.arrangement?.clearanceM ?? "",
+      pass.arrangement?.overallWidthM ?? "",
       pass.c89,
       pass.d138,
       pass.e89,

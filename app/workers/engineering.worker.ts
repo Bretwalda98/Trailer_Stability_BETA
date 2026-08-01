@@ -2,11 +2,13 @@
 
 import { calculateProject } from "../engine/core";
 import { runOptimiser } from "../engine/optimiser";
+import { runArrangementOptimiser } from "../engine/arrangement-optimiser";
 import type { OptimiserRun, ProjectModel } from "../engine/types";
 
 type WorkerRequest =
   | { type: "calculate"; requestId: number; model: ProjectModel }
   | { type: "optimise"; requestId: number; model: ProjectModel }
+  | { type: "arrange"; requestId: number; model: ProjectModel }
   | { type: "cancel"; requestId: number };
 
 type WorkerResponse =
@@ -59,7 +61,8 @@ scope.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
   optimiserController?.abort();
   const controller = new AbortController();
   optimiserController = controller;
-  void runOptimiser(request.model, {
+  const execute = request.type === "arrange" ? runArrangementOptimiser : runOptimiser;
+  void execute(request.model, {
     signal: controller.signal,
     onUpdate: (run, detailIncluded) => {
       post({

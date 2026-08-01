@@ -13,6 +13,7 @@ import {
   IconPlayerPlay,
   IconRefresh,
   IconScale,
+  IconStack2,
   IconTargetArrow,
   IconTrash,
   IconX,
@@ -51,6 +52,7 @@ interface OptimiserWizardProps {
   result: CalculationResult;
   calculating: boolean;
   onApply(settings: OptimiserSettings, run: boolean): void;
+  onFindArrangement(): void;
   onClose(): void;
 }
 
@@ -303,6 +305,7 @@ export function OptimiserWizard({
   result,
   calculating,
   onApply,
+  onFindArrangement,
   onClose,
 }: OptimiserWizardProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -459,6 +462,21 @@ export function OptimiserWizard({
 
   const renderGoal = () => (
     <>
+      <FormSection
+        title="Choose the optimisation task"
+        description="Keep the current trailer layout, or let the optimiser design the minimum constructible SPMT formation first."
+      >
+        <div className="optimiser-workflow-grid">
+          <div className="selected">
+            <IconTargetArrow size={17} />
+            <span><b>Optimise current arrangement</b><small>Adjust shared axle lines, hydraulic split, longitudinal position and pins on the trailers already placed.</small></span>
+          </div>
+          <button type="button" onClick={onFindArrangement}>
+            <IconStack2 size={17} />
+            <span><b>Find minimum trailer arrangement</b><small>Choose 4-, 5- and 6-AL module stock, then search minimum trains and total axle lines around the all-inclusive COG.</small></span>
+          </button>
+        </div>
+      </FormSection>
       <FormSection
         title="What should the optimiser favour?"
         description="A preset changes ranking only; every retained case still receives the complete engineering calculation."

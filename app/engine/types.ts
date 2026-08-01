@@ -1,6 +1,6 @@
 export type YesNo = "yes" | "no";
 export type RunState = "IDLE" | "PLANNING" | "RUNNING" | "STOPPED" | "FAILED" | "COMPLETE";
-export type RunPhase = "PLANNING" | "COARSE_SCAN" | "PIN_SEARCH" | "REFINEMENT" | "FINALISING";
+export type RunPhase = "PLANNING" | "FORMATION_SEARCH" | "COARSE_SCAN" | "PIN_SEARCH" | "REFINEMENT" | "FINALISING";
 export type PlacementReference = "ABSOLUTE" | "LOAD_COG" | "ALL_INCLUSIVE_COG";
 export type PackingFootprintMode = "CARGO_ESTIMATE" | "CUSTOM";
 export type CalculationMode = "NATIVE_VERIFIED" | "WORKBOOK_PARITY";
@@ -223,6 +223,43 @@ export interface OptimiserSettings {
   liveRefreshSeconds: number;
 }
 
+export type ArrangementPpuPosition = "NONE" | "REAR" | "FRONT";
+
+export interface ArrangementOptimiserSettings {
+  trailerDefinitionId: string;
+  allow4AxleModules: boolean;
+  allow5AxleModules: boolean;
+  allow6AxleModules: boolean;
+  limitModuleAvailability: boolean;
+  available4AxleModules: number;
+  available5AxleModules: number;
+  available6AxleModules: number;
+  minimumTrains: number;
+  maximumTrains: number;
+  maximumAxleLinesPerTrain: number;
+  preferredCentreSpacingM: number;
+  minimumClearanceM: number;
+  maximumFormationWidthM: number;
+  spacingSamples: number;
+  spacingToleranceM: number;
+  ppuPosition: ArrangementPpuPosition;
+}
+
+export interface ArrangementDescriptor {
+  trailerDefinitionId: string;
+  trainCount: number;
+  axleLinesPerTrain: number;
+  totalAxleLines: number;
+  modules4: number;
+  modules5: number;
+  modules6: number;
+  moduleCountPerTrain: number;
+  pitchM: number;
+  clearanceM: number;
+  overallWidthM: number;
+  ppuPosition: ArrangementPpuPosition;
+}
+
 export interface ProjectModel {
   schemaVersion: 2;
   longitudinalOrientation: "REAR_LEFT_FRONT_RIGHT";
@@ -238,6 +275,7 @@ export interface ProjectModel {
   supports: CargoSupport[];
   environment: EnvironmentInput;
   optimiser: OptimiserSettings;
+  arrangementOptimiser: ArrangementOptimiserSettings;
   catalogue: TrailerDefinition[];
   analysedTrailer: number;
   spineLoadCase: SpineLoadCase;
@@ -441,6 +479,7 @@ export interface PassResult {
   plannedWork: number;
   elapsedMs: number;
   calculationMode: CalculationMode;
+  arrangement?: ArrangementDescriptor;
 }
 
 export interface ActivityEvent {

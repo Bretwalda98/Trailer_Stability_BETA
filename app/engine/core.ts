@@ -1223,7 +1223,13 @@ export function calculateProject(model: ProjectModel): CalculationResult {
   if (beamResult.warning) warnings.push(beamResult.warning);
   const beam = beamResult.metrics;
   const spineUtil = Math.max(beam.shearUtilisation, beam.bendingUtilisation);
-  const axleLinesUsed = Math.max(...resolved.trailers.map((item) => item.input.axleLines));
+  // Resource use is the total across the complete formation. Using only the
+  // largest individual train would allow multi-train arrangements to avoid the
+  // lower-is-better axle-line weighting.
+  const axleLinesUsed = resolved.trailers.reduce(
+    (sum, item) => sum + item.input.axleLines,
+    0,
+  );
   const detailed = model.optimiser.detailedWeighting;
   const limits = engineeringLimitsFor(model.engineeringDegree);
   const metrics = {

@@ -52,6 +52,7 @@ export function OptimiserDrawer({
     if (!ranked.some((pass) => pass.id === selectedPassId)) setSelectedPassId(ranked[0].id);
   }, [ranked, selectedPassId]);
   const selected = ranked.find((pass) => pass.id === selectedPassId) ?? null;
+  const arrangementRun = run.passes.some((pass) => Boolean(pass.arrangement));
   const running = run.state === "RUNNING" || run.state === "PLANNING";
   const visible = run.state !== "IDLE" || canUndo;
   if (!visible) return null;
@@ -59,7 +60,7 @@ export function OptimiserDrawer({
   return (
     <section className={`optimiser-drawer${open ? " open" : ""}`}>
       <button className="drawer-handle" onClick={() => onOpenChange(!open)} aria-expanded={open}>
-        <span><IconTargetArrow size={15} /> Optimisation · {run.state}</span>
+        <span><IconTargetArrow size={15} /> {arrangementRun ? "Automatic arrangement" : "Optimisation"} · {run.state}</span>
         <span>
           {run.progress.reference || "No active case"} · {run.passes.length} evaluated ·{" "}
           {ranked.length} valid
@@ -102,14 +103,28 @@ export function OptimiserDrawer({
               <div className="table-scroll">
                 <table className="engineering-table">
                   <thead>
-                    <tr><th>Rank</th><th>Pass ref</th><th>AL</th><th>Split</th><th>X (m)</th><th>Pins</th><th>Supports</th><th>Dyn. util.</th><th>Dyn. angle</th><th>Defl.</th><th>Rating</th></tr>
+                    <tr>
+                      <th>Rank</th><th>Pass ref</th>
+                      {arrangementRun && <><th>Trains</th><th>AL/train</th><th>Total AL</th><th>Pitch</th><th>Width</th><th>Modules/train</th></>}
+                      {!arrangementRun && <th>AL</th>}
+                      <th>Split</th><th>X (m)</th><th>Pins</th><th>Supports</th><th>Dyn. util.</th><th>Dyn. angle</th><th>Defl.</th><th>Rating</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {ranked.map((pass) => (
                       <tr key={pass.id} className={selectedPassId === pass.id ? "is-selected" : ""} onClick={() => setSelectedPassId(pass.id)}>
                         <td>{pass.overallRank}</td>
                         <td>{pass.id}</td>
-                        <td>{pass.c89}</td>
+                        {arrangementRun ? (
+                          <>
+                            <td>{pass.arrangement?.trainCount ?? "—"}</td>
+                            <td>{pass.arrangement?.axleLinesPerTrain ?? pass.c89}</td>
+                            <td>{pass.arrangement?.totalAxleLines ?? "—"}</td>
+                            <td>{pass.arrangement ? `${pass.arrangement.pitchM.toFixed(3)} m` : "—"}</td>
+                            <td>{pass.arrangement ? `${pass.arrangement.overallWidthM.toFixed(3)} m` : "—"}</td>
+                            <td>{pass.arrangement ? [pass.arrangement.modules6 && `${pass.arrangement.modules6}×6`, pass.arrangement.modules5 && `${pass.arrangement.modules5}×5`, pass.arrangement.modules4 && `${pass.arrangement.modules4}×4`].filter(Boolean).join(" + ") : "—"}</td>
+                          </>
+                        ) : <td>{pass.c89}</td>}
                         <td>{pass.d138}</td>
                         <td>{pass.e89.toFixed(3)}</td>
                         <td>{pass.pinnedAxleLines.join(", ") || "—"}</td>
@@ -120,7 +135,7 @@ export function OptimiserDrawer({
                         <td>{pass.rating?.toFixed(3) ?? "—"}</td>
                       </tr>
                     ))}
-                    {!ranked.length && <tr><td colSpan={11}>No valid ranked passes yet.</td></tr>}
+                    {!ranked.length && <tr><td colSpan={arrangementRun ? 16 : 11}>No valid ranked passes yet.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -131,6 +146,15 @@ export function OptimiserDrawer({
               {selected ? (
                 <>
                   <dl>
+                    {selected.arrangement && (
+                      <>
+                        <div><dt>Parallel trains</dt><dd><b>{selected.arrangement.trainCount}</b></dd></div>
+                        <div><dt>Constructible axle lines</dt><dd><b>{selected.arrangement.axleLinesPerTrain} AL/train · {selected.arrangement.totalAxleLines} total</b></dd></div>
+                        <div><dt>Module build per train</dt><dd><b>{[selected.arrangement.modules6 && `${selected.arrangement.modules6}×6`, selected.arrangement.modules5 && `${selected.arrangement.modules5}×5`, selected.arrangement.modules4 && `${selected.arrangement.modules4}×4`].filter(Boolean).join(" + ")}</b></dd></div>
+                        <div><dt>Equal centre spacing</dt><dd><b>{selected.arrangement.pitchM.toFixed(3)} m</b></dd></div>
+                        <div><dt>Overall formation width</dt><dd><b>{selected.arrangement.overallWidthM.toFixed(3)} m</b></dd></div>
+                      </>
+                    )}
                     <div><dt>Axle lines</dt><dd>{startModel?.trailers[0]?.axleLines ?? "—"} → <b>{selected.c89}</b></dd></div>
                     <div><dt>Split after</dt><dd>{startModel?.groupings[0]?.splitAfterAxleLine ?? "—"} → <b>{selected.d138}</b></dd></div>
                     <div><dt>Trailer X</dt><dd>{startModel?.trailers[0]?.xM.toFixed(3) ?? "—"} → <b>{selected.e89.toFixed(3)} m</b></dd></div>

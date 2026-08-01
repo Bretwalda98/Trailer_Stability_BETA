@@ -45,7 +45,7 @@ test("server-renders the standalone engineering workbench", async () => {
 });
 
 test("keeps phone, offline and workbook-verification capabilities wired", async () => {
-  const [page, layout, manifest, workbench, engineHook, worker, planView, css, serviceWorker, setupWizard, optimiserWizard, optimiserWizardEngine, windEngine, envelopeEngine] = await Promise.all([
+  const [page, layout, manifest, workbench, engineHook, worker, planView, css, serviceWorker, setupWizard, optimiserWizard, optimiserWizardEngine, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
@@ -58,6 +58,9 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
     readFile(new URL("../app/components/workbench/SetupWizard.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/workbench/OptimiserWizard.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/engine/optimiser-wizard.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/workbench/ArrangementWizard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/engine/arrangement.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/engine/arrangement-optimiser.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/engine/wind.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/engine/cargo-envelope.ts", import.meta.url), "utf8"),
   ]);
@@ -73,6 +76,7 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(engineHook, /new Worker\(new URL\("\.\.\/workers\/engineering\.worker\.ts"/);
   assert.match(worker, /calculateProject/);
   assert.match(worker, /runOptimiser/);
+  assert.match(worker, /runArrangementOptimiser/);
   assert.match(worker, /detailIncluded/);
   assert.match(engineHook, /message\.detailIncluded/);
   assert.match(planView, /buildHydraulicRouteSegments/);
@@ -94,6 +98,13 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(optimiserWizard, /Run with current optimiser settings|LIVE SEARCH PLAN/);
   assert.match(optimiserWizardEngine, /OPTIMISER_WIZARD_DRAFT_STORAGE_KEY/);
   assert.match(optimiserWizardEngine, /estimateOptimiserPlan/);
+  assert.match(workbench, /ArrangementWizard/);
+  assert.match(arrangementWizard, /AUTOMATIC TRAILER ARRANGEMENT/);
+  assert.match(arrangementWizard, /Preferred centre spacing/);
+  assert.match(arrangementEngine, /settings\.preferredCentreSpacingM/);
+  assert.match(arrangementEngine, /modules4 \* 4 \+ modules5 \* 5 \+ modules6 \* 6/);
+  assert.match(arrangementOptimiser, /runOptimiser\(exactModel/);
+  assert.match(arrangementOptimiser, /trainCount - rightArrangement\.trainCount/);
   assert.match(windEngine, /lengthM \* heightM/);
   assert.match(windEngine, /widthM \* heightM/);
   assert.match(envelopeEngine, /CARGO_COG_ENVELOPE_FACTOR = 0\.02/);
