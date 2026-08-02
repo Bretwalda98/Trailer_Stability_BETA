@@ -469,6 +469,7 @@ export function ArrangementWizard({
             <option value="NONE">No PPU included</option>
             <option value="REAR">Rear end · lower X · left in plan</option>
             <option value="FRONT">Front end · higher X · right in plan</option>
+            <option value="BOTH">Both ends · rear and front PPU</option>
           </select>
           <small>The PPU mass is included in the minimum axle-line capacity bound.</small>
         </label>
@@ -623,7 +624,7 @@ export function ArrangementWizard({
             {planRows.map((row) => <div key={row.trainCount}><span><b>{row.trainCount}</b><small>train{row.trainCount === 1 ? "" : "s"}</small></span><span><b>{row.first?.axleLines ?? "—"} AL/train</b><small>{row.first ? moduleText(row.first.composition.modules4, row.first.composition.modules5, row.first.composition.modules6) : "No stock combination"}</small></span><span><b>{row.first ? row.first.axleLines * row.trainCount : "—"} total AL</b><small>{row.pitches} spacing seed{row.pitches === 1 ? "" : "s"}</small></span></div>)}
             {!planRows.length && <p className="fast-support-empty">Select a trailer and enter valid search bounds to create the plan.</p>}
           </div>
-          <div className="arrangement-preview-facts"><span><small>Payload mass</small><b>{(draftModel.cargo.massT + draftModel.packing.massT + draftModel.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0)).toFixed(2)} t</b></span><span><small>Selected trailer</small><b>{definition?.name ?? "Not selected"}</b></span><span><small>Deck height</small><b>{draftModel.trailerDeckHeightM.toFixed(3)} m</b></span><span><small>PPU</small><b>{settings.ppuPosition === "NONE" ? "None" : settings.ppuPosition === "REAR" ? "Rear" : "Front"}</b></span><span><small>Allowed supports</small><b>{draftModel.supports.filter((item) => item.allowed).length}</b></span><span><small>Search</small><b>{settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? "Math branch & bound" : settings.searchMode === "ADAPTIVE_BOUNDED" ? "Legacy bounded" : "Legacy grid"}</b></span></div>
+          <div className="arrangement-preview-facts"><span><small>Payload mass</small><b>{(draftModel.cargo.massT + draftModel.packing.massT + draftModel.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0)).toFixed(2)} t</b></span><span><small>Selected trailer</small><b>{definition?.name ?? "Not selected"}</b></span><span><small>Deck height</small><b>{draftModel.trailerDeckHeightM.toFixed(3)} m</b></span><span><small>PPU</small><b>{settings.ppuPosition === "NONE" ? "None" : settings.ppuPosition === "REAR" ? "Rear" : settings.ppuPosition === "FRONT" ? "Front" : "Both ends"}</b></span><span><small>Allowed supports</small><b>{draftModel.supports.filter((item) => item.allowed).length}</b></span><span><small>Search</small><b>{settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? "Math branch & bound" : settings.searchMode === "ADAPTIVE_BOUNDED" ? "Legacy bounded" : "Legacy grid"}</b></span></div>
           <div className="setup-wizard-preview-findings">{blocking.length ? <span className="blocking"><IconX size={13} /> {blocking.length} blocking</span> : <span className="valid"><IconCheck size={13} /> Search valid</span>}</div>
         </section>
         <footer className="setup-wizard-footer">

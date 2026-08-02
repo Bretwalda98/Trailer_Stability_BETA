@@ -223,7 +223,7 @@ export interface OptimiserSettings {
   liveRefreshSeconds: number;
 }
 
-export type ArrangementPpuPosition = "NONE" | "REAR" | "FRONT";
+export type ArrangementPpuPosition = "NONE" | "REAR" | "FRONT" | "BOTH";
 export type ArrangementSearchMode =
   | "MATHEMATICAL_BRANCH_BOUND"
   | "ADAPTIVE_BOUNDED"

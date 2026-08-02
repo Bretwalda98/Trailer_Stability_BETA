@@ -110,7 +110,7 @@ const GUIDE_SECTIONS = [
     steps: [
       "Choose Mathematical arrangement optimiser on the start screen, or Open mathematical arrangement wizard from the top-bar More menu.",
       "Enter the cargo, cargo COG, packing, trailer deck height and packing supports. New mathematical-search cases begin blank and do not insert a trailer arrangement before the search finishes.",
-      "Choose the trailer family, PPU location and available 4-, 5- and 6-axle-line modules.",
+      "Choose the trailer family, PPU location (none, rear, front or both ends) and available 4-, 5- and 6-axle-line modules.",
       "Set train-count, stock and formation limits. A per-train axle count is eligible only when it is exactly constructible from the enabled module sizes.",
       "Parallel trains are placed at equal offsets from the all-inclusive COG. The standard preferred spacing is 2.9 m centre-to-centre and can be changed.",
       "Optional cargo-width limiting keeps the complete trailer formation between the cargo left and right edges; the switch is off by default so existing searches retain their current behaviour.",
