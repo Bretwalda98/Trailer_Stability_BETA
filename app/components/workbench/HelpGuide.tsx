@@ -113,6 +113,7 @@ const GUIDE_SECTIONS = [
       "Choose the trailer family, PPU location and available 4-, 5- and 6-axle-line modules.",
       "Set train-count, stock and formation limits. A per-train axle count is eligible only when it is exactly constructible from the enabled module sizes.",
       "Parallel trains are placed at equal offsets from the all-inclusive COG. The standard preferred spacing is 2.9 m centre-to-centre and can be changed.",
+      "Optional cargo-width limiting keeps the complete trailer formation between the cargo left and right edges; the switch is off by default so existing searches retain their current behaviour.",
       "The hard decision order is engineering PASS, minimum train count, minimum total axle lines, closest valid preferred spacing, then the selected engineering weighting.",
       "Mathematical branch-and-bound calculates the payload capacity lower bound, rejects unbuildable 4/5/6-AL totals, and derives the minimum hydraulic Y span from the all-inclusive COG height, COG envelope, dynamic shifts and required tipping angles.",
       "The fast search tests the capacity lower and upper axle-line bounds, bisects a passing range, removes trailer-X positions that cannot contain the minimum support footprints, and does not expand a rejected formation into the exhaustive Legacy Grid.",

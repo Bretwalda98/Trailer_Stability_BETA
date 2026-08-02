@@ -181,6 +181,7 @@ export function createDefaultModel(): ProjectModel {
       preferredCentreSpacingM: 2.9,
       minimumClearanceM: 0.05,
       maximumFormationWidthM: 15,
+      limitFormationWidthToCargo: false,
       spacingSamples: 3,
       spacingToleranceM: 0.05,
       ppuPosition: "NONE",

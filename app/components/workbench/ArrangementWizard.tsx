@@ -245,7 +245,12 @@ export function ArrangementWizard({
       const minimumPerTrain = Math.ceil(capacityLowerBound / trainCount);
       const values = validAxleLineValues(settings, trainCount, minimumPerTrain);
       const first = values[0];
-      const pitches = spacingCandidates(definition, settings, trainCount);
+      const pitches = spacingCandidates(
+        definition,
+        settings,
+        trainCount,
+        draftModel.cargo.widthM,
+      );
       return {
         trainCount,
         capacityLowerBound,
@@ -519,6 +524,19 @@ export function ArrangementWizard({
           <NumberField label="Spacing seed count" value={settings.spacingSamples} min={2} max={7} step={1} valid={Number.isInteger(settings.spacingSamples) && settings.spacingSamples >= 2 && settings.spacingSamples <= 7} onChange={(value) => updateSettings({ spacingSamples: Math.round(value) })} />
           <NumberField label="Convergence tolerance" value={settings.spacingToleranceM} unit="m" min={0.001} step={0.01} onChange={(spacingToleranceM) => updateSettings({ spacingToleranceM })} />
         </div>
+        <label className="wizard-toggle">
+          <input
+            type="checkbox"
+            checked={settings.limitFormationWidthToCargo}
+            onChange={(event) => updateSettings({ limitFormationWidthToCargo: event.target.checked })}
+          />
+          <span>
+            <b>Limit trailer outside edges to cargo width</b>
+            <small>
+              When on, generated train Y positions are rejected unless the full trailer formation fits between the cargo left and right edges.
+            </small>
+          </span>
+        </label>
       </FormSection>
       <FormSection title="Mathematical planner sequence">
         <ol className="arrangement-rule-list">
