@@ -130,10 +130,12 @@ export function minimumTotalAxleLines(
     typeof model.optimiser.maximumAxleUtilisation === "number"
       ? Math.max(EPS, model.optimiser.maximumAxleUtilisation)
       : 1;
-  const ppuMassT =
-    settings.ppuPosition === "NONE"
-      ? 0
-      : Math.max(0, definition.ppuWeightT ?? 0) * trains;
+  const ppuCountPerTrain = settings.ppuPosition === "NONE"
+    ? 0
+    : settings.ppuPosition === "BOTH"
+      ? 2
+      : 1;
+  const ppuMassT = Math.max(0, definition.ppuWeightT ?? 0) * trains * ppuCountPerTrain;
   const netCapacityPerLine =
     definition.axleCapacityT * utilisationLimit - definition.axleWeightT;
   if (!(netCapacityPerLine > EPS)) return settings.maximumAxleLinesPerTrain * settings.maximumTrains;
@@ -312,8 +314,8 @@ export function applyArrangementDescriptor(
       yM: loadCentreY + transverseOffset,
       placementReference: "ALL_INCLUSIVE_COG",
       offsetFromReference: { x: centreXOffset, y: transverseOffset },
-      ppuLeft: descriptor.ppuPosition === "REAR",
-      ppuRight: descriptor.ppuPosition === "FRONT",
+      ppuLeft: descriptor.ppuPosition === "REAR" || descriptor.ppuPosition === "BOTH",
+      ppuRight: descriptor.ppuPosition === "FRONT" || descriptor.ppuPosition === "BOTH",
       enabled: true,
     });
     groupings.push(

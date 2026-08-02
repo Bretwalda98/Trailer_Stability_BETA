@@ -225,13 +225,22 @@ async function main(): Promise<void> {
     ),
   );
   assert.equal(minimumTotalAxleLines(capacityBoundModel, arrangementSettings, 2), expectedCapacityBound);
-  arrangementSettings.ppuPosition = "NONE";
+  arrangementSettings.ppuPosition = "BOTH";
+  const expectedBothPpuCapacityBound = Math.max(
+    4,
+    Math.ceil(
+      (115 + 4 * (selectedArrangementDefinition.ppuWeightT ?? 0)) /
+        (selectedArrangementDefinition.axleCapacityT * 0.8 - selectedArrangementDefinition.axleWeightT),
+    ),
+  );
+  assert.equal(minimumTotalAxleLines(capacityBoundModel, arrangementSettings, 2), expectedBothPpuCapacityBound);
   arrangementSettings.limitModuleAvailability = true;
   arrangementSettings.available4AxleModules = 3;
   arrangementSettings.available5AxleModules = 0;
   arrangementSettings.available6AxleModules = 0;
   assert.equal(bestModuleComposition(8, arrangementSettings, 2), null);
   arrangementSettings.limitModuleAvailability = false;
+  arrangementSettings.ppuPosition = "BOTH";
   const descriptor = createArrangementDescriptor(
     selectedArrangementDefinition,
     arrangementSettings,
@@ -248,6 +257,7 @@ async function main(): Promise<void> {
   );
   assert.ok(arrangedModel.trailers.every((trailer) => trailer.axleLines === 8));
   assert.ok(arrangedModel.trailers.every((trailer) => trailer.placementReference === "ALL_INCLUSIVE_COG"));
+  assert.ok(arrangedModel.trailers.every((trailer) => trailer.ppuLeft && trailer.ppuRight));
   assert.equal(collectArrangementIssues(model, model.arrangementOptimiser).length, 0);
 
   const compactArrangementSearch = createDefaultModel();
