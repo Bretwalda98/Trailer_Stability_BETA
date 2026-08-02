@@ -245,6 +245,7 @@ export interface ArrangementOptimiserSettings {
   preferredCentreSpacingM: number;
   minimumClearanceM: number;
   maximumFormationWidthM: number;
+  limitFormationWidthToCargo: boolean;
   spacingSamples: number;
   spacingToleranceM: number;
   ppuPosition: ArrangementPpuPosition;

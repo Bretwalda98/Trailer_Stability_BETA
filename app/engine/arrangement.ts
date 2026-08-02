@@ -26,6 +26,7 @@ export interface FormationPitchBounds {
   minimumPitchM: number;
   maximumPitchM: number;
   preferredPitchM: number;
+  effectiveMaximumFormationWidthM: number;
 }
 
 const EPS = 1e-9;
@@ -139,24 +140,45 @@ export function minimumTotalAxleLines(
   return Math.max(4, Math.ceil((carriedMassT + ppuMassT) / netCapacityPerLine));
 }
 
+export function effectiveMaximumFormationWidth(
+  settings: ArrangementOptimiserSettings,
+  cargoWidthM?: number,
+): number {
+  const configured = Math.max(0, settings.maximumFormationWidthM);
+  if (!settings.limitFormationWidthToCargo) return configured;
+  if (!(cargoWidthM !== undefined && Number.isFinite(cargoWidthM) && cargoWidthM > 0)) {
+    return configured;
+  }
+  return Math.min(configured, cargoWidthM);
+}
+
 /** Exact geometric pitch limits for equal, symmetric parallel trains. */
 export function formationPitchBounds(
   definition: TrailerDefinition,
   settings: ArrangementOptimiserSettings,
   trainCount: number,
+  cargoWidthM?: number,
 ): FormationPitchBounds | null {
   const trains = integer(trainCount, 1, 12);
+  const effectiveMaximumWidth = effectiveMaximumFormationWidth(settings, cargoWidthM);
   if (trains === 1) {
-    return { minimumPitchM: 0, maximumPitchM: 0, preferredPitchM: 0 };
+    if (definition.trailerWidthM > effectiveMaximumWidth + EPS) return null;
+    return {
+      minimumPitchM: 0,
+      maximumPitchM: 0,
+      preferredPitchM: 0,
+      effectiveMaximumFormationWidthM: effectiveMaximumWidth,
+    };
   }
   const minimumPitchM = definition.trailerWidthM + Math.max(0, settings.minimumClearanceM);
   const maximumPitchM =
-    (Math.max(0, settings.maximumFormationWidthM) - definition.trailerWidthM) /
+    (effectiveMaximumWidth - definition.trailerWidthM) /
     (trains - 1);
   if (maximumPitchM + EPS < minimumPitchM) return null;
   return {
     minimumPitchM,
     maximumPitchM,
+    effectiveMaximumFormationWidthM: effectiveMaximumWidth,
     preferredPitchM: Math.max(
       minimumPitchM,
       Math.min(maximumPitchM, settings.preferredCentreSpacingM),
@@ -172,8 +194,9 @@ export function mathematicalPitchSeeds(
   definition: TrailerDefinition,
   settings: ArrangementOptimiserSettings,
   trainCount: number,
+  cargoWidthM?: number,
 ): number[] {
-  const bounds = formationPitchBounds(definition, settings, trainCount);
+  const bounds = formationPitchBounds(definition, settings, trainCount, cargoWidthM);
   if (!bounds) return [];
   return [...new Set([
     bounds.preferredPitchM,
@@ -186,10 +209,11 @@ export function spacingCandidates(
   definition: TrailerDefinition,
   settings: ArrangementOptimiserSettings,
   trainCount: number,
+  cargoWidthM?: number,
 ): number[] {
   const trains = integer(trainCount, 1, 12);
   if (trains === 1) return [0];
-  const bounds = formationPitchBounds(definition, settings, trains);
+  const bounds = formationPitchBounds(definition, settings, trains, cargoWidthM);
   if (!bounds) return [];
   const minimumPitch = bounds.minimumPitchM;
   const maximumPitch = bounds.maximumPitchM;
@@ -467,16 +491,22 @@ export function collectArrangementIssues(
     });
   }
   if (definition) {
+    const effectiveMaximumWidth = effectiveMaximumFormationWidth(
+      settings,
+      model.cargo.widthM,
+    );
     const widestMinimum =
       definition.trailerWidthM +
       Math.max(0, settings.minimumTrains - 1) *
         (definition.trailerWidthM + Math.max(0, settings.minimumClearanceM));
-    if (widestMinimum > settings.maximumFormationWidthM + EPS) {
+    if (widestMinimum > effectiveMaximumWidth + EPS) {
       issues.push({
         id: "minimum-formation-width",
         severity: "blocking",
         title: "The minimum formation does not fit",
-        detail: `The selected minimum train count needs at least ${widestMinimum.toFixed(3)} m overall width.`,
+        detail: settings.limitFormationWidthToCargo
+          ? `The selected minimum train count needs at least ${widestMinimum.toFixed(3)} m overall width, but the active cargo-width limit is ${effectiveMaximumWidth.toFixed(3)} m.`
+          : `The selected minimum train count needs at least ${widestMinimum.toFixed(3)} m overall width.`,
       });
     }
   }

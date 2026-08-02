@@ -10,6 +10,7 @@ import {
   arrangementSummary,
   collectArrangementIssues,
   createArrangementDescriptor,
+  effectiveMaximumFormationWidth,
   formationPitchBounds,
   minimumTotalAxleLines,
   spacingCandidates,
@@ -119,8 +120,14 @@ function mathematicalPitchEvaluationUpperBound(
   definition: ProjectModel["catalogue"][number],
   settings: ProjectModel["arrangementOptimiser"],
   trainCount: number,
+  cargoWidthM?: number,
 ): number {
-  const bounds = formationPitchBounds(definition, settings, trainCount);
+  const bounds = formationPitchBounds(
+    definition,
+    settings,
+    trainCount,
+    cargoWidthM,
+  );
   if (!bounds || trainCount === 1) return bounds ? 1 : 0;
   const span = Math.max(0, bounds.maximumPitchM - bounds.minimumPitchM);
   const tolerance = Math.max(1e-6, settings.spacingToleranceM);
@@ -330,8 +337,8 @@ export async function runArrangementOptimiser(
     const minimumPerTrain = Math.ceil(totalAxleLowerBound / trainCount);
     const axleBuckets = validAxleLineValues(settings, trainCount, minimumPerTrain).length;
     const pitchesPerBucket = settings.searchMode === "MATHEMATICAL_BRANCH_BOUND"
-      ? mathematicalPitchEvaluationUpperBound(definition, settings, trainCount)
-      : spacingCandidates(definition, settings, trainCount).length;
+      ? mathematicalPitchEvaluationUpperBound(definition, settings, trainCount, model.cargo.widthM)
+      : spacingCandidates(definition, settings, trainCount, model.cargo.widthM).length;
     return axleBuckets * pitchesPerBucket;
   }).reduce((sum, count) => sum + count, 0);
   run.progress.overallPlanned = Math.max(1, plannedFormationUpperBound + 1);
@@ -486,7 +493,12 @@ export async function runArrangementOptimiser(
         composition,
       }: (typeof axleValues)[number]): Promise<boolean> => {
         throwIfStopped(callbacks.signal);
-        const pitchBounds = formationPitchBounds(definition, settings, trainCount);
+        const pitchBounds = formationPitchBounds(
+          definition,
+          settings,
+          trainCount,
+          model.cargo.widthM,
+        );
         if (!pitchBounds) {
           addEvent(
             run,
@@ -608,7 +620,7 @@ export async function runArrangementOptimiser(
             }
             if (!passingSeeds.length) {
               for (const seed of [
-                ...spacingCandidates(definition, settings, trainCount).filter(
+                ...spacingCandidates(definition, settings, trainCount, model.cargo.widthM).filter(
                   (value) => value >= effectivePitchBounds.minimumPitchM - EPS,
                 ),
                 effectivePitchBounds.minimumPitchM,
@@ -652,7 +664,12 @@ export async function runArrangementOptimiser(
             );
           }
         } else {
-          const pitches = spacingCandidates(definition, settings, trainCount);
+          const pitches = spacingCandidates(
+            definition,
+            settings,
+            trainCount,
+            model.cargo.widthM,
+          );
           let passingDistance = Number.POSITIVE_INFINITY;
           let skippedPitches = 0;
           for (const pitchM of pitches) {
@@ -784,7 +801,8 @@ export async function runArrangementOptimiser(
       const maximumPitch =
         winningTrainCount === 1
           ? 0
-          : (settings.maximumFormationWidthM - definition.trailerWidthM) /
+          : (effectiveMaximumFormationWidth(settings, model.cargo.widthM) -
+              definition.trailerWidthM) /
             (winningTrainCount - 1);
       let step =
         winningTrainCount === 1

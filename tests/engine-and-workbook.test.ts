@@ -24,6 +24,7 @@ import {
   bestModuleComposition,
   collectArrangementIssues,
   createArrangementDescriptor,
+  effectiveMaximumFormationWidth,
   formationPitchBounds,
   mathematicalPitchSeeds,
   minimumTotalAxleLines,
@@ -130,6 +131,7 @@ async function main(): Promise<void> {
   assert.equal(model.cargo.envelopeY, model.cargo.widthM * 0.02);
   assert.equal(model.arrangementOptimiser.preferredCentreSpacingM, 2.9);
   assert.equal(model.arrangementOptimiser.searchMode, "MATHEMATICAL_BRANCH_BOUND");
+  assert.equal(model.arrangementOptimiser.limitFormationWidthToCargo, false);
   assert.deepEqual(derivedCargoWindInputs(model.cargo), {
     sideWindAreaM2: model.cargo.lengthM * model.cargo.heightM,
     frontWindAreaM2: model.cargo.widthM * model.cargo.heightM,
@@ -164,6 +166,50 @@ async function main(): Promise<void> {
   assert.deepEqual(
     mathematicalPitchSeeds(selectedArrangementDefinition, arrangementSettings, 2),
     [pitchBounds.preferredPitchM, pitchBounds.maximumPitchM, pitchBounds.minimumPitchM],
+  );
+  const cargoLimitedSettings = {
+    ...arrangementSettings,
+    limitFormationWidthToCargo: true,
+    maximumFormationWidthM: 15,
+  };
+  assert.equal(effectiveMaximumFormationWidth(cargoLimitedSettings, 9), 9);
+  const cargoLimitedBounds = formationPitchBounds(
+    selectedArrangementDefinition,
+    cargoLimitedSettings,
+    2,
+    9,
+  );
+  assert.ok(cargoLimitedBounds);
+  assert.equal(cargoLimitedBounds.effectiveMaximumFormationWidthM, 9);
+  assert.ok(
+    selectedArrangementDefinition.trailerWidthM + cargoLimitedBounds.maximumPitchM <=
+      9 + 1e-9,
+  );
+  assert.equal(
+    formationPitchBounds(
+      selectedArrangementDefinition,
+      cargoLimitedSettings,
+      2,
+      model.cargo.widthM,
+    ),
+    null,
+  );
+  assert.ok(
+    collectArrangementIssues(
+      {
+        ...model,
+        arrangementOptimiser: {
+          ...model.arrangementOptimiser,
+          limitFormationWidthToCargo: true,
+          minimumTrains: 2,
+        },
+      },
+      {
+        ...model.arrangementOptimiser,
+        limitFormationWidthToCargo: true,
+        minimumTrains: 2,
+      },
+    ).some((issue) => issue.id === "minimum-formation-width"),
   );
   const capacityBoundModel = structuredClone(model);
   capacityBoundModel.cargo.massT = 100;
@@ -220,12 +266,16 @@ async function main(): Promise<void> {
   };
   compactArrangementSearch.arrangementOptimiser = {
     ...compactArrangementSearch.arrangementOptimiser,
+    limitFormationWidthToCargo: true,
     minimumTrains: 2,
     maximumTrains: 2,
     maximumAxleLinesPerTrain: 4,
-    maximumFormationWidthM: 9,
+    maximumFormationWidthM: 15,
     spacingSamples: 2,
   };
+  compactArrangementSearch.cargo.widthM = 9;
+  compactArrangementSearch.cargo.cog.y = 4.5;
+  compactArrangementSearch.cargo.envelopeY = 0.18;
   compactArrangementSearch.optimiser = {
     ...compactArrangementSearch.optimiser,
     d138Start: 1,
@@ -241,6 +291,11 @@ async function main(): Promise<void> {
   assert.ok(arrangementRun.passes.length > 0);
   assert.ok(arrangementRun.passes.every((pass) => pass.arrangement?.trainCount === 2));
   assert.ok(arrangementRun.passes.every((pass) => pass.arrangement?.axleLinesPerTrain === 4));
+  assert.ok(
+    arrangementRun.passes.every(
+      (pass) => !pass.arrangement || pass.arrangement.overallWidthM <= compactArrangementSearch.cargo.widthM + 1e-9,
+    ),
+  );
   assert.ok(arrangementRun.events.some((item) => item.detail.includes("Mathematical branch-and-bound")));
   assert.ok(arrangementRun.events.some((item) => item.message === "Winning formation fully verified"));
   const mathematicalBest = arrangementRun.passes.find((pass) => pass.overallRank === 1);
