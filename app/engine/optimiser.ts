@@ -1143,74 +1143,61 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
       planningMode !== "FULL" &&
       !run.passes.some((pass) => pass.result.status === "PASS")
     ) {
-      if (planningMode === "MATHEMATICAL" && callbacks.feasibilityOnly) {
+      const tested = new Set(
+        run.passes.map((pass) => `${pass.c89}|${pass.d138}|${pass.e89.toFixed(9)}|${pass.pinnedAxleLines.join(",")}`),
+      );
+      const mathematicalPlan = planningMode === "MATHEMATICAL"
+        ? planStabilityPrunedExactCases(model)
+        : null;
+      const fallbackCases = (mathematicalPlan?.cases ?? planCoarseCases(model, "FULL")).filter(
+        (planned) =>
+          !tested.has(
+            `${planned.c89}|${planned.d138}|${planned.e89.toFixed(9)}|${(planned.pins ?? []).join(",")}`,
+          ),
+      );
+      if (fallbackCases.length) {
+        tracker.adjustOverallPlanned(fallbackCases.length);
+        tracker.setPhase(
+          "COARSE_SCAN",
+          Math.max(1, fallbackCases.length),
+          "No reduced-search pass; exact grid fallback",
+        );
+        event(
+          run,
+          started,
+          "COARSE_SCAN",
+          "",
+          "Fallback",
+          planningMode === "MATHEMATICAL"
+            ? "Mathematical probes found no pass; exact fallback started"
+            : "Reduced probes found no pass",
+          planningMode === "MATHEMATICAL"
+            ? `${fallbackCases.length} exact legacy-step cases remain inside the complete stability-feasible X intervals across ${mathematicalPlan?.feasibleSplitCount ?? 0} of ${mathematicalPlan?.splitCount ?? 0} configured splits; ${Math.max(0, (mathematicalPlan?.fullCaseCount ?? 0) - (mathematicalPlan?.cases.length ?? 0) - (mathematicalPlan?.supportPrunedCount ?? 0))} stability-impossible and ${mathematicalPlan?.supportPrunedCount ?? 0} support-geometry-impossible cases were pruned. The exact fallback is required because settled support reactions are not monotonic in trailer X.`
+            : `${fallbackCases.length} remaining exact cases were restored so the search cannot miss an isolated feasible region.`,
+          "INFO",
+        );
+        for (const planned of fallbackCases) {
+          if (callbacks.signal?.aborted) throw new DOMException("Stopped by user", "AbortError");
+          const pass = await evaluate(planned);
+          tracker.advance(pass.caseReference);
+          if (pass.result.status === "PASS") {
+            rankPasses(run.passes, model);
+            await notify();
+            break;
+          }
+          await notify();
+        }
+      } else if (planningMode === "MATHEMATICAL") {
         event(
           run,
           started,
           "COARSE_SCAN",
           "",
           "Bound",
-          "Fast formation probes found no pass",
-          "The stability-interval, support-footprint and boundary probes found no feasible case. The automatic arrangement search will continue to the next formation without expanding this rejected probe into the exhaustive Legacy Grid.",
+          "No stability-feasible legacy-step case",
+          `${Math.max(0, mathematicalPlan?.fullCaseCount ?? 0)} configured exact cases were checked against every basic, slope, dynamic and COG-envelope stability inequality plus the minimum support-footprint gate; none can pass both necessary geometry checks.`,
           "INFO",
         );
-      } else {
-        const tested = new Set(
-          run.passes.map((pass) => `${pass.c89}|${pass.d138}|${pass.e89.toFixed(9)}|${pass.pinnedAxleLines.join(",")}`),
-        );
-        const mathematicalPlan = planningMode === "MATHEMATICAL"
-          ? planStabilityPrunedExactCases(model)
-          : null;
-        const fallbackCases = (mathematicalPlan?.cases ?? planCoarseCases(model, "FULL")).filter(
-          (planned) =>
-            !tested.has(
-              `${planned.c89}|${planned.d138}|${planned.e89.toFixed(9)}|${(planned.pins ?? []).join(",")}`,
-            ),
-        );
-        if (fallbackCases.length) {
-          tracker.adjustOverallPlanned(fallbackCases.length);
-          tracker.setPhase(
-            "COARSE_SCAN",
-            Math.max(1, fallbackCases.length),
-            "No reduced-search pass; exact grid fallback",
-          );
-          event(
-            run,
-            started,
-            "COARSE_SCAN",
-            "",
-            "Fallback",
-            planningMode === "MATHEMATICAL"
-              ? "Mathematical probes found no pass"
-              : "Reduced probes found no pass",
-            planningMode === "MATHEMATICAL"
-              ? `${fallbackCases.length} exact legacy-step cases remain inside the complete stability-feasible X intervals across ${mathematicalPlan?.feasibleSplitCount ?? 0} of ${mathematicalPlan?.splitCount ?? 0} configured splits; ${Math.max(0, (mathematicalPlan?.fullCaseCount ?? 0) - (mathematicalPlan?.cases.length ?? 0) - (mathematicalPlan?.supportPrunedCount ?? 0))} stability-impossible and ${mathematicalPlan?.supportPrunedCount ?? 0} support-geometry-impossible cases were pruned.`
-              : `${fallbackCases.length} remaining exact cases were restored so the search cannot miss an isolated feasible region.`,
-            "INFO",
-          );
-          for (const planned of fallbackCases) {
-            if (callbacks.signal?.aborted) throw new DOMException("Stopped by user", "AbortError");
-            const pass = await evaluate(planned);
-            tracker.advance(pass.caseReference);
-            if (pass.result.status === "PASS") {
-              rankPasses(run.passes, model);
-              await notify();
-              break;
-            }
-            await notify();
-          }
-        } else if (planningMode === "MATHEMATICAL") {
-          event(
-            run,
-            started,
-            "COARSE_SCAN",
-            "",
-            "Bound",
-            "No stability-feasible legacy-step case",
-            `${Math.max(0, mathematicalPlan?.fullCaseCount ?? 0)} configured exact cases were checked against every basic, slope, dynamic and COG-envelope stability inequality plus the minimum support-footprint gate; none can pass both necessary geometry checks.`,
-            "INFO",
-          );
-        }
       }
     }
 
