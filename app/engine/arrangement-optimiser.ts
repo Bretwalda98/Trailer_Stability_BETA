@@ -588,70 +588,36 @@ export async function runArrangementOptimiser(
             return outcome;
           };
           const preferred = effectivePitchBounds.preferredPitchM;
-          const widestOutcome = await testPitch(effectivePitchBounds.maximumPitchM);
-          if (!widestOutcome.passed && widestOutcome.caseCount === 0) {
-            addEvent(
-              run,
-              started,
-              "Bound",
-              "Widest hydraulic formation has no feasible X interval",
-              `At the maximum ${effectivePitchBounds.maximumPitchM.toFixed(3)} m pitch, no trailer-X case can satisfy both the complete stability boundaries and minimum support footprint. Narrower pitches are geometrically dominated for this axle count.`,
-              "INFO",
-            );
-            return false;
+          const independentPitchCandidates = [
+            ...spacingCandidates(definition, settings, trainCount, model.cargo.widthM),
+            effectivePitchBounds.minimumPitchM,
+            effectivePitchBounds.maximumPitchM,
+            preferred,
+          ].filter(
+            (value) =>
+              value >= effectivePitchBounds.minimumPitchM - EPS &&
+              value <= effectivePitchBounds.maximumPitchM + EPS,
+          );
+          const passingSeeds: number[] = [];
+          for (const seed of independentPitchCandidates) {
+            const outcome = await testPitch(seed);
+            if (outcome.passed) passingSeeds.push(seed);
           }
-          if ((await testPitch(preferred)).passed) {
+          if (passingSeeds.length) {
             bucketHasPass = true;
+            const preferredPassed = passingSeeds.some(
+              (value) => Math.abs(value - preferred) <= EPS,
+            );
             addEvent(
               run,
               started,
               "Bound",
-              "Preferred pitch is feasible",
-              `${preferred.toFixed(3)} m is the exact closest possible pitch to the configured preference; all other Y positions are dominated.`,
-              "BEST",
+              preferredPassed
+                ? "Preferred and independent spacings verified"
+                : "Independent spacings verified without preferred pitch",
+              `${passingSeeds.length} spacing candidate${passingSeeds.length === 1 ? "" : "s"} passed, including ${preferredPassed ? "the preferred pitch and " : ""}independent minimum/maximum/sample candidates.`,
+              preferredPassed ? "BEST" : "PASS",
             );
-          } else {
-            const passingSeeds: number[] = [];
-            for (const seed of [
-              effectivePitchBounds.maximumPitchM,
-              effectivePitchBounds.minimumPitchM,
-            ]) {
-              if ((await testPitch(seed)).passed) passingSeeds.push(seed);
-            }
-            if (!passingSeeds.length) {
-              for (const seed of [
-                ...spacingCandidates(definition, settings, trainCount, model.cargo.widthM).filter(
-                  (value) => value >= effectivePitchBounds.minimumPitchM - EPS,
-                ),
-                effectivePitchBounds.minimumPitchM,
-              ]) {
-                if (tested.has(seed.toFixed(9))) continue;
-                if ((await testPitch(seed)).passed) passingSeeds.push(seed);
-              }
-            }
-            for (const seed of passingSeeds) {
-              let failingPitch = preferred;
-              let passingPitch = seed;
-              let iterations = 0;
-              while (
-                Math.abs(passingPitch - failingPitch) > settings.spacingToleranceM + EPS &&
-                iterations < 48
-              ) {
-                const midpoint = (passingPitch + failingPitch) / 2;
-                if ((await testPitch(midpoint)).passed) passingPitch = midpoint;
-                else failingPitch = midpoint;
-                iterations += 1;
-              }
-              bucketHasPass = true;
-              addEvent(
-                run,
-                started,
-                "Bound",
-                "Pitch feasibility boundary solved",
-                `Converged from ${seed.toFixed(3)} m to ${passingPitch.toFixed(3)} m, within ${settings.spacingToleranceM.toFixed(3)} m of the closest passing boundary to the preferred pitch.`,
-                "PASS",
-              );
-            }
           }
           if (bucketHasPass) {
             addEvent(

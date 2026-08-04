@@ -131,6 +131,8 @@ async function main(): Promise<void> {
   assert.equal(model.cargo.envelopeY, model.cargo.widthM * 0.02);
   assert.equal(model.arrangementOptimiser.preferredCentreSpacingM, 2.9);
   assert.equal(model.arrangementOptimiser.searchMode, "MATHEMATICAL_BRANCH_BOUND");
+  assert.equal(model.arrangementOptimiser.enforceMaximumFormationWidth, false);
+  assert.equal(model.arrangementOptimiser.searchMaximumFormationWidthM, 30);
   assert.equal(model.arrangementOptimiser.limitFormationWidthToCargo, false);
   assert.deepEqual(derivedCargoWindInputs(model.cargo), {
     sideWindAreaM2: model.cargo.lengthM * model.cargo.heightM,
@@ -160,9 +162,13 @@ async function main(): Promise<void> {
   )!;
   const preferredPitches = spacingCandidates(selectedArrangementDefinition, arrangementSettings, 2);
   assert.equal(preferredPitches[0], 2.9);
+  assert.ok(preferredPitches.includes(2.9));
+  assert.ok(preferredPitches.some((value) => Math.abs(value - 2.9) > 1e-9));
   const pitchBounds = formationPitchBounds(selectedArrangementDefinition, arrangementSettings, 2);
   assert.ok(pitchBounds);
   assert.equal(pitchBounds.preferredPitchM, 2.9);
+  assert.equal(pitchBounds.effectiveMaximumFormationWidthM, 30);
+  assert.equal(effectiveMaximumFormationWidth(arrangementSettings, 9), Number.POSITIVE_INFINITY);
   assert.deepEqual(
     mathematicalPitchSeeds(selectedArrangementDefinition, arrangementSettings, 2),
     [pitchBounds.preferredPitchM, pitchBounds.maximumPitchM, pitchBounds.minimumPitchM],
@@ -264,6 +270,12 @@ async function main(): Promise<void> {
   compactArrangementSearch.cargo.massT = 20;
   compactArrangementSearch.packing.massT = 0;
   compactArrangementSearch.loosePacking = [];
+  compactArrangementSearch.supports = [
+    { id: "arrangement-support-1", xM: 5.0, widthM: 0.5, allowed: true, active: true },
+    { id: "arrangement-support-2", xM: 5.7, widthM: 0.5, allowed: true, active: true },
+    { id: "arrangement-support-3", xM: 6.4, widthM: 0.5, allowed: true, active: true },
+    { id: "arrangement-support-4", xM: 7.1, widthM: 0.5, allowed: true, active: true },
+  ];
   compactArrangementSearch.environment = {
     ...compactArrangementSearch.environment,
     routeLongitudinalSlopeDeg: 0,
@@ -782,7 +794,13 @@ async function main(): Promise<void> {
   assert.equal(run.state, "COMPLETE");
   assert.equal(run.progress.overallPercent, 100);
   assert.equal(run.passes.length, 1);
-  assert.ok(run.events.length >= 3);
+  assert.ok(run.events.length >= 8);
+  assert.ok(run.events.some((item) => item.message === "Complete run input snapshot captured"));
+  assert.ok(run.events.some((item) => item.message === "Case inputs applied"));
+  assert.ok(run.events.some((item) => item.message === "Calculation started"));
+  assert.ok(run.events.some((item) => item.message === "Support settlement recorded"));
+  assert.ok(run.events.some((item) => item.message === "Complete engineering result recorded"));
+  assert.ok(run.events.some((item) => item.detail.includes("combinedCOG=")));
 
   const templatePath = path.join(
     root,

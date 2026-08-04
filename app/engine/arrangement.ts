@@ -147,11 +147,33 @@ export function effectiveMaximumFormationWidth(
   cargoWidthM?: number,
 ): number {
   const configured = Math.max(0, settings.maximumFormationWidthM);
-  if (!settings.limitFormationWidthToCargo) return configured;
-  if (!(cargoWidthM !== undefined && Number.isFinite(cargoWidthM) && cargoWidthM > 0)) {
-    return configured;
+  const limits: number[] = [];
+  if (settings.enforceMaximumFormationWidth) limits.push(configured);
+  if (
+    settings.limitFormationWidthToCargo &&
+    cargoWidthM !== undefined &&
+    Number.isFinite(cargoWidthM) &&
+    cargoWidthM > 0
+  ) {
+    limits.push(cargoWidthM);
   }
-  return Math.min(configured, cargoWidthM);
+  return limits.length ? Math.min(...limits) : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Finite spacing-search boundary used when no hard overall-width rule is active.
+ * It is a computational horizon only; it does not make a candidate fail.
+ */
+export function formationSearchMaximumWidth(
+  settings: ArrangementOptimiserSettings,
+  cargoWidthM?: number,
+): number {
+  const hardMaximum = effectiveMaximumFormationWidth(settings, cargoWidthM);
+  if (Number.isFinite(hardMaximum)) return hardMaximum;
+  return Math.max(
+    Math.max(0, settings.maximumFormationWidthM),
+    Math.max(0, settings.searchMaximumFormationWidthM),
+  );
 }
 
 /** Exact geometric pitch limits for equal, symmetric parallel trains. */
@@ -162,7 +184,7 @@ export function formationPitchBounds(
   cargoWidthM?: number,
 ): FormationPitchBounds | null {
   const trains = integer(trainCount, 1, 12);
-  const effectiveMaximumWidth = effectiveMaximumFormationWidth(settings, cargoWidthM);
+  const effectiveMaximumWidth = formationSearchMaximumWidth(settings, cargoWidthM);
   if (trains === 1) {
     if (definition.trailerWidthM > effectiveMaximumWidth + EPS) return null;
     return {
@@ -400,12 +422,16 @@ export function collectArrangementIssues(
       detail: "Allow at least four axle lines per train.",
     });
   }
-  if (!(settings.maximumFormationWidthM > 0) || !(settings.minimumClearanceM >= 0)) {
+  if (
+    !(settings.maximumFormationWidthM > 0) ||
+    !(settings.searchMaximumFormationWidthM > 0) ||
+    !(settings.minimumClearanceM >= 0)
+  ) {
     issues.push({
       id: "formation-width",
       severity: "blocking",
       title: "Formation-width limits are invalid",
-      detail: "Enter a positive maximum width and a non-negative trailer clearance.",
+      detail: "Enter positive hard/search width values and a non-negative trailer clearance.",
     });
   }
   if (!(settings.spacingToleranceM > 0)) {
@@ -501,7 +527,7 @@ export function collectArrangementIssues(
       definition.trailerWidthM +
       Math.max(0, settings.minimumTrains - 1) *
         (definition.trailerWidthM + Math.max(0, settings.minimumClearanceM));
-    if (widestMinimum > effectiveMaximumWidth + EPS) {
+    if (Number.isFinite(effectiveMaximumWidth) && widestMinimum > effectiveMaximumWidth + EPS) {
       issues.push({
         id: "minimum-formation-width",
         severity: "blocking",

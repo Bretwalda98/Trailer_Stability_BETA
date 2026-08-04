@@ -2593,6 +2593,127 @@ input[type="checkbox"] {
   color: var(--red);
 }
 
+.terminal-log {
+  min-width: 0;
+  background: #050708;
+  border-top: 1px solid #263038;
+}
+
+.terminal-log > header {
+  min-height: 36px;
+  height: auto;
+  gap: 10px;
+  padding: 5px 9px;
+}
+
+.terminal-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.terminal-heading span,
+.terminal-footer {
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.terminal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.terminal-actions button {
+  display: inline-flex;
+  min-height: 23px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #303a42;
+  background: #0d1216;
+  color: var(--text-dim);
+  padding: 0 7px;
+  font-family: inherit;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.terminal-actions button:hover:not(:disabled),
+.terminal-actions button:focus-visible {
+  border-color: var(--cyan);
+  color: var(--text);
+}
+
+.terminal-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.terminal-log > .terminal-output {
+  display: block;
+  height: 330px;
+  overflow: auto;
+  border-top: 1px solid #151b20;
+  border-bottom: 1px solid #151b20;
+  background: #020303;
+  padding: 8px 10px;
+  overscroll-behavior: contain;
+}
+
+.terminal-entry,
+.terminal-empty {
+  margin: 0 0 11px;
+  color: #aab7bd;
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.terminal-entry::first-line {
+  color: #e1e7e9;
+}
+
+.terminal-pass,
+.terminal-best {
+  border-left: 2px solid var(--green);
+  padding-left: 8px;
+}
+
+.terminal-pass::first-line,
+.terminal-best::first-line {
+  color: var(--green);
+}
+
+.terminal-warn {
+  border-left: 2px solid var(--amber);
+  padding-left: 8px;
+}
+
+.terminal-warn::first-line {
+  color: var(--amber);
+}
+
+.terminal-error {
+  border-left: 2px solid var(--red);
+  padding-left: 8px;
+}
+
+.terminal-error::first-line {
+  color: var(--red);
+}
+
+.terminal-empty {
+  color: var(--text-faint);
+}
+
+.terminal-footer {
+  padding: 5px 9px 7px;
+}
+
 .application-statusbar {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

@@ -47,11 +47,12 @@ test("server-renders the standalone engineering workbench", async () => {
 });
 
 test("keeps phone, offline and workbook-verification capabilities wired", async () => {
-  const [page, layout, manifest, workbench, engineHook, worker, planView, css, serviceWorker, setupWizard, optimiserWizard, optimiserWizardEngine, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine] = await Promise.all([
+  const [page, layout, manifest, workbench, optimiserDrawer, engineHook, worker, planView, css, serviceWorker, setupWizard, optimiserWizard, optimiserWizardEngine, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
     readFile(new URL("../app/components/TrailerWorkbench.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/workbench/OptimiserDrawer.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/hooks/useEngineeringEngine.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/workers/engineering.worker.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/components/workbench/views/PlanView.tsx", import.meta.url), "utf8"),
@@ -101,16 +102,20 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(optimiserWizardEngine, /OPTIMISER_WIZARD_DRAFT_STORAGE_KEY/);
   assert.match(optimiserWizardEngine, /estimateOptimiserPlan/);
   assert.match(workbench, /ArrangementWizard/);
+  assert.match(optimiserDrawer, /Live activity terminal/);
+  assert.match(optimiserDrawer, /Copy complete log/);
   assert.match(arrangementWizard, /MATHEMATICAL TRAILER ARRANGEMENT/);
   assert.match(arrangementWizard, /Mathematical branch/);
   assert.match(arrangementWizard, /Trailer deck height/);
   assert.match(arrangementWizard, /PPU location on every train/);
   assert.match(arrangementWizard, /Preferred centre spacing/);
+  assert.match(arrangementWizard, /Enforce maximum overall width/);
+  assert.match(arrangementWizard, /Search ceiling when width is off/);
   assert.match(arrangementEngine, /settings\.preferredCentreSpacingM/);
   assert.match(arrangementEngine, /mathematicalPitchSeeds/);
   assert.match(arrangementEngine, /modules4 \* 4 \+ modules5 \* 5 \+ modules6 \* 6/);
   assert.match(arrangementOptimiser, /runOptimiser\(exactModel/);
-  assert.match(arrangementOptimiser, /Pitch feasibility boundary solved/);
+  assert.match(arrangementOptimiser, /Preferred and independent spacings verified/);
   assert.match(arrangementOptimiser, /trainCount - rightArrangement\.trainCount/);
   assert.match(windEngine, /lengthM \* heightM/);
   assert.match(windEngine, /widthM \* heightM/);

@@ -1196,8 +1196,28 @@ export function calculateProject(model: ProjectModel): CalculationResult {
   const supportSettle = cargoSupportBeam(model, resolved.trailers, spineAxlePoints, model.supports);
   if (supportSettle.warning) warnings.push(supportSettle.warning);
   const activeSupportCount = supportSettle.supportResults.filter((item) => item.active).length;
+  const analysedTrailerIndex = clamp(
+    Math.round(model.analysedTrailer) - 1,
+    0,
+    Math.max(0, resolved.trailers.length - 1),
+  );
+  const analysedTrailer = resolved.trailers[analysedTrailerIndex] ?? resolved.trailers[0];
+  const supportsOutsideTrailer = analysedTrailer
+    ? model.supports
+        .filter((support) => support.allowed)
+        .slice(0, 10)
+        .some(
+          (support) =>
+            support.xM - support.widthM / 2 < analysedTrailer.xM - EPS ||
+            support.xM + support.widthM / 2 >
+              analysedTrailer.xM + analysedTrailer.definition.axleSpacingM * analysedTrailer.input.axleLines + EPS,
+        )
+    : true;
+  const allSupportsOnTrailer = !supportsOutsideTrailer;
   const supportGatePass =
-    supportSettle.converged && activeSupportCount >= clamp(model.optimiser.minimumActiveSupports, 2, 10);
+    allSupportsOnTrailer &&
+    supportSettle.converged &&
+    activeSupportCount >= clamp(model.optimiser.minimumActiveSupports, 2, 10);
 
   const basicUtil = worstOf(basicCases.map((item) => item.utilisation));
   const slopeUtil = worstOf(slopeCases.map((item) => item.utilisation));
@@ -1271,6 +1291,10 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     status = "GEOMETRY_FAIL";
     failClass = "STABILITY_TRIANGLE";
     failDetail = "The active hydraulic groups do not form a valid stability triangle.";
+  } else if (!allSupportsOnTrailer) {
+    status = "SUPPORT_FAIL";
+    failClass = "SUPPORT_OUTSIDE_TRAILER";
+    failDetail = "Every allowed support must be fully within the analysed trailer deck footprint.";
   } else if (!supportGatePass) {
     status = "SUPPORT_FAIL";
     failClass = "MINIMUM_ACTIVE_SUPPORTS";
