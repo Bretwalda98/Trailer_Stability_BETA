@@ -1038,6 +1038,8 @@ export function SetupWizard({
         <div><span>Dynamic utilisation</span><b>{metric(engine.result.metrics.dynamicUtil.value, "%", 100)}</b><small>{engine.result.metrics.dynamicUtil.status}</small></div>
         <div><span>Basic tipping</span><b>{metric(engine.result.metrics.basicAngle.value, "°")}</b><small>{engine.result.metrics.basicAngle.status}</small></div>
         <div><span>Dynamic tipping</span><b>{metric(engine.result.metrics.dynamicAngle.value, "°")}</b><small>{engine.result.metrics.dynamicAngle.status}</small></div>
+        <div><span>Cargo-only basic</span><b>{metric(engine.result.stabilityReferences.cargoBasicAngle.value, "°")}</b><small>{engine.result.stabilityReferences.cargoBasicAngle.status}</small></div>
+        <div><span>Combined COG</span><b>{engine.result.stabilityReferences.combinedCogRequired ? "REQUIRED" : "NOT REQUIRED"}</b><small>{engine.result.stabilityReferences.combinedCogRequired ? "Cargo-only limit not met" : "Cargo-only limits met"}</small></div>
         <div><span>Spine beam</span><b>{metric(engine.result.metrics.spineUtil.value, "%", 100)}</b><small>{engine.result.metrics.spineUtil.status}</small></div>
         <div><span>Active supports</span><b>{engine.result.activeSupportCount}</b><small>minimum {draftModel.optimiser.minimumActiveSupports}</small></div>
       </div>

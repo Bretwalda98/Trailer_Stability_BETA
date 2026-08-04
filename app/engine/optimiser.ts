@@ -481,15 +481,18 @@ function supportGeometryAllowsCase(
     2,
     Math.min(10, Math.round(model.optimiser.minimumActiveSupports)),
   );
-  const geometricallyAvailable = model.supports
+  const allowedSupports = model.supports
     .filter((support) => support.allowed && Number.isFinite(support.xM))
-    .slice(0, 10)
-    .filter(
+    .slice(0, 10);
+  const geometricallyAvailable = allowedSupports.filter(
       (support) =>
         support.xM - support.widthM / 2 >= startM - 1e-9 &&
         support.xM + support.widthM / 2 <= startM + lengthM + 1e-9,
     ).length;
-  return geometricallyAvailable >= required;
+  // The calculation engine requires every allowed support to lie on the
+  // analysed deck. Counting only the configured minimum can admit a probe
+  // that is guaranteed to fail later with SUPPORT_OUTSIDE_TRAILER.
+  return geometricallyAvailable === allowedSupports.length && geometricallyAvailable >= required;
 }
 
 function stabilityConstraintPoints(result: CalculationResult): Array<{ x: number; y: number }> {
@@ -536,6 +539,54 @@ export function deriveStabilityXInterval(
   return { minimumM, maximumM };
 }
 
+/**
+ * Derives the complete longitudinal interval in which every allowed support
+ * remains on the analysed trailer. Trailer start and end are affine in the
+ * shared X parameter, so this is an exact linear-inequality intersection and
+ * avoids missing a narrow support-feasible window with sparse probes.
+ */
+export function deriveSupportXInterval(
+  model: ProjectModel,
+  result0: CalculationResult,
+  result1: CalculationResult,
+): StabilityXInterval | null {
+  const analysedIndex = Math.max(
+    0,
+    Math.min(model.trailers.length - 1, Math.round(model.analysedTrailer) - 1),
+  );
+  const trailer0 = result0.resolvedTrailers.find((item) => item.index === analysedIndex) ?? result0.resolvedTrailers[0];
+  const trailer1 = result1.resolvedTrailers.find((item) => item.index === analysedIndex) ?? result1.resolvedTrailers[0];
+  const allowedSupports = model.supports
+    .filter((support) => support.allowed && Number.isFinite(support.xM))
+    .slice(0, 10);
+  const required = Math.max(2, Math.min(10, Math.round(model.optimiser.minimumActiveSupports)));
+  if (!trailer0 || !trailer1 || allowedSupports.length < required) return null;
+
+  let minimumM = Number.NEGATIVE_INFINITY;
+  let maximumM = Number.POSITIVE_INFINITY;
+  const intersectGreaterThanOrEqual = (intercept: number, slope: number): boolean => {
+    if (Math.abs(slope) < 1e-12) return intercept >= -1e-9;
+    const boundary = -intercept / slope;
+    if (slope > 0) minimumM = Math.max(minimumM, boundary);
+    else maximumM = Math.min(maximumM, boundary);
+    return minimumM <= maximumM + 1e-9;
+  };
+  const start0 = trailer0.startXM;
+  const start1 = trailer1.startXM;
+  const end0 = trailer0.startXM + trailer0.lengthM;
+  const end1 = trailer1.startXM + trailer1.lengthM;
+  for (const support of allowedSupports) {
+    const supportLeft = support.xM - support.widthM / 2;
+    const supportRight = support.xM + support.widthM / 2;
+    // trailer start <= support left
+    if (!intersectGreaterThanOrEqual(supportLeft - start0, -(start1 - start0))) return null;
+    // trailer end >= support right
+    if (!intersectGreaterThanOrEqual(end0 - supportRight, end1 - end0)) return null;
+  }
+  if (!Number.isFinite(minimumM) || !Number.isFinite(maximumM) || minimumM > maximumM + 1e-9) return null;
+  return { minimumM, maximumM };
+}
+
 function mathematicalE89Cases(
   model: ProjectModel,
   c89: number,
@@ -547,9 +598,12 @@ function mathematicalE89Cases(
   const result1 = calculateProject(caseModel(model, probe1));
   const interval = deriveStabilityXInterval(result0, result1);
   if (!interval) return [];
+  const supportInterval = deriveSupportXInterval(model, result0, result1);
+  if (!supportInterval) return [];
   const tolerance = Math.max(0, model.optimiser.boundaryToleranceM);
-  const minimum = interval.minimumM - tolerance;
-  const maximum = interval.maximumM + tolerance;
+  const minimum = Math.max(interval.minimumM, supportInterval.minimumM) - tolerance;
+  const maximum = Math.min(interval.maximumM, supportInterval.maximumM) + tolerance;
+  if (minimum > maximum + 1e-9) return [];
   const midpoint = (minimum + maximum) / 2;
   const values = [
     midpoint,
@@ -779,6 +833,7 @@ function formatResultSnapshot(result: CalculationResult): string {
   return [
     `STATUS=${result.status}; failClass=${result.failClass || "none"}; failDetail=${result.failDetail || "none"}`,
     `mass=${diagnosticNumber(result.totalMassT)}t; combinedCOG=${diagnosticPoint(result.combinedCog)}; loadCOG=${diagnosticPoint(result.loadCog)}`,
+    `stabilityReference: cargoBasic=${diagnosticNumber(result.stabilityReferences.cargoBasicAngle.value)}Â° [${result.stabilityReferences.cargoBasicAngle.status}]; cargoSlope=${diagnosticNumber(result.stabilityReferences.cargoSlopeAngle.value)}Â° [${result.stabilityReferences.cargoSlopeAngle.status}]; combinedCogRequired=${result.stabilityReferences.combinedCogRequired}`,
     `metrics: ${metrics}`,
     `groups: ${groups || "none"}`,
     `supports: active=${result.activeSupportCount}/${result.supports.length}; minimum=${result.minimumActiveSupports}; iterations=${result.supportIterations}; ${supports || "none"}`,

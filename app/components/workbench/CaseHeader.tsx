@@ -3,6 +3,7 @@
 import {
   IconChevronDown,
   IconDownload,
+  IconExternalLink,
   IconFileImport,
   IconHelpCircle,
   IconPlayerPlay,
@@ -24,6 +25,7 @@ interface CaseHeaderProps {
   onImport(file: File): void;
   onSetup(): void;
   onExportWorkbook(): void;
+  onExportAutoCAD(): void;
   onExportProject(): void;
   onImportProject(file: File): void;
   onHelp(): void;
@@ -43,6 +45,7 @@ export function CaseHeader({
   onImport,
   onSetup,
   onExportWorkbook,
+  onExportAutoCAD,
   onExportProject,
   onImportProject,
   onHelp,
@@ -107,6 +110,9 @@ export function CaseHeader({
         <button className="mobile-optional" aria-label="Export verification data" disabled={busy} onClick={onExportWorkbook}>
           <IconDownload size={15} /> <span>Export verification</span>
         </button>
+        <button className="mobile-optional autocad-export-action" aria-label="Export to AutoCAD" disabled={busy} onClick={onExportAutoCAD}>
+          <IconExternalLink size={15} /> <span>AutoCAD</span>
+        </button>
         <button className="help-action" aria-label="Open help and user guide" onClick={onHelp}>
           <IconHelpCircle size={15} /> <span>Help</span>
         </button>
@@ -132,6 +138,7 @@ export function CaseHeader({
             <div className="header-menu-popover">
               <button onClick={() => { workbookInput.current?.click(); setMenuOpen(false); }}><IconUpload size={14} /> Import verification data</button>
               <button onClick={() => { onExportWorkbook(); setMenuOpen(false); }}><IconDownload size={14} /> Export verification data</button>
+              <button onClick={() => { onExportAutoCAD(); setMenuOpen(false); }}><IconExternalLink size={14} /> Export to AutoCAD</button>
               <button onClick={() => { onHelp(); setMenuOpen(false); }}><IconHelpCircle size={14} /> Help and user guide</button>
               <button onClick={() => { onExportProject(); setMenuOpen(false); }}><IconDownload size={14} /> Export project JSON</button>
               <button onClick={() => { projectInput.current?.click(); setMenuOpen(false); }}><IconFileImport size={14} /> Import project JSON</button>

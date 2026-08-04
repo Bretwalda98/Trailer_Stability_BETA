@@ -112,6 +112,9 @@ export interface TrailerUnit extends VisualEntityBase {
   lengthM: number;
   widthM: number;
   deckHeightM: number;
+  crossBogieSpacingM: number | null;
+  tyreWidthM: number;
+  wheelDiameterM: number;
   axleLines: number;
   singleFile: boolean;
   frontAt: "positive-x";

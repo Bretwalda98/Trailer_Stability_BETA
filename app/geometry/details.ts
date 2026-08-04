@@ -485,6 +485,12 @@ export function buildEngineeringDetailRows(
     );
   });
 
+  rows.push(
+    row("cargo-basic-angle", "COG reference decision", "Cargo-only basic tipping angle", result.stabilityReferences.cargoBasicAngle.value, "Â°", "Engine stabilityReferences.cargoBasicAngle", { status: result.stabilityReferences.cargoBasicAngle.status }),
+    row("cargo-slope-angle", "COG reference decision", "Cargo-only slope tipping angle", result.stabilityReferences.cargoSlopeAngle.value, "Â°", "Engine stabilityReferences.cargoSlopeAngle", { status: result.stabilityReferences.cargoSlopeAngle.status }),
+    row("combined-cog-required", "COG reference decision", "Combined COG required", result.stabilityReferences.combinedCogRequired ? "YES" : "NO", "", "Engine stabilityReferences.combinedCogRequired", { status: result.stabilityReferences.combinedCogRequired ? "NOK" : "OK", valueType: "text" }),
+  );
+
   result.analysis.groupLoadContributions.forEach((contribution) => {
     rows.push(
       row(`contribution-${contribution.group}-neutral`, "Dynamic axle loads", `G${contribution.group} neutral load`, contribution.neutralLoadT, "t", "Engine analysis.groupLoadContributions"),
