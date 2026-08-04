@@ -765,7 +765,7 @@ export async function runArrangementOptimiser(
               started,
               "Bound",
               "Maximum axle formation failed necessary gates",
-              `${trainCount} train${trainCount === 1 ? "" : "s"} at the maximum ${axleValues[maximumIndex].axleLines} AL/train still cannot satisfy the stability/support geometry gates. Smaller axle formations at this train count were pruned from the fast search; Legacy Grid remains available for exhaustive non-monotonic checking.`,
+              `${trainCount} train${trainCount === 1 ? "" : "s"} at the maximum ${axleValues[maximumIndex].axleLines} AL/train still cannot satisfy the stability/support geometry gates after exact legacy-step fallback inside the mathematically feasible intervals. Smaller axle formations at this train count were pruned only after the same exact fallback was checked.`,
               "INFO",
             );
           } else {
