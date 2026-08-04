@@ -1012,18 +1012,32 @@ input[type="checkbox"] {
   cursor: pointer;
 }
 
-.end-spmt .spmt-wheel:hover .wheel,
-.end-spmt .spmt-wheel:hover .spmt-hub {
+.end-spmt .spmt-wheel:hover .spmt-tyre-profile,
+.end-spmt .spmt-wheel:hover .spmt-hub-profile {
   filter: brightness(1.45);
 }
 
-.end-spmt .spmt-hub {
+.end-spmt .spmt-suspension-column {
+  fill: #d2a626;
+  stroke: #8d7413;
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.end-spmt .spmt-tyre-profile {
+  fill: #2f3337;
+  stroke: #727b82;
+  stroke-width: 1.1;
+  vector-effect: non-scaling-stroke;
+}
+
+.end-spmt .spmt-hub-profile {
   fill: #050505;
   stroke-width: 1.1;
   vector-effect: non-scaling-stroke;
 }
 
-.end-spmt .spmt-wheel.pinned .wheel {
+.end-spmt .spmt-wheel.pinned .spmt-tyre-profile {
   stroke: var(--red) !important;
   stroke-width: 2;
   stroke-dasharray: 3 2;
@@ -1331,6 +1345,33 @@ input[type="checkbox"] {
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+.candidate-sort-header {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  min-height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.candidate-sort-header:hover,
+.candidate-sort-header:focus-visible {
+  color: #f3f7f9;
+}
+
+.candidate-sort-indicator {
+  color: var(--cyan);
+  font-size: 11px;
+  line-height: 1;
 }
 
 .engineering-table tbody tr:hover {

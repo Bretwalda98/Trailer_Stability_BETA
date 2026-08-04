@@ -38,7 +38,7 @@ import {
   requiredHydraulicGroupYSpan,
   runArrangementOptimiser,
 } from "../app/engine/arrangement-optimiser";
-import { deriveStabilityXInterval, passToProject, runOptimiser } from "../app/engine/optimiser";
+import { deriveStabilityXInterval, deriveSupportXInterval, passToProject, runOptimiser } from "../app/engine/optimiser";
 import {
   canRunOptimiserWizard,
   collectOptimiserWizardIssues,
@@ -342,6 +342,13 @@ async function main(): Promise<void> {
   );
   assert.ok(interval);
   assert.ok(interval.minimumM <= interval.maximumM);
+  const supportInterval = deriveSupportXInterval(
+    compactArrangementSearch,
+    calculateProject(applySharedX(splitProbe, 0)),
+    calculateProject(applySharedX(splitProbe, 1)),
+  );
+  assert.ok(supportInterval);
+  assert.ok(supportInterval.minimumM <= supportInterval.maximumM);
   const appliedArrangement = passToProject(compactArrangementSearch, arrangementRun.passes[0]);
   assert.equal(appliedArrangement.trailers.length, 2);
   assert.ok(appliedArrangement.trailers.every((trailer) => trailer.axleLines === 4));

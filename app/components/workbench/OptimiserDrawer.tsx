@@ -21,6 +21,12 @@ import { formatDuration } from "../../geometry/format";
 
 const MAX_VISIBLE_TERMINAL_EVENTS = 240;
 
+type CandidateSortKey =
+  | "rank" | "passRef" | "trains" | "axleLines" | "totalAxleLines" | "pitch"
+  | "width" | "modules" | "split" | "x" | "pins" | "supports"
+  | "dynamicUtil" | "dynamicAngle" | "deflection" | "rating";
+type SortDirection = "asc" | "desc";
+
 function terminalEventText(event: OptimiserRun["events"][number]): string {
   const caseLabel = event.caseReference ? ` case=${event.caseReference}` : "";
   return [
@@ -70,12 +76,56 @@ export function OptimiserDrawer({
   onApply,
   onUndo,
 }: OptimiserDrawerProps) {
+  const arrangementRun = useMemo(() => run.passes.some((pass) => Boolean(pass.arrangement)), [run.passes]);
+  const [candidateSort, setCandidateSort] = useState<{ key: CandidateSortKey; direction: SortDirection }>({ key: "rank", direction: "asc" });
+  const sortValue = (pass: PassResult, key: CandidateSortKey): number | string | null => {
+    switch (key) {
+      case "rank": return pass.overallRank;
+      case "passRef": return pass.id;
+      case "trains": return pass.arrangement?.trainCount ?? null;
+      case "axleLines": return pass.arrangement?.axleLinesPerTrain ?? pass.c89;
+      case "totalAxleLines": return pass.arrangement?.totalAxleLines ?? null;
+      case "pitch": return pass.arrangement?.pitchM ?? null;
+      case "width": return pass.arrangement?.overallWidthM ?? null;
+      case "modules": return pass.arrangement ? [pass.arrangement.modules6 && `${pass.arrangement.modules6}×6`, pass.arrangement.modules5 && `${pass.arrangement.modules5}×5`, pass.arrangement.modules4 && `${pass.arrangement.modules4}×4`].filter(Boolean).join(" + ") : null;
+      case "split": return pass.d138;
+      case "x": return pass.e89;
+      case "pins": return pass.pinnedAxleLines.length;
+      case "supports": return pass.result.activeSupportCount;
+      case "dynamicUtil": return pass.result.metrics.dynamicUtil.value;
+      case "dynamicAngle": return pass.result.metrics.dynamicAngle.value;
+      case "deflection": return pass.result.beam.absoluteDeflectionMm;
+      case "rating": return pass.rating;
+    }
+  };
+  const sortableHeaders = (label: string, key: CandidateSortKey) => {
+    const active = candidateSort.key === key;
+    return (
+      <th aria-sort={active ? (candidateSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+        <button
+          type="button"
+          className="candidate-sort-header"
+          onClick={() => setCandidateSort((current) => current.key === key ? { key, direction: current.direction === "asc" ? "desc" : "asc" } : { key, direction: "asc" })}
+          title={`Sort ${label} ${active ? (candidateSort.direction === "asc" ? "ascending" : "descending") : "ascending"}`}
+        >
+          <span>{label}</span><span className="candidate-sort-indicator" aria-hidden="true">{active ? (candidateSort.direction === "asc" ? "↑" : "↓") : "↕"}</span>
+        </button>
+      </th>
+    );
+  };
   const ranked = useMemo(
-    () =>
-      run.passes
-        .filter((pass) => pass.overallRank !== null)
-        .sort((a, b) => (a.overallRank ?? Number.MAX_SAFE_INTEGER) - (b.overallRank ?? Number.MAX_SAFE_INTEGER)),
-    [run.passes],
+    () => [...run.passes].filter((pass) => pass.overallRank !== null).sort((a, b) => {
+      const left = sortValue(a, candidateSort.key);
+      const right = sortValue(b, candidateSort.key);
+      if (left === null && right !== null) return 1;
+      if (left !== null && right === null) return -1;
+      if (left === null || right === null) return (a.overallRank ?? Infinity) - (b.overallRank ?? Infinity);
+      const comparison = typeof left === "number" && typeof right === "number"
+        ? left - right
+        : String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" });
+      return (comparison || (a.overallRank ?? Infinity) - (b.overallRank ?? Infinity)) * (candidateSort.direction === "asc" ? 1 : -1);
+    }),
+    [run.passes, candidateSort],
   );
   const [selectedPassId, setSelectedPassId] = useState("");
   useEffect(() => {
@@ -83,7 +133,6 @@ export function OptimiserDrawer({
     if (!ranked.some((pass) => pass.id === selectedPassId)) setSelectedPassId(ranked[0].id);
   }, [ranked, selectedPassId]);
   const selected = ranked.find((pass) => pass.id === selectedPassId) ?? null;
-  const arrangementRun = run.passes.some((pass) => Boolean(pass.arrangement));
   const running = run.state === "RUNNING" || run.state === "PLANNING";
   const [copiedLog, setCopiedLog] = useState<"visible" | "full" | null>(null);
   const visibleTerminalEvents = run.events.slice(0, MAX_VISIBLE_TERMINAL_EVENTS).reverse();
@@ -144,10 +193,10 @@ export function OptimiserDrawer({
                 <table className="engineering-table">
                   <thead>
                     <tr>
-                      <th>Rank</th><th>Pass ref</th>
-                      {arrangementRun && <><th>Trains</th><th>AL/train</th><th>Total AL</th><th>Pitch</th><th>Width</th><th>Modules/train</th></>}
-                      {!arrangementRun && <th>AL</th>}
-                      <th>Split</th><th>X (m)</th><th>Pins</th><th>Supports</th><th>Dyn. util.</th><th>Dyn. angle</th><th>Defl.</th><th>Rating</th>
+                      {sortableHeaders("Rank", "rank")}{sortableHeaders("Pass ref", "passRef")}
+                      {arrangementRun && <>{sortableHeaders("Trains", "trains")}{sortableHeaders("AL/train", "axleLines")}{sortableHeaders("Total AL", "totalAxleLines")}{sortableHeaders("Pitch", "pitch")}{sortableHeaders("Width", "width")}{sortableHeaders("Modules/train", "modules")}</>}
+                      {!arrangementRun && sortableHeaders("AL", "axleLines")}
+                      {sortableHeaders("Split", "split")}{sortableHeaders("X (m)", "x")}{sortableHeaders("Pins", "pins")}{sortableHeaders("Supports", "supports")}{sortableHeaders("Dyn. util.", "dynamicUtil")}{sortableHeaders("Dyn. angle", "dynamicAngle")}{sortableHeaders("Defl.", "deflection")}{sortableHeaders("Rating", "rating")}
                     </tr>
                   </thead>
                   <tbody>

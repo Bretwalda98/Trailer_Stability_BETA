@@ -579,8 +579,9 @@ export function ArrangementWizard({
           <span><i>1</i><b>Engineering PASS</b><small>All active checks and minimum supports</small></span>
           <span><i>2</i><b>Minimum trains</b><small>First feasible train-count level</small></span>
           <span><i>3</i><b>Minimum total AL</b><small>First buildable axle-count level</small></span>
-          <span><i>4</i><b>Preferred spacing</b><small>Closest pass to {settings.preferredCentreSpacingM.toFixed(2)} m</small></span>
-          <span><i>5</i><b>Best rating</b><small>Current engineering weighting</small></span>
+          <span><i>4</i><b>Safety and support reserve</b><small>More active supports, stability margin and lower utilisation</small></span>
+          <span><i>5</i><b>Physical quality</b><small>Lower deflection, stronger hydraulic altitude and balanced group loading</small></span>
+          <span><i>6</i><b>Spacing and rating</b><small>Closest to {settings.preferredCentreSpacingM.toFixed(2)} m, then current engineering weighting</small></span>
         </div>
       </FormSection>
     </>

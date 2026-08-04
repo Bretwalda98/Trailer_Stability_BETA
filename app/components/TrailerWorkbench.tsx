@@ -51,6 +51,15 @@ const MOBILE_WORKSPACES: Array<{ id: WorkspaceId; label: string }> = [
 ];
 type MobilePanel = "workspace" | "model" | "results";
 
+function createAutoCADTransferCode(): string {
+  const values = new Uint32Array(1);
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    globalThis.crypto.getRandomValues(values);
+    return String(values[0] % 1_000_000).padStart(6, "0");
+  }
+  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0");
+}
+
 export default function TrailerWorkbench() {
   const [model, setModel] = useState<ProjectModel>(() => createDefaultModel());
   const [workspace, setWorkspace] = useState<WorkspaceId>("geometry");
@@ -230,6 +239,46 @@ export default function TrailerWorkbench() {
     }
   };
 
+  const handleExportAutoCAD = async () => {
+    setBusy(true);
+    const code = createAutoCADTransferCode();
+    const filename = `SARENS_AUTOCAD_${code}.xlsm`;
+    try {
+      const bytes = await exportVerificationWorkbook(model, sourceBytes ?? undefined);
+      downloadBytes(
+        bytes,
+        filename,
+        "application/vnd.ms-excel.sheet.macroEnabled.12",
+      );
+      let bridgeAccepted = false;
+      try {
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 1500);
+        const response = await fetch("http://127.0.0.1:17840/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code }),
+          signal: controller.signal,
+        });
+        window.clearTimeout(timeout);
+        bridgeAccepted = response.ok;
+      } catch {
+        bridgeAccepted = false;
+      }
+      setToast({
+        text: bridgeAccepted
+          ? `AutoCAD transfer ${code} accepted by the local bridge. AutoCAD will run SARTDWEB.`
+          : `Downloaded ${filename}. Run SARTDWEB in AutoCAD and enter code ${code}.`,
+        type: "ok",
+      });
+    } catch (error) {
+      setToast({ text: error instanceof Error ? error.message : String(error), type: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleImportProject = async (file: File): Promise<boolean> => {
     setBusy(true);
     try {
@@ -367,6 +416,7 @@ export default function TrailerWorkbench() {
         }}
         onImport={handleImport}
         onExportWorkbook={handleExportWorkbook}
+        onExportAutoCAD={handleExportAutoCAD}
         onExportProject={() =>
           downloadText(
             JSON.stringify(model, null, 2),

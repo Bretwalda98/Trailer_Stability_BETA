@@ -68,6 +68,15 @@ export function ReportWorkspace({
           </table>
         </section>
         <section>
+          <header><b>COG reference decision</b></header>
+          <dl>
+            <div><dt>Cargo-only basic tipping</dt><dd className={result.stabilityReferences.cargoBasicAngle.status === "NOK" ? "status-nok" : "status-ok"}>{formatEngineering(result.stabilityReferences.cargoBasicAngle.value, "Â°")}</dd></div>
+            <div><dt>Cargo-only slope tipping</dt><dd className={result.stabilityReferences.cargoSlopeAngle.status === "NOK" ? "status-nok" : "status-ok"}>{formatEngineering(result.stabilityReferences.cargoSlopeAngle.value, "Â°")}</dd></div>
+            <div><dt>Combined COG required</dt><dd className={result.stabilityReferences.combinedCogRequired ? "status-nok" : "status-ok"}>{result.stabilityReferences.combinedCogRequired ? "YES" : "NO"}</dd></div>
+          </dl>
+          <p className="report-inline-note">Cargo-only checks are shown separately. Combined COG governs the arrangement when either cargo-only basic or slope tipping is below its engineering limit. Slope and dynamic results include the configured route/residual slopes, wind and acceleration shifts.</p>
+        </section>
+        <section>
           <header><b>Controlling condition</b></header>
           <dl>
             <div><dt>Mode</dt><dd>{result.analysis.controllingMode}</dd></div>

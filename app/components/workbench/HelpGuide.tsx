@@ -133,6 +133,9 @@ const GUIDE_SECTIONS = [
     steps: [
       "Import reads case inputs and the embedded trailer catalogue.",
       "Export verification writes the resolved shared formation, supports, catalogue and mapped case values.",
+      "Export to AutoCAD writes SARENS_AUTOCAD_<six-digit-code>.xlsm to Downloads and shows the code needed by the SARTDWEB AutoLISP command.",
+      "In AutoCAD, load the supplied v1.1 LSP and run SARTDWEB, then enter the displayed code. The command finds the matching workbook and runs the complete drawing workflow.",
+      "For one-click desktop handoff, start SARENS_AutoCAD_Bridge.ps1 from the supplied package before using Export to AutoCAD. Without the bridge, the manual SARTDWEB workflow remains available.",
       "Project JSON saves the complete standalone web model and is available from the More menu.",
       "Visual-only packing footprint geometry stays in the web project and does not alter the engineering calculation.",
     ],

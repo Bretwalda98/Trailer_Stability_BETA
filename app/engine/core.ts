@@ -1073,6 +1073,11 @@ export function calculateProject(model: ProjectModel): CalculationResult {
         cargoPackingPpu: baseLoad.point,
         allInclusive: baseLoad.point,
       },
+      stabilityReferences: {
+        cargoBasicAngle: metric(null, 0, true, false),
+        cargoSlopeAngle: metric(null, 0, true, false),
+        combinedCogRequired: false,
+      },
       analysis: emptyAnalysis(baseLoad.point),
       resolvedTrailers: [],
       beam: emptyBeamMetrics(),
@@ -1098,6 +1103,7 @@ export function calculateProject(model: ProjectModel): CalculationResult {
 
   const axleBase = buildAxles(model, resolved.trailers);
   const groups = groupCentres(axleBase);
+  const limits = engineeringLimitsFor(model.engineeringDegree);
   const trailerOverlaps = findTrailerOverlaps(resolved.trailers);
   const groupingQuality = hydraulicGroupingQuality(axleBase, groups);
   const polygon = groups.map((group) => group.point);
@@ -1201,6 +1207,42 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     0,
     Math.max(0, resolved.trailers.length - 1),
   );
+  const cargoPoint = cargoCogPoint(model);
+  const cargoEnvelopeX = Math.max(0, model.cargo.envelopeX);
+  const cargoEnvelopeY = Math.max(0, model.cargo.envelopeY);
+  const cargoBasicPoints = [
+    { x: cargoPoint.x, y: cargoPoint.y },
+    { x: cargoPoint.x - cargoEnvelopeX, y: cargoPoint.y + cargoEnvelopeY },
+    { x: cargoPoint.x + cargoEnvelopeX, y: cargoPoint.y + cargoEnvelopeY },
+    { x: cargoPoint.x - cargoEnvelopeX, y: cargoPoint.y - cargoEnvelopeY },
+    { x: cargoPoint.x + cargoEnvelopeX, y: cargoPoint.y - cargoEnvelopeY },
+  ];
+  const cargoSlopeShift = {
+    x: cargoPoint.z * Math.tan((model.environment.longitudinalSlopeDeg * Math.PI) / 180),
+    y: cargoPoint.z * Math.tan((model.environment.transverseSlopeDeg * Math.PI) / 180),
+  };
+  const cargoSlopePoints = perimeterCases(
+    cargoPoint,
+    cargoEnvelopeX,
+    cargoEnvelopeY,
+    cargoSlopeShift.x,
+    cargoSlopeShift.y,
+    model.environment.combinationFactor,
+  );
+  const cargoBasicCases = cargoBasicPoints.map((point) =>
+    utilisationForPoint(point, cargoPoint.z, polygon, groups, axleBase, resolved.mass),
+  );
+  const cargoSlopeCases = cargoSlopePoints.map((point) =>
+    utilisationForPoint(point, cargoPoint.z, polygon, groups, axleBase, resolved.mass),
+  );
+  const cargoBasicAngle = minimumOf(cargoBasicCases.map((item) => item.state.minimumAngleDeg));
+  const cargoSlopeAngle = minimumOf(cargoSlopeCases.map((item) => item.state.minimumAngleDeg));
+  const cargoBasicMetric = metric(cargoBasicAngle, limits.basicAngle, true);
+  const cargoSlopeMetric = metric(cargoSlopeAngle, limits.slopeAngle, true);
+  const combinedCogRequired = cargoBasicMetric.status === "NOK" || cargoSlopeMetric.status === "NOK";
+  if (combinedCogRequired) {
+    warnings.push("Combined COG must be considered: the cargo-only basic or slope stability angle is below the required limit.");
+  }
   const analysedTrailer = resolved.trailers[analysedTrailerIndex] ?? resolved.trailers[0];
   const supportsOutsideTrailer = analysedTrailer
     ? model.supports
@@ -1251,7 +1293,6 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     0,
   );
   const detailed = model.optimiser.detailedWeighting;
-  const limits = engineeringLimitsFor(model.engineeringDegree);
   const metrics = {
     basicUtil: metric(basicUtil, limits.basicUtil),
     slopeUtil: metric(slopeUtil, limits.slopeUtil),
@@ -1349,7 +1390,7 @@ export function calculateProject(model: ProjectModel): CalculationResult {
       spineLoadCase: model.spineLoadCase,
     },
     componentCogs: {
-      cargo: cargoCogPoint(model),
+      cargo: cargoPoint,
       packing: packingCogPoint(model),
       load: baseLoad.point,
       ppu: componentMassCogs.ppu,
@@ -1357,6 +1398,11 @@ export function calculateProject(model: ProjectModel): CalculationResult {
       transporter: componentMassCogs.transporter,
       cargoPackingPpu: componentMassCogs.cargoPackingPpu,
       allInclusive: resolved.combined,
+    },
+    stabilityReferences: {
+      cargoBasicAngle: cargoBasicMetric,
+      cargoSlopeAngle: cargoSlopeMetric,
+      combinedCogRequired,
     },
     analysis,
     resolvedTrailers: resolved.trailers.map((item) => ({

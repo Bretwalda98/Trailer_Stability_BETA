@@ -368,6 +368,12 @@ export interface CaseMetrics {
   axleLinesUsed: MetricValue;
 }
 
+export interface StabilityReferenceChecks {
+  cargoBasicAngle: MetricValue;
+  cargoSlopeAngle: MetricValue;
+  combinedCogRequired: boolean;
+}
+
 export interface ComponentCogs {
   cargo: Point3;
   packing: Point3;
@@ -447,6 +453,7 @@ export interface CalculationResult {
     spineLoadCase: SpineLoadCase;
   };
   componentCogs: ComponentCogs;
+  stabilityReferences: StabilityReferenceChecks;
   analysis: StabilityAnalysisSummary;
   resolvedTrailers: Array<{
     id: string;

@@ -11,11 +11,6 @@ const END_TIPPING_CASES = [
   { key: "dynamicAngle", cogType: "dynamic-shifted", label: "DYNAMIC", colour: "#f472b6" },
 ] as const;
 
-function averageWheelDiameter(bogies: Bogie[]): number {
-  if (!bogies.length) return 0.72;
-  return bogies.reduce((total, bogie) => total + bogie.wheelDiameterM, 0) / bogies.length;
-}
-
 function nearestBogie(bogies: Bogie[], yM: number): Bogie | undefined {
   return bogies.reduce<Bogie | undefined>((nearest, candidate) => {
     if (!nearest || Math.abs(candidate.yM - yM) < Math.abs(nearest.yM - yM)) return candidate;
@@ -40,25 +35,34 @@ function SpmtEndModule({
   showWheels: boolean;
   onSelect(id: string): void;
 }) {
-  const diameter = averageWheelDiameter(bogies);
-  const radius = diameter / 2;
-  const deckThickness = Math.min(0.16, Math.max(0.08, diameter * 0.16));
-  const wheelTrack = trailer.widthM * (trailer.singleFile ? 0.34 : 0.72);
-  const wheelFactors = trailer.singleFile ? [-0.5, 0.5] : [-0.5, -0.17, 0.17, 0.5];
-  const wheelPositions = wheelFactors.map((factor) => trailer.centreYM + factor * wheelTrack);
+  const catalogueTyreWidth = trailer.tyreWidthM > 0 ? trailer.tyreWidthM : Math.max(...bogies.map((bogie) => bogie.tyreWidthM), 0);
+  const catalogueWheelDiameter = trailer.wheelDiameterM > 0 ? trailer.wheelDiameterM : Math.max(...bogies.map((bogie) => bogie.wheelDiameterM), 0);
+  if (catalogueTyreWidth <= 0 || catalogueWheelDiameter <= 0 || trailer.widthM <= 0) {
+    return null;
+  }
+  const radius = catalogueWheelDiameter / 2;
+  const deckThickness = Math.max(catalogueTyreWidth * 0.4, Math.min(trailer.deckHeightM * 0.12, catalogueWheelDiameter * 0.16));
+  const outerHalf = Math.max(catalogueTyreWidth / 2, trailer.widthM / 2 - catalogueTyreWidth / 2);
+  const crossHalf = trailer.crossBogieSpacingM && trailer.crossBogieSpacingM > 0
+    ? Math.min(outerHalf, trailer.crossBogieSpacingM / 2)
+    : outerHalf;
+  const transverseOffsets = trailer.singleFile
+    ? [-outerHalf, outerHalf]
+    : [-outerHalf, -crossHalf, crossHalf, outerHalf];
+  const wheelPositions = [...new Set(transverseOffsets.map((offset) => trailer.centreYM + offset))];
   const deckLeftY = trailer.centreYM - trailer.widthM / 2;
   const deckRightY = trailer.centreYM + trailer.widthM / 2;
   const suspensionTopZ = trailer.deckHeightM - deckThickness;
-  const frameLowerZ = Math.max(radius * 1.18, trailer.deckHeightM * 0.43);
+  const frameLowerZ = Math.max(catalogueWheelDiameter * 0.9, trailer.deckHeightM * 0.42);
   const deckLeftTop = transform.toScreen({ x: trailer.startXM, y: deckLeftY, z: trailer.deckHeightM + deckThickness });
   const deckRightBottom = transform.toScreen({ x: trailer.startXM, y: deckRightY, z: suspensionTopZ });
   const framePoints = [
-    { x: trailer.startXM, y: trailer.centreYM - trailer.widthM * 0.42, z: suspensionTopZ },
-    { x: trailer.startXM, y: trailer.centreYM - trailer.widthM * 0.23, z: suspensionTopZ },
+    { x: trailer.startXM, y: trailer.centreYM - trailer.widthM * 0.44, z: suspensionTopZ },
+    { x: trailer.startXM, y: trailer.centreYM - trailer.widthM * 0.22, z: suspensionTopZ },
     { x: trailer.startXM, y: trailer.centreYM - trailer.widthM * 0.12, z: frameLowerZ },
     { x: trailer.startXM, y: trailer.centreYM + trailer.widthM * 0.12, z: frameLowerZ },
-    { x: trailer.startXM, y: trailer.centreYM + trailer.widthM * 0.23, z: suspensionTopZ },
-    { x: trailer.startXM, y: trailer.centreYM + trailer.widthM * 0.42, z: suspensionTopZ },
+    { x: trailer.startXM, y: trailer.centreYM + trailer.widthM * 0.22, z: suspensionTopZ },
+    { x: trailer.startXM, y: trailer.centreYM + trailer.widthM * 0.44, z: suspensionTopZ },
   ]
     .map((point) => transform.toScreen(point))
     .map((point, index) => `${index ? "L" : "M"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
@@ -97,8 +101,14 @@ function SpmtEndModule({
         wheelPositions.map((yM, index) => {
           const source = nearestBogie(bogies, yM);
           const wheelCentre = transform.toScreen({ x: trailer.startXM, y: yM, z: radius });
-          const top = transform.toScreen({ x: trailer.startXM, y: yM, z: suspensionTopZ });
-          const radiusPx = Math.max(3, radius * transform.scale);
+          const wheelTop = transform.toScreen({ x: trailer.startXM, y: yM, z: catalogueWheelDiameter });
+          const wheelBottom = transform.toScreen({ x: trailer.startXM, y: yM, z: 0 });
+          const suspensionBottom = transform.toScreen({ x: trailer.startXM, y: yM, z: catalogueWheelDiameter });
+          const suspensionTop = transform.toScreen({ x: trailer.startXM, y: yM, z: suspensionTopZ });
+          const tyreWidthPx = Math.max(3, catalogueTyreWidth * transform.scale);
+          const tyreHeightPx = Math.max(6, wheelBottom.y - wheelTop.y);
+          const columnWidthPx = Math.max(2, tyreWidthPx * 0.34);
+          const colour = GROUP_COLOURS[source?.groupId ?? 1];
           return (
             <g
               key={`${trailer.id}:wheel:${index}`}
@@ -109,20 +119,30 @@ function SpmtEndModule({
                 onSelect(source.id);
               }}
             >
-              <line className="spmt-suspension" x1={top.x} y1={top.y} x2={wheelCentre.x} y2={wheelCentre.y} />
-              <circle
-                className="wheel"
-                style={{ stroke: GROUP_COLOURS[source?.groupId ?? 1] }}
-                cx={wheelCentre.x}
-                cy={wheelCentre.y}
-                r={radiusPx}
+              <line className="spmt-suspension" x1={suspensionTop.x} y1={suspensionTop.y} x2={suspensionBottom.x} y2={suspensionBottom.y} />
+              <rect
+                className="spmt-suspension-column"
+                x={wheelCentre.x - columnWidthPx / 2}
+                y={suspensionTop.y}
+                width={columnWidthPx}
+                height={Math.max(2, suspensionBottom.y - suspensionTop.y)}
               />
-              <circle
-                className="spmt-hub"
-                style={{ stroke: GROUP_COLOURS[source?.groupId ?? 1] }}
-                cx={wheelCentre.x}
-                cy={wheelCentre.y}
-                r={Math.max(2, radiusPx * 0.26)}
+              <rect
+                className="spmt-tyre-profile"
+                style={{ stroke: colour }}
+                x={wheelCentre.x - tyreWidthPx / 2}
+                y={wheelTop.y}
+                width={tyreWidthPx}
+                height={tyreHeightPx}
+                rx={Math.max(1, tyreWidthPx * 0.08)}
+              />
+              <rect
+                className="spmt-hub-profile"
+                style={{ stroke: colour }}
+                x={wheelCentre.x - Math.max(1.5, columnWidthPx * 0.45) / 2}
+                y={wheelCentre.y - Math.max(3, tyreHeightPx * 0.18) / 2}
+                width={Math.max(1.5, columnWidthPx * 0.45)}
+                height={Math.max(3, tyreHeightPx * 0.18)}
               />
             </g>
           );
@@ -183,8 +203,14 @@ export function EndView(props: EngineeringViewProps) {
   const controllingEdgeY = controllingEdge
     ? (controllingEdge.start.y + controllingEdge.end.y) / 2
     : result.combinedCog.y;
-  const controllingSide = controllingEdgeY < result.combinedCog.y ? "RIGHT" : "LEFT";
-  const direction = controllingSide === "RIGHT" ? 1 : -1;
+  const hydraulicCentroidY = result.stabilityPolygon.length === 3
+    ? result.stabilityPolygon.reduce((sum, point) => sum + point.y, 0) / result.stabilityPolygon.length
+    : result.combinedCog.y;
+  // The construction must leave the triangle from the selected edge. Using
+  // the COG alone can point the ray back through the triangle when the COG is
+  // close to, or outside, the controlling edge.
+  const direction = controllingEdgeY >= hydraulicCentroidY ? 1 : -1;
+  const controllingSide = direction < 0 ? "RIGHT" : "LEFT";
   const groundAtEdgeZ =
     Math.tan((model.environment.transverseSlopeDeg * Math.PI) / 180) *
     (controllingEdgeY - vm.bounds.minY);

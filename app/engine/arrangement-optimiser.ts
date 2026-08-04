@@ -137,14 +137,53 @@ function mathematicalPitchEvaluationUpperBound(
 export function rankArrangementPasses(passes: PassResult[], model: ProjectModel): PassResult[] {
   rankPasses(passes, model);
   const preferredPitch = model.arrangementOptimiser.preferredCentreSpacingM;
+  const limits = engineeringLimitsFor(model.engineeringDegree);
+  const finiteOr = (value: number | null | undefined, fallback: number): number =>
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  const arrangementQuality = (pass: PassResult) => {
+    const result = pass.result;
+    const stabilityMargin = Math.min(
+      finiteOr(result.metrics.basicAngle.value, Number.NEGATIVE_INFINITY) - limits.basicAngle,
+      finiteOr(result.metrics.slopeAngle.value, Number.NEGATIVE_INFINITY) - limits.slopeAngle,
+      finiteOr(result.metrics.dynamicAngle.value, Number.NEGATIVE_INFINITY) - limits.dynamicAngle,
+    );
+    const peakUtilisation = Math.max(
+      finiteOr(result.metrics.basicUtil.value, Number.POSITIVE_INFINITY),
+      finiteOr(result.metrics.slopeUtil.value, Number.POSITIVE_INFINITY),
+      finiteOr(result.metrics.dynamicUtil.value, Number.POSITIVE_INFINITY),
+      finiteOr(result.metrics.spineUtil.value, Number.POSITIVE_INFINITY),
+    );
+    const groupFractions = result.groups.map((group) => group.reactionFraction);
+    const groupBalance = groupFractions.length
+      ? Math.max(...groupFractions) - Math.min(...groupFractions)
+      : Number.POSITIVE_INFINITY;
+    return {
+      combinedCogRequired: result.stabilityReferences.combinedCogRequired ? 1 : 0,
+      supportReserve: result.activeSupportCount - result.minimumActiveSupports,
+      stabilityMargin,
+      peakUtilisation,
+      deflection: finiteOr(result.beam.absoluteDeflectionMm, Number.POSITIVE_INFINITY),
+      hydraulicAltitude: finiteOr(result.groupingQuality.minimumAltitudeM, 0),
+      groupBalance,
+    };
+  };
   const ordered = passes
     .filter((pass) => pass.result.status === "PASS" && pass.arrangement && pass.rating !== null)
     .sort((left, right) => {
       const leftArrangement = left.arrangement!;
       const rightArrangement = right.arrangement!;
+      const leftQuality = arrangementQuality(left);
+      const rightQuality = arrangementQuality(right);
       return (
         leftArrangement.trainCount - rightArrangement.trainCount ||
         leftArrangement.totalAxleLines - rightArrangement.totalAxleLines ||
+        leftQuality.combinedCogRequired - rightQuality.combinedCogRequired ||
+        rightQuality.supportReserve - leftQuality.supportReserve ||
+        rightQuality.stabilityMargin - leftQuality.stabilityMargin ||
+        leftQuality.peakUtilisation - rightQuality.peakUtilisation ||
+        leftQuality.deflection - rightQuality.deflection ||
+        rightQuality.hydraulicAltitude - leftQuality.hydraulicAltitude ||
+        leftQuality.groupBalance - rightQuality.groupBalance ||
         Math.abs(leftArrangement.pitchM - preferredPitch) -
           Math.abs(rightArrangement.pitchM - preferredPitch) ||
         (left.rating ?? Infinity) - (right.rating ?? Infinity) ||
