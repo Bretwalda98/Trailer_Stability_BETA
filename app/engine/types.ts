@@ -245,6 +245,8 @@ export interface ArrangementOptimiserSettings {
   preferredCentreSpacingM: number;
   minimumClearanceM: number;
   maximumFormationWidthM: number;
+  enforceMaximumFormationWidth: boolean;
+  searchMaximumFormationWidthM: number;
   limitFormationWidthToCargo: boolean;
   spacingSamples: number;
   spacingToleranceM: number;

@@ -704,6 +704,90 @@ function event(
   });
 }
 
+function diagnosticNumber(value: number | null | undefined, digits = 6): string {
+  return value === null || value === undefined || !Number.isFinite(value)
+    ? String(value ?? "N/A")
+    : value.toFixed(digits);
+}
+
+function diagnosticPoint(point: { x: number; y: number; z?: number } | null | undefined): string {
+  if (!point) return "N/A";
+  return `(${diagnosticNumber(point.x)}, ${diagnosticNumber(point.y)}${point.z === undefined ? "" : `, ${diagnosticNumber(point.z)}`})`;
+}
+
+function diagnosticJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item) =>
+    typeof item === "number" && Number.isFinite(item) ? Number(item.toFixed(9)) : item,
+  );
+}
+
+function formatRunInputSnapshot(model: ProjectModel, planningMode: CoarsePlanningMode, plannedCases: number): string {
+  const selectedTrailerIds = new Set(model.trailers.map((trailer) => trailer.definitionId));
+  return [
+    "RUN INPUT SNAPSHOT",
+    `schema=${model.schemaVersion}; orientation=${model.longitudinalOrientation}; planningMode=${planningMode}; plannedCases=${plannedCases}`,
+    `case=${model.cargo.name}; referencePoint=${model.referencePoint}; engineeringDegree=${model.engineeringDegree}; weightCogReference=${model.weightCogReference}`,
+    `cargo=${diagnosticJson(model.cargo)}`,
+    `packing=${diagnosticJson(model.packing)}`,
+    `trailers=${diagnosticJson(model.trailers.map((trailer) => ({ ...trailer, selectedDefinition: selectedTrailerIds.has(trailer.definitionId) })))}`,
+    `hydraulics=${diagnosticJson(model.groupings)}`,
+    `supports=${diagnosticJson(model.supports)}`,
+    `environment=${diagnosticJson(model.environment)}`,
+    `optimiserControls=${diagnosticJson(model.optimiser)}`,
+    `arrangementControls=${diagnosticJson(model.arrangementOptimiser)}`,
+    `catalogue=${diagnosticJson(model.catalogue)}`,
+  ].join("\n");
+}
+
+function formatCaseInputSnapshot(model: ProjectModel, planned: PlannedCase): string {
+  const trailerDefinitions = new Map(model.catalogue.map((item) => [item.id, item]));
+  return [
+    "CASE INPUTS APPLIED",
+    `phase=${planned.phase}; c89=${planned.c89}; d138=${planned.d138}; e89=${diagnosticNumber(planned.e89)}; pins=[${(planned.pins ?? []).join(", ") || "none"}]` ,
+    `trailers=${diagnosticJson(model.trailers.map((trailer, index) => ({
+      index,
+      id: trailer.id,
+      enabled: trailer.enabled,
+      definitionId: trailer.definitionId,
+      definition: trailerDefinitions.get(trailer.definitionId)?.name ?? "MISSING",
+      axleLines: trailer.axleLines,
+      xM: trailer.xM,
+      yM: trailer.yM,
+      ppuLeft: trailer.ppuLeft,
+      ppuRight: trailer.ppuRight,
+    })))}`,
+    `hydraulicGroups=${diagnosticJson(model.groupings.map((group, index) => ({
+      id: `G${index + 1}`,
+      splitAfterAxleLine: group.splitAfterAxleLine,
+      pinnedAxleLines: group.pinnedAxleLines,
+      cornerGroups: group.cornerGroups,
+    })))}`,
+    `allowedSupports=${model.supports.filter((support) => support.allowed).map((support) => `${support.id}@x=${diagnosticNumber(support.xM)} width=${diagnosticNumber(support.widthM)}`).join("; ") || "none"}`,
+  ].join("\n");
+}
+
+function formatResultSnapshot(result: CalculationResult): string {
+  const metrics = Object.entries(result.metrics)
+    .map(([name, metric]) => `${name}=${diagnosticNumber(metric.value)} [${metric.status}; active=${metric.active}]`)
+    .join("; ");
+  const groups = result.groups
+    .map((group) => `G${group.group}@${diagnosticPoint(group.point)} load=${diagnosticNumber(group.loadT)}t fraction=${diagnosticNumber(group.reactionFraction)}`)
+    .join("; ");
+  const supports = result.supports
+    .map((support) => `${support.id}: active=${support.active}; allowed=${support.allowed}; reaction=${diagnosticNumber(support.reactionT)}t; reason=${support.disableReason || "none"}`)
+    .join("; ");
+  return [
+    `STATUS=${result.status}; failClass=${result.failClass || "none"}; failDetail=${result.failDetail || "none"}`,
+    `mass=${diagnosticNumber(result.totalMassT)}t; combinedCOG=${diagnosticPoint(result.combinedCog)}; loadCOG=${diagnosticPoint(result.loadCog)}`,
+    `metrics: ${metrics}`,
+    `groups: ${groups || "none"}`,
+    `supports: active=${result.activeSupportCount}/${result.supports.length}; minimum=${result.minimumActiveSupports}; iterations=${result.supportIterations}; ${supports || "none"}`,
+    `beam: shear=${diagnosticNumber(result.beam.shearMinKN)}..${diagnosticNumber(result.beam.shearMaxKN)}kN; bending=${diagnosticNumber(result.beam.bendingMinKNm)}..${diagnosticNumber(result.beam.bendingMaxKNm)}kNm; deflection=${diagnosticNumber(result.beam.absoluteDeflectionMm)}mm; localBending=${diagnosticNumber(result.beam.localBendingAbsKNm)}kNm`,
+    `geometry: triangleArea=${diagnosticNumber(result.groupingQuality.triangleAreaM2)}m2; minimumAltitude=${diagnosticNumber(result.groupingQuality.minimumAltitudeM)}m; overlaps=${result.trailerOverlaps.length}; warnings=${result.warnings.join(" | ") || "none"}`,
+    `timing: calculationMs=${diagnosticNumber(result.calculationMs, 3)}`,
+  ].join("\n");
+}
+
 function caseModel(base: ProjectModel, planned: PlannedCase): ProjectModel {
   let model = applySharedAxleLines(cloneModel(base), planned.c89);
   model = applySharedSplit(model, planned.d138);
@@ -849,6 +933,16 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
     started,
     "PLANNING",
     "",
+    "Input",
+    "Complete run input snapshot captured",
+    formatRunInputSnapshot(model, planningMode, coarseCases.length),
+    "INFO",
+  );
+  event(
+    run,
+    started,
+    "PLANNING",
+    "",
     "Plan",
     "Run plan created",
     `${coarseCases.length} ${planningMode === "MATHEMATICAL" ? "mathematically bounded" : planningMode === "BOUNDED" ? "bounded-probe" : "coarse"} cases; pin upper bound ${pinUpper}; refinement upper bound ${refinementUpper}.`,
@@ -888,6 +982,27 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
     const caseStarted = performance.now();
     let result: CalculationResult;
     const evaluatedModel = caseModel(model, planned);
+    const caseReference = `${run.runReference}-C${String(run.passes.length + 1).padStart(5, "0")}`;
+    event(
+      run,
+      started,
+      planned.phase,
+      caseReference,
+      "Input",
+      "Case inputs applied",
+      formatCaseInputSnapshot(evaluatedModel, planned),
+      "INFO",
+    );
+    event(
+      run,
+      started,
+      planned.phase,
+      caseReference,
+      "Calculation",
+      "Calculation started",
+      `mode=${model.optimiser.calculationMode}; cachedResult=${planned.cachedResult ? "yes" : "no"}; exactSupportAndBeamCalculation=scheduled`,
+      "INFO",
+    );
     try {
       result = planned.cachedResult ?? calculateProject(evaluatedModel);
     } catch (error) {
@@ -917,6 +1032,26 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
     run.passes.push(pass);
     const level: ActivityEvent["level"] =
       result.status === "PASS" ? "PASS" : result.status === "ERROR" ? "ERROR" : "WARN";
+    event(
+      run,
+      started,
+      planned.phase,
+      pass.caseReference,
+      "Support",
+      "Support settlement recorded",
+      `iterations=${result.supportIterations}; active=${result.activeSupportCount}/${result.supports.length}; minimumRequired=${result.minimumActiveSupports}; ${result.supports.map((support) => `${support.id}=${support.active ? "ACTIVE" : "OFF"}[${support.disableReason || "settled"}] reaction=${diagnosticNumber(support.reactionT)}t`).join("; ") || "no supports"}`,
+      result.activeSupportCount >= result.minimumActiveSupports ? "INFO" : "WARN",
+    );
+    event(
+      run,
+      started,
+      planned.phase,
+      pass.caseReference,
+      "Metrics",
+      "Complete engineering result recorded",
+      formatResultSnapshot(result),
+      level,
+    );
     event(
       run,
       started,

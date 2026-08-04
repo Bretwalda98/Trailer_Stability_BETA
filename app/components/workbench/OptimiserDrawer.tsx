@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  IconCopy,
   IconArrowBackUp,
   IconChevronDown,
   IconChevronUp,
@@ -17,6 +18,36 @@ import {
 import type { OptimiserRun, PassResult, ProjectModel } from "../../engine/types";
 import { downloadText } from "../../engine/workbook";
 import { formatDuration } from "../../geometry/format";
+
+const MAX_VISIBLE_TERMINAL_EVENTS = 240;
+
+function terminalEventText(event: OptimiserRun["events"][number]): string {
+  const caseLabel = event.caseReference ? ` case=${event.caseReference}` : "";
+  return [
+    `[${formatDuration(event.elapsedMs)}] [${event.level}] [${event.phase}/${event.stage}]${caseLabel} ${event.message}`,
+    event.detail,
+  ].join("\n");
+}
+
+function diagnosticText(events: OptimiserRun["events"]): string {
+  return [...events].reverse().map(terminalEventText).join("\n\n");
+}
+
+async function copyDiagnosticText(value: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = value;
+    area.setAttribute("readonly", "true");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
+}
 
 interface OptimiserDrawerProps {
   run: OptimiserRun;
@@ -54,6 +85,15 @@ export function OptimiserDrawer({
   const selected = ranked.find((pass) => pass.id === selectedPassId) ?? null;
   const arrangementRun = run.passes.some((pass) => Boolean(pass.arrangement));
   const running = run.state === "RUNNING" || run.state === "PLANNING";
+  const [copiedLog, setCopiedLog] = useState<"visible" | "full" | null>(null);
+  const visibleTerminalEvents = run.events.slice(0, MAX_VISIBLE_TERMINAL_EVENTS).reverse();
+  const visibleTerminalText = diagnosticText(visibleTerminalEvents);
+  const fullTerminalText = diagnosticText(run.events);
+  const copyTerminal = async (scope: "visible" | "full") => {
+    await copyDiagnosticText(scope === "visible" ? visibleTerminalText : fullTerminalText);
+    setCopiedLog(scope);
+    window.setTimeout(() => setCopiedLog(null), 1600);
+  };
   const visible = run.state !== "IDLE" || canUndo;
   if (!visible) return null;
 
@@ -172,16 +212,22 @@ export function OptimiserDrawer({
             </aside>
           </div>
 
-          <div className="optimiser-log">
-            <header><b>Live activity</b><span>Latest {Math.min(8, run.events.length)} of {run.events.length}</span></header>
-            {run.events.slice(-8).reverse().map((event) => (
-              <div key={event.id} className={`log-${event.level.toLowerCase()}`}>
-                <time>{formatDuration(event.elapsedMs)}</time>
-                <span>{event.phase}</span>
-                <b>{event.message}</b>
-                <em>{event.detail}</em>
+          <div className="optimiser-log terminal-log">
+            <header>
+              <div className="terminal-heading"><b>Live activity terminal</b><span>Showing {visibleTerminalEvents.length} of {run.events.length} diagnostic events</span></div>
+              <div className="terminal-actions">
+                <button onClick={() => void copyTerminal("visible")} disabled={!visibleTerminalText}><IconCopy size={13} /> {copiedLog === "visible" ? "Copied" : "Copy visible"}</button>
+                <button onClick={() => void copyTerminal("full")} disabled={!fullTerminalText}><IconCopy size={13} /> {copiedLog === "full" ? "Copied" : "Copy complete log"}</button>
+                <button onClick={() => downloadText(fullTerminalText, `${run.runReference || "optimiser"}-diagnostic.log`, "text/plain;charset=utf-8")} disabled={!fullTerminalText}><IconDownload size={13} /> Save log</button>
               </div>
-            ))}
+            </header>
+            <div className="terminal-output" role="log" aria-live="polite" aria-label="Detailed optimiser diagnostic terminal">
+              {visibleTerminalEvents.map((event) => (
+                <pre key={event.id} className={`terminal-entry terminal-${event.level.toLowerCase()}`}>{terminalEventText(event)}</pre>
+              ))}
+              {!visibleTerminalEvents.length && <pre className="terminal-empty">No diagnostic activity has been recorded.</pre>}
+            </div>
+            <footer className="terminal-footer">The display is limited to the latest {MAX_VISIBLE_TERMINAL_EVENTS} events for responsiveness. Copy complete log includes the full chronological run.</footer>
           </div>
         </div>
       )}

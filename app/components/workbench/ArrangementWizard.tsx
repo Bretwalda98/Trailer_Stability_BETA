@@ -517,14 +517,28 @@ export function ArrangementWizard({
           <NumberField label="Maximum AL per train" value={settings.maximumAxleLinesPerTrain} min={4} max={99} step={1} valid={Number.isInteger(settings.maximumAxleLinesPerTrain) && settings.maximumAxleLinesPerTrain >= 4} onChange={(value) => updateSettings({ maximumAxleLinesPerTrain: Math.round(value) })} />
         </div>
       </FormSection>
-      <FormSection title="Formation spacing" description="Fewer trains remains preferable to adding a train, even when the passing spacing is wider than 2.9 m.">
+      <FormSection title="Formation spacing" description="The preferred spacing is ranked first, but independent wider and narrower spacing candidates are also verified.">
         <div className="wizard-field-grid three">
           <NumberField label="Preferred centre spacing" value={settings.preferredCentreSpacingM} unit="m" min={0.1} step={0.1} valid={settings.preferredCentreSpacingM > 0} onChange={(preferredCentreSpacingM) => updateSettings({ preferredCentreSpacingM })} />
           <NumberField label="Minimum train clearance" value={settings.minimumClearanceM} unit="m" min={0} step={0.01} onChange={(minimumClearanceM) => updateSettings({ minimumClearanceM })} />
           <NumberField label="Maximum overall width" value={settings.maximumFormationWidthM} unit="m" min={0.1} step={0.1} onChange={(maximumFormationWidthM) => updateSettings({ maximumFormationWidthM })} />
+          <NumberField label="Search ceiling when width is off" value={settings.searchMaximumFormationWidthM} unit="m" min={0.1} step={0.1} valid={settings.searchMaximumFormationWidthM > 0} onChange={(searchMaximumFormationWidthM) => updateSettings({ searchMaximumFormationWidthM })} />
           <NumberField label="Spacing seed count" value={settings.spacingSamples} min={2} max={7} step={1} valid={Number.isInteger(settings.spacingSamples) && settings.spacingSamples >= 2 && settings.spacingSamples <= 7} onChange={(value) => updateSettings({ spacingSamples: Math.round(value) })} />
           <NumberField label="Convergence tolerance" value={settings.spacingToleranceM} unit="m" min={0.001} step={0.01} onChange={(spacingToleranceM) => updateSettings({ spacingToleranceM })} />
         </div>
+        <label className="wizard-toggle">
+          <input
+            type="checkbox"
+            checked={settings.enforceMaximumFormationWidth}
+            onChange={(event) => updateSettings({ enforceMaximumFormationWidth: event.target.checked })}
+          />
+          <span>
+            <b>Enforce maximum overall width</b>
+            <small>
+              Off by default. When off, the maximum overall width is not a pass/fail limit; the search ceiling only keeps the spacing search finite.
+            </small>
+          </span>
+        </label>
         <label className="wizard-toggle">
           <input
             type="checkbox"
@@ -544,7 +558,7 @@ export function ArrangementWizard({
           <li><b>1</b><span>Calculate gross capacity bounds including packing, tare, PPU and configured axle utilisation.</span></li>
           <li><b>2</b><span>Generate only constructible 4/5/6-AL module combinations.</span></li>
           <li><b>3</b><span>Intersect the stability inequalities to solve the longitudinal X interval for every load-case COG point.</span></li>
-          <li><b>4</b><span>Test 2.9 m first, then bisect only the pitch interval that can improve the current result.</span></li>
+          <li><b>4</b><span>Verify the preferred spacing and independent minimum, maximum and sampled spacings so the preferred value cannot narrow the search.</span></li>
           <li><b>5</b><span>Run a complete final engineering search on the winning formation before it can rank first.</span></li>
         </ol>
       </FormSection>
