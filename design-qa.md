@@ -165,6 +165,45 @@ final result: passed
 
 ---
 
+# SPMT End-View Renderer - Design QA
+
+## Comparison target
+
+- Source visual truth: `C:/Users/Harry/AppData/Local/Temp/codex-clipboard-d50c9d12-e398-4508-a094-04ae7fb2cfa3.png` (996 x 574 px).
+- Clean one-trailer implementation capture: `qa-evidence/end-view-clean-one-trailer-20260809.png` (1734 x 1270 px at the browser's native desktop viewport).
+- Focused side-by-side comparison: `qa-evidence/end-view-reference-comparison-20260809.png` (1992 x 620 px).
+- Additional full-workbench capture: `qa-evidence/end-view-vertical-tyres-20260809.png`.
+- State: K2400 ST, one trailer, four dynamically derived transverse tyre profiles, End preview, dimensions and grid visible.
+
+## Findings and fixes
+
+- Earlier P1 finding: the deployed/stale renderer drew tyres as circles, visually implying 90-degree crab steering.
+  - Fix: replaced the wheel circles with vertical chamfered tyre-profile polygons derived from selected-trailer tyre width and wheel diameter.
+  - Verification: the clean rendered SVG contains four `.spmt-tyre-profile` polygons and zero `circle.wheel` elements.
+- Earlier P2 finding: the simplified deck and running gear did not match the supplied SPMT end-view silhouette.
+  - Fix: rebuilt the End-only module from catalogue-driven deck, suspension-column, axle-link and brace geometry while preserving the Plan and Side renderers.
+- No actionable P0, P1 or P2 visual findings remain in the focused comparison.
+
+## Fidelity and responsive checks
+
+- The focused comparison confirms a wide rectangular deck, four vertical tyre profiles, paired suspension geometry and symmetric end-view layout on the established black technical canvas.
+- Width, deck height, cross-bogie spacing, tyre width and wheel diameter are read from the selected trailer/bogie model; no trailer-specific drawing dimensions are hard-coded.
+- The clean wizard preview and the full workbench both render the same geometry. The End preview remains contained without horizontal page overflow.
+- Existing interaction semantics remain intact: trailer selection, bogie selection, pinned state and collision highlighting still use the same SVG groups.
+
+## Automated verification
+
+- `pnpm test`: passed.
+- TypeScript typecheck: passed.
+- Engineering and workbook parity tests: passed.
+- Geometry-adapter tests: passed.
+- Production Vinext build: passed.
+- Rendered-HTML tests: passed.
+
+final result: passed
+
+---
+
 # Automatic Trailer Arrangement — Design QA
 
 - Source visual truth: `test-output/design-qa-source-optimiser.png`

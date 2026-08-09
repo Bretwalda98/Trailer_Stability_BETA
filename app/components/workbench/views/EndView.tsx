@@ -1,6 +1,5 @@
 "use client";
 
-import { GROUP_COLOURS } from "../../../geometry/buildGeometryViewModel";
 import type { Bogie, COGPoint, TrailerUnit } from "../../../geometry/types";
 import { CogMarker, DimensionLine, ViewGrid } from "../svg-primitives";
 import type { EngineeringViewProps } from "./view-types";
@@ -41,8 +40,14 @@ function SpmtEndModule({
     return null;
   }
   const radius = catalogueWheelDiameter / 2;
-  const deckThickness = Math.max(catalogueTyreWidth * 0.4, Math.min(trailer.deckHeightM * 0.12, catalogueWheelDiameter * 0.16));
-  const outerHalf = Math.max(catalogueTyreWidth / 2, trailer.widthM / 2 - catalogueTyreWidth / 2);
+  const tyreHalfWidth = catalogueTyreWidth / 2;
+  const deckBodyHeight = Math.max(
+    catalogueTyreWidth * 0.8,
+    Math.min(trailer.deckHeightM * 0.18, catalogueWheelDiameter * 0.35),
+  );
+  const deckTopZ = trailer.deckHeightM + deckBodyHeight / 2;
+  const deckBottomZ = Math.max(catalogueWheelDiameter * 1.05, trailer.deckHeightM - deckBodyHeight / 2);
+  const outerHalf = Math.max(tyreHalfWidth, trailer.widthM / 2 - tyreHalfWidth);
   const crossHalf = trailer.crossBogieSpacingM && trailer.crossBogieSpacingM > 0
     ? Math.min(outerHalf, trailer.crossBogieSpacingM / 2)
     : outerHalf;
@@ -52,21 +57,45 @@ function SpmtEndModule({
   const wheelPositions = [...new Set(transverseOffsets.map((offset) => trailer.centreYM + offset))];
   const deckLeftY = trailer.centreYM - trailer.widthM / 2;
   const deckRightY = trailer.centreYM + trailer.widthM / 2;
-  const suspensionTopZ = trailer.deckHeightM - deckThickness;
-  const frameLowerZ = Math.max(catalogueWheelDiameter * 0.9, trailer.deckHeightM * 0.42);
-  const deckLeftTop = transform.toScreen({ x: trailer.startXM, y: deckLeftY, z: trailer.deckHeightM + deckThickness });
-  const deckRightBottom = transform.toScreen({ x: trailer.startXM, y: deckRightY, z: suspensionTopZ });
-  const framePoints = [
-    { x: trailer.startXM, y: trailer.centreYM - trailer.widthM * 0.44, z: suspensionTopZ },
-    { x: trailer.startXM, y: trailer.centreYM - trailer.widthM * 0.22, z: suspensionTopZ },
-    { x: trailer.startXM, y: trailer.centreYM - trailer.widthM * 0.12, z: frameLowerZ },
-    { x: trailer.startXM, y: trailer.centreYM + trailer.widthM * 0.12, z: frameLowerZ },
-    { x: trailer.startXM, y: trailer.centreYM + trailer.widthM * 0.22, z: suspensionTopZ },
-    { x: trailer.startXM, y: trailer.centreYM + trailer.widthM * 0.44, z: suspensionTopZ },
-  ]
-    .map((point) => transform.toScreen(point))
-    .map((point, index) => `${index ? "L" : "M"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
-    .join(" ");
+  const wheelTopZ = catalogueWheelDiameter;
+  const wheelBottomZ = 0;
+  const columnWidth = Math.max(catalogueTyreWidth * 0.26, catalogueWheelDiameter * 0.08);
+  const columnTopZ = deckBottomZ;
+  const columnBottomZ = wheelTopZ + catalogueWheelDiameter * 0.02;
+  const upperLinkZ = catalogueWheelDiameter * 0.72;
+  const lowerLinkZ = catalogueWheelDiameter * 0.30;
+  const centralLinkZ = catalogueWheelDiameter * 0.46;
+  const braceInset = Math.min(trailer.widthM * 0.12, crossHalf * 0.32);
+  const innerLeftY = trailer.centreYM - crossHalf;
+  const innerRightY = trailer.centreYM + crossHalf;
+  const centralHalf = Math.min(Math.max(catalogueTyreWidth * 0.45, crossHalf * 0.18), trailer.widthM * 0.08);
+
+  const screenPoint = (yM: number, zM: number) =>
+    transform.toScreen({ x: trailer.startXM, y: yM, z: zM });
+  const pointString = (yM: number, zM: number) => {
+    const point = screenPoint(yM, zM);
+    return `${point.x.toFixed(2)},${point.y.toFixed(2)}`;
+  };
+  const line = (y1: number, z1: number, y2: number, z2: number) => {
+    const start = screenPoint(y1, z1);
+    const end = screenPoint(y2, z2);
+    return { start, end };
+  };
+  const deckPoints = [
+    pointString(deckLeftY, deckTopZ),
+    pointString(deckRightY, deckTopZ),
+    pointString(deckRightY, deckBottomZ),
+    pointString(deckLeftY, deckBottomZ),
+  ].join(" ");
+  const bracePath = [
+    line(deckLeftY + braceInset, deckBottomZ, innerLeftY - tyreHalfWidth * 0.25, wheelTopZ + catalogueWheelDiameter * 0.02),
+    line(deckRightY - braceInset, deckBottomZ, innerRightY + tyreHalfWidth * 0.25, wheelTopZ + catalogueWheelDiameter * 0.02),
+  ];
+  const centralBrace = [
+    line(innerLeftY + tyreHalfWidth, centralLinkZ + catalogueTyreWidth * 0.2, trailer.centreYM - centralHalf, centralLinkZ),
+    line(trailer.centreYM - centralHalf, centralLinkZ, trailer.centreYM + centralHalf, centralLinkZ),
+    line(trailer.centreYM + centralHalf, centralLinkZ, innerRightY - tyreHalfWidth, centralLinkZ + catalogueTyreWidth * 0.2),
+  ];
 
   return (
     <g
@@ -80,35 +109,61 @@ function SpmtEndModule({
     >
       {showStructure && (
         <>
-          <rect
+          <polygon
             className="spmt-deck"
-            x={deckLeftTop.x}
-            y={deckLeftTop.y}
-            width={deckRightBottom.x - deckLeftTop.x}
-            height={deckRightBottom.y - deckLeftTop.y}
+            points={deckPoints}
           />
-          <path className="spmt-subframe" d={`${framePoints} Z`} />
+          {bracePath.map(({ start, end }, index) => (
+            <line key={`brace:${index}`} className="spmt-frame" x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
+          ))}
+          {wheelPositions.map((yM, index) => {
+            const column = line(yM, columnTopZ, yM, columnBottomZ);
+            return (
+              <rect
+                key={`column:${index}`}
+                className="spmt-suspension-column"
+                x={column.start.x - columnWidth * transform.scale / 2}
+                y={column.start.y}
+                width={columnWidth * transform.scale}
+                height={Math.max(2, column.end.y - column.start.y)}
+              />
+            );
+          })}
+          {[upperLinkZ, lowerLinkZ].map((zM) => (
+            <g key={`link:${zM}`}>
+              {[[-outerHalf, -crossHalf], [crossHalf, outerHalf]].map(([left, right], index) => {
+                const link = line(trailer.centreYM + left, zM, trailer.centreYM + right, zM);
+                return <line key={`link:${zM}:${index}`} className="spmt-axle-link" x1={link.start.x} y1={link.start.y} x2={link.end.x} y2={link.end.y} />;
+              })}
+            </g>
+          ))}
+          {centralBrace.map(({ start, end }, index) => (
+            <line key={`central:${index}`} className="spmt-frame" x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
+          ))}
           <line
             className="spmt-centreline"
-            x1={transform.toScreen({ x: trailer.startXM, y: trailer.centreYM, z: suspensionTopZ }).x}
-            y1={transform.toScreen({ x: trailer.startXM, y: trailer.centreYM, z: suspensionTopZ }).y}
-            x2={transform.toScreen({ x: trailer.startXM, y: trailer.centreYM, z: frameLowerZ }).x}
-            y2={transform.toScreen({ x: trailer.startXM, y: trailer.centreYM, z: frameLowerZ }).y}
+            x1={screenPoint(trailer.centreYM, deckBottomZ).x}
+            y1={screenPoint(trailer.centreYM, deckBottomZ).y}
+            x2={screenPoint(trailer.centreYM, centralLinkZ).x}
+            y2={screenPoint(trailer.centreYM, centralLinkZ).y}
           />
         </>
       )}
       {showWheels &&
         wheelPositions.map((yM, index) => {
           const source = nearestBogie(bogies, yM);
-          const wheelCentre = transform.toScreen({ x: trailer.startXM, y: yM, z: radius });
-          const wheelTop = transform.toScreen({ x: trailer.startXM, y: yM, z: catalogueWheelDiameter });
-          const wheelBottom = transform.toScreen({ x: trailer.startXM, y: yM, z: 0 });
-          const suspensionBottom = transform.toScreen({ x: trailer.startXM, y: yM, z: catalogueWheelDiameter });
-          const suspensionTop = transform.toScreen({ x: trailer.startXM, y: yM, z: suspensionTopZ });
-          const tyreWidthPx = Math.max(3, catalogueTyreWidth * transform.scale);
-          const tyreHeightPx = Math.max(6, wheelBottom.y - wheelTop.y);
-          const columnWidthPx = Math.max(2, tyreWidthPx * 0.34);
-          const colour = GROUP_COLOURS[source?.groupId ?? 1];
+          const wheelCentre = screenPoint(yM, radius);
+          const profileChamfer = Math.min(catalogueTyreWidth * 0.18, catalogueWheelDiameter * 0.08);
+          const profilePoints = [
+            pointString(yM - tyreHalfWidth + profileChamfer, wheelTopZ),
+            pointString(yM + tyreHalfWidth - profileChamfer, wheelTopZ),
+            pointString(yM + tyreHalfWidth, wheelTopZ - profileChamfer),
+            pointString(yM + tyreHalfWidth, wheelBottomZ + profileChamfer),
+            pointString(yM + tyreHalfWidth - profileChamfer, wheelBottomZ),
+            pointString(yM - tyreHalfWidth + profileChamfer, wheelBottomZ),
+            pointString(yM - tyreHalfWidth, wheelBottomZ + profileChamfer),
+            pointString(yM - tyreHalfWidth, wheelTopZ - profileChamfer),
+          ].join(" ");
           return (
             <g
               key={`${trailer.id}:wheel:${index}`}
@@ -119,30 +174,16 @@ function SpmtEndModule({
                 onSelect(source.id);
               }}
             >
-              <line className="spmt-suspension" x1={suspensionTop.x} y1={suspensionTop.y} x2={suspensionBottom.x} y2={suspensionBottom.y} />
-              <rect
-                className="spmt-suspension-column"
-                x={wheelCentre.x - columnWidthPx / 2}
-                y={suspensionTop.y}
-                width={columnWidthPx}
-                height={Math.max(2, suspensionBottom.y - suspensionTop.y)}
-              />
-              <rect
+              <polygon
                 className="spmt-tyre-profile"
-                style={{ stroke: colour }}
-                x={wheelCentre.x - tyreWidthPx / 2}
-                y={wheelTop.y}
-                width={tyreWidthPx}
-                height={tyreHeightPx}
-                rx={Math.max(1, tyreWidthPx * 0.08)}
+                points={profilePoints}
               />
               <rect
                 className="spmt-hub-profile"
-                style={{ stroke: colour }}
-                x={wheelCentre.x - Math.max(1.5, columnWidthPx * 0.45) / 2}
-                y={wheelCentre.y - Math.max(3, tyreHeightPx * 0.18) / 2}
-                width={Math.max(1.5, columnWidthPx * 0.45)}
-                height={Math.max(3, tyreHeightPx * 0.18)}
+                x={wheelCentre.x - Math.max(2, catalogueTyreWidth * transform.scale * 0.28) / 2}
+                y={wheelCentre.y - Math.max(3, catalogueWheelDiameter * transform.scale * 0.06) / 2}
+                width={Math.max(2, catalogueTyreWidth * transform.scale * 0.28)}
+                height={Math.max(3, catalogueWheelDiameter * transform.scale * 0.06)}
               />
             </g>
           );
@@ -150,8 +191,8 @@ function SpmtEndModule({
       {showStructure && (
         <text
           className="spmt-label"
-          x={(deckLeftTop.x + deckRightBottom.x) / 2}
-          y={deckRightBottom.y + 18}
+          x={(screenPoint(deckLeftY, deckBottomZ).x + screenPoint(deckRightY, deckBottomZ).x) / 2}
+          y={screenPoint(deckRightY, deckBottomZ).y + 18}
           textAnchor="middle"
         >
           T{trailer.index + 1} · SPMT · {trailer.widthM.toFixed(3)} m

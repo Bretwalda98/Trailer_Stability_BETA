@@ -706,6 +706,7 @@ input[type="checkbox"] {
 
 .trailer-unit.is-selected path,
 .end-trailer.is-selected rect,
+.end-trailer.is-selected polygon,
 .side-trailer.is-selected rect {
   stroke: var(--blue);
 }
@@ -985,21 +986,23 @@ input[type="checkbox"] {
 }
 
 .end-spmt .spmt-deck {
-  fill: rgba(255, 255, 255, 0.07);
+  fill: rgba(31, 39, 47, 0.92);
   stroke: #f2f5f7;
-  stroke-width: 1.35;
+  stroke-width: 1.1;
 }
 
 .end-spmt .spmt-subframe {
-  fill: rgba(160, 170, 178, 0.09);
-  stroke: #c3cbd1;
-  stroke-width: 1.1;
+  fill: none;
+  stroke: #e4e8eb;
+  stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .end-spmt .spmt-centreline,
-.end-spmt .spmt-suspension {
-  stroke: #87919a;
+.end-spmt .spmt-suspension,
+.end-spmt .spmt-frame,
+.end-spmt .spmt-axle-link {
+  stroke: #dfe4e8;
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
@@ -1018,22 +1021,23 @@ input[type="checkbox"] {
 }
 
 .end-spmt .spmt-suspension-column {
-  fill: #d2a626;
-  stroke: #8d7413;
-  stroke-width: 0.8;
+  fill: #20282f;
+  stroke: #dfe4e8;
+  stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .end-spmt .spmt-tyre-profile {
-  fill: #2f3337;
-  stroke: #727b82;
-  stroke-width: 1.1;
+  fill: #20282f;
+  stroke: #f0f3f5;
+  stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .end-spmt .spmt-hub-profile {
-  fill: #050505;
-  stroke-width: 1.1;
+  fill: none;
+  stroke: #dfe4e8;
+  stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
@@ -1050,7 +1054,8 @@ input[type="checkbox"] {
 }
 
 .end-spmt.colliding .spmt-deck,
-.end-spmt.colliding .spmt-subframe {
+.end-spmt.colliding .spmt-subframe,
+.end-spmt.colliding .spmt-tyre-profile {
   fill: rgba(239, 68, 68, 0.1);
   stroke: var(--red);
 }
