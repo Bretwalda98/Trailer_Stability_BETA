@@ -9,11 +9,12 @@ import {
   IconPlayerPlay,
   IconSettings,
   IconTable,
+  IconTruck,
   IconX,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
-export const HELP_GUIDE_REVISION = "Interface revision 0.7.8 · reviewed 1 August 2026";
+export const HELP_GUIDE_REVISION = "Interface revision 0.7.9 · reviewed 9 August 2026";
 
 const GUIDE_SECTIONS = [
   {
@@ -69,7 +70,23 @@ const GUIDE_SECTIONS = [
       "Auto-space uses each selected trailer width and applies a 50 mm clearance.",
       "Longitudinal convention: the left/lower-X end is REAR; the right/higher-X end is FRONT. Axle line 1 starts at the rear.",
       "Absolute placement edits X and Y directly. Relative placement stores offsets while showing resolved coordinates.",
-      "Hydraulic groups must form three populated, non-degenerate local clusters around the stability triangle.",
+      "Choose three- or four-point hydraulics. Every selected group must be populated as a local cluster and form a non-degenerate convex stability boundary.",
+      "Use Individual X stagger in the trailer editor when parallel trains must not share the same rear/front line.",
+    ],
+  },
+  {
+    id: "road",
+    label: "Road transport",
+    icon: IconTruck,
+    title: "Check traction, braking and route resistance",
+    intro: "Road transport analysis is optional and uses the values recovered from the EZTrailer engineering source.",
+    steps: [
+      "Enable Road transport analysis in Supports & checks or in the mathematical arrangement wizard.",
+      "Select asphalt, concrete, soil/earth, gravel, sand or steel and choose dry or wet condition. The result shows the exact friction and rolling-resistance values used.",
+      "Select Standard (26 driven bogies per PPU), Alaska (32) or a separately verified custom PPU drive limit.",
+      "The engine maps exact 4/5/6-AL SPMT module builds to the recovered driven/braked bogie patterns and limits them to 60 kN traction and 55 kN braking per applicable bogie.",
+      "Both mechanical force and tyre/surface adhesion are checked. Route grade, rolling resistance, drive acceleration and brake deceleration are included in demand.",
+      "If the enabled road analysis is NOK, the overall engineering case is NOK. An unbuildable module pattern is reported as unavailable rather than estimated silently.",
     ],
   },
   {
@@ -106,13 +123,17 @@ const GUIDE_SECTIONS = [
     label: "Auto arrangement",
     icon: IconPlayerPlay,
     title: "Find the minimum constructible SPMT arrangement",
-    intro: "This separate optimiser designs parallel trains before applying the exact existing engineering search to each retained formation.",
+    intro: "This separate optimiser designs in-line or bounded staggered train formations before applying the exact engineering search to retained cases.",
     steps: [
       "Choose Mathematical arrangement optimiser on the start screen, or Open mathematical arrangement wizard from the top-bar More menu.",
       "Enter the cargo, cargo COG, packing, trailer deck height and packing supports. New mathematical-search cases begin blank and do not insert a trailer arrangement before the search finishes.",
       "Choose the trailer family, PPU location (none, rear, front or both ends) and available 4-, 5- and 6-axle-line modules.",
       "Set train-count, stock and formation limits. A per-train axle count is eligible only when it is exactly constructible from the enabled module sizes.",
-      "Parallel trains are placed at equal offsets from the all-inclusive COG. The standard preferred spacing is 2.9 m centre-to-centre and can be changed.",
+      "Train Y positions are placed at equal offsets from the all-inclusive COG. The standard preferred spacing is 2.9 m centre-to-centre and can be changed.",
+      "Longitudinal formation can retain legacy in-line trains or test bounded mirrored stagger templates. In-line is checked first, followed by increasing stagger, avoiding an independent X grid for every train.",
+      "Choose three- or four-point hydraulics. Four-point reactions satisfy total force and both moments exactly while balancing load per active bogie; stability uses the convex four-corner boundary.",
+      "Project wind and acceleration remain authoritative by default. If Search-only wind and acceleration is enabled and any value is reduced, the applied case is explicitly changed to Third-degree verification and the reduction is logged.",
+      "Road transport analysis can be included so a retained arrangement must also pass its powered traction and braking checks.",
       "Optional cargo-width limiting keeps the complete trailer formation between the cargo left and right edges; the switch is off by default so existing searches retain their current behaviour.",
       "The hard decision order is engineering PASS, minimum train count, minimum total axle lines, closest valid preferred spacing, then the selected engineering weighting.",
       "Mathematical branch-and-bound calculates the payload capacity lower bound, rejects unbuildable 4/5/6-AL totals, and derives the minimum hydraulic Y span from the all-inclusive COG height, COG envelope, dynamic shifts and required tipping angles.",
@@ -237,7 +258,7 @@ export function HelpGuide({
 
         <footer>
           <span>{HELP_GUIDE_REVISION}</span>
-          <span>Guide coverage: setup · wind · model · results · details · optimisation · arrangement · phone</span>
+          <span>Guide coverage: setup · wind · hydraulics · road transport · results · optimisation · arrangement · phone</span>
         </footer>
       </div>
     </dialog>

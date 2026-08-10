@@ -57,6 +57,10 @@ export function HydraulicsView(props: HydraulicsViewProps) {
   const { vm, transform, width, height, preferences, selectedId, onSelect, onModelChange } = props;
   const svgHeight = props.compact ? height : Math.max(250, Math.floor(height * 0.58));
   const model = vm.project.model;
+  const groupIds = Array.from(
+    { length: model.hydraulicSystemMode === "FOUR_POINT" ? 4 : 3 },
+    (_, index) => index + 1,
+  );
   const sharedPins = model.groupings[0]?.pinnedAxleLines ?? [];
   const routeSegments = buildHydraulicRouteSegments(vm);
 
@@ -234,7 +238,7 @@ export function HydraulicsView(props: HydraulicsViewProps) {
 
       {!props.compact && <div className="hydraulic-editor">
         <div className="hydraulic-summary">
-          {[1, 2, 3].map((groupId) => {
+          {groupIds.map((groupId) => {
             const group = vm.groups.find((item) => item.groupId === groupId);
             const centre = vm.groupCentres.find((item) => item.groupId === groupId);
             return (
@@ -269,17 +273,17 @@ export function HydraulicsView(props: HydraulicsViewProps) {
             }`}
           >
             <b>
-              {vm.project.result.groups.length !== 3
+              {vm.project.result.groups.length !== groupIds.length
                 ? "INVALID GROUPING"
                 : vm.project.result.groupingQuality.narrow
-                  ? "NARROW TRIANGLE"
+                  ? "NARROW POLYGON"
                   : vm.project.result.groupingQuality.dispersedGroups.length
                     ? "DISPERSED GROUP"
-                    : "THREE LOCAL GROUPS"}
+                    : `${groupIds.length} LOCAL GROUPS`}
             </b>
             <span>
-              Triangle area {vm.project.result.groupingQuality.triangleAreaM2.toFixed(3)} m²
-              {" · "}minimum altitude{" "}
+              Polygon area {vm.project.result.groupingQuality.polygonAreaM2.toFixed(3)} m²
+              {" · "}minimum width{" "}
               {vm.project.result.groupingQuality.minimumAltitudeM.toFixed(3)} m
               {vm.project.result.groupingQuality.dispersedGroups.length
                 ? ` · check ${vm.project.result.groupingQuality.dispersedGroups
@@ -352,9 +356,7 @@ export function HydraulicsView(props: HydraulicsViewProps) {
                             )
                           }
                         >
-                          <option value={1}>G1</option>
-                          <option value={2}>G2</option>
-                          <option value={3}>G3</option>
+                          {groupIds.map((groupId) => <option key={groupId} value={groupId}>G{groupId}</option>)}
                         </select>
                       ) : (
                         "—"
@@ -377,9 +379,7 @@ export function HydraulicsView(props: HydraulicsViewProps) {
                             )
                           }
                         >
-                          <option value={1}>G1</option>
-                          <option value={2}>G2</option>
-                          <option value={3}>G3</option>
+                          {groupIds.map((groupId) => <option key={groupId} value={groupId}>G{groupId}</option>)}
                         </select>
                       ) : (
                         "—"

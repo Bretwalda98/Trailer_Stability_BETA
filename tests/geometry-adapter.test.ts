@@ -8,6 +8,7 @@ import {
 import { passToProject, runOptimiser } from "../app/engine/optimiser";
 import { buildGeometryViewModel } from "../app/geometry/buildGeometryViewModel";
 import { buildEngineeringDetailRows } from "../app/geometry/details";
+import { buildEndTippingConstructions, nearestStabilityEdge } from "../app/geometry/end-tipping";
 import { buildHydraulicRouteSegments } from "../app/geometry/hydraulic-routes";
 import {
   closestPointOnSegment,
@@ -192,10 +193,73 @@ async function main(): Promise<void> {
   assert.ok(screenCog.y >= 40 && screenCog.y <= 560);
   assert.deepEqual(vm.groupCentres.map((item) => item.point), result.groups.map((item) => item.point));
   assert.deepEqual(vm.stabilityBoundary.points, result.stabilityPolygon);
+  assert.equal(vm.tippingEdges.length, result.stabilityPolygon.length);
   assert.equal(
     vm.tippingEdges.find((edge) => edge.critical)?.edgeIndex,
     result.analysis.controllingEdgeIndex,
   );
+
+  // Four-point systems must expose all four perimeter edges. In particular,
+  // there must be no legacy diagonal from boundary point 2 back to point 0.
+  const fourPoint = createDefaultModel();
+  fourPoint.hydraulicSystemMode = "FOUR_POINT";
+  fourPoint.trailers[0].yM = 1;
+  fourPoint.trailers[1].yM = 4.5;
+  fourPoint.groupings[0].cornerGroups = {
+    rearLeft: 1,
+    rearRight: 1,
+    frontLeft: 3,
+    frontRight: 3,
+  };
+  fourPoint.groupings[1].cornerGroups = {
+    rearLeft: 2,
+    rearRight: 2,
+    frontLeft: 4,
+    frontRight: 4,
+  };
+  const fourPointResult = calculateProject(fourPoint);
+  const fourPointVm = buildGeometryViewModel(fourPoint, fourPointResult);
+  assert.equal(fourPointVm.stabilityBoundary.active, true);
+  assert.equal(fourPointVm.stabilityBoundary.points.length, 4);
+  assert.equal(fourPointVm.stabilityBoundary.label.short, "Stability polygon");
+  assert.equal(fourPointVm.tippingEdges.length, 4);
+  fourPointVm.tippingEdges.forEach((edge, index) => {
+    assert.deepEqual(edge.start, fourPointResult.stabilityPolygon[index]);
+    assert.deepEqual(edge.end, fourPointResult.stabilityPolygon[(index + 1) % 4]);
+  });
+  const fourPointEndConstructions = buildEndTippingConstructions(fourPointResult);
+  assert.equal(fourPointEndConstructions.length, 3);
+  fourPointEndConstructions.forEach((construction) => {
+    assert.deepEqual(
+      construction.cogPoint,
+      fourPointResult.casePoints[construction.mode][construction.casePointIndex],
+    );
+    // The shifted COG ring must remain on the polygon-interior side of the
+    // selected edge; the previous renderer added the distance in the outward
+    // direction and mirrored every ray across the tipping edge.
+    assert.ok(
+      (construction.cogPoint.y - construction.foot.y) * construction.outwardDirectionY <= 1e-9,
+    );
+    nearlyEqual(
+      Math.atan2(construction.distanceM, fourPointResult.combinedCog.z) * 180 / Math.PI,
+      construction.angleDeg,
+      1e-8,
+    );
+  });
+
+  const rectangularBoundary = [
+    { x: -2, y: -1 },
+    { x: 2, y: -1 },
+    { x: 2, y: 1 },
+    { x: -2, y: 1 },
+  ];
+  const rightEdge = nearestStabilityEdge({ x: 0, y: -0.8 }, rectangularBoundary);
+  const leftEdge = nearestStabilityEdge({ x: 0, y: 0.8 }, rectangularBoundary);
+  assert.ok(rightEdge && leftEdge);
+  assert.equal(rightEdge.foot.y, -1);
+  assert.equal(leftEdge.foot.y, 1);
+  assert.ok(0 - rightEdge.foot.y > 0);
+  assert.ok(0 - leftEdge.foot.y < 0);
   const projectedBounds = viewBounds("end", vm.bounds);
   assert.equal(projectedBounds.minX, vm.bounds.minY);
   assert.equal(projectedBounds.maxY, vm.bounds.maxZ);

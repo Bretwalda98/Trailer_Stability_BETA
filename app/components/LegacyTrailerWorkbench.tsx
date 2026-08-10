@@ -1298,11 +1298,18 @@ export default function TrailerWorkbench() {
   const calculation = useMemo(() => calculateProject(model), [model]);
 
   useEffect(() => {
-    if ("serviceWorker" in navigator && window.isSecureContext) {
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+    if (process.env.NODE_ENV === "production") {
       navigator.serviceWorker.register(assetPath("/sw.js")).catch(() => {
         // Installation remains optional when a browser or host blocks workers.
       });
+      return;
     }
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      registrations
+        .filter((registration) => registration.scope.startsWith(window.location.origin))
+        .forEach((registration) => void registration.unregister());
+    }).catch(() => undefined);
   }, []);
 
   useEffect(() => {

@@ -110,11 +110,20 @@ export default function TrailerWorkbench() {
   );
 
   useEffect(() => {
-    if ("serviceWorker" in navigator && window.isSecureContext) {
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+    if (process.env.NODE_ENV === "production") {
       navigator.serviceWorker.register(assetPath("/sw.js")).catch(() => {
         // Offline installation is optional when a browser or host blocks service workers.
       });
+      return;
     }
+    // A production service worker can otherwise keep serving cached modules
+    // after the same origin is reopened with the local development server.
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      registrations
+        .filter((registration) => registration.scope.startsWith(window.location.origin))
+        .forEach((registration) => void registration.unregister());
+    }).catch(() => undefined);
   }, []);
 
   useEffect(() => {

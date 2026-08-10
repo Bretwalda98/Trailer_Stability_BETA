@@ -259,6 +259,10 @@ export async function importWorkbook(file: File, fallback: ProjectModel): Promis
   if (!trailers.length) throw new Error("Verification import failed. No trailer model is selected.");
   model.trailers = trailers;
   model.groupings = groupings;
+  model.hydraulicSystemMode = groupings.some((grouping) => {
+    const corners = grouping.cornerGroups;
+    return Boolean(corners && Object.values(corners).some((group) => group === 4));
+  }) ? "FOUR_POINT" : "THREE_POINT";
   model.supports = Array.from({ length: 10 }, (_, index) => {
     const row = 446 + index;
     const position = numberValue(main, `C${row}`, numberValue(main, `E${71 + index}`, Number.NaN));

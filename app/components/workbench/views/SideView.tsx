@@ -12,36 +12,34 @@ import type { EngineeringViewProps } from "./view-types";
 export function SideView(props: EngineeringViewProps) {
   const { vm, transform, width, height, preferences, selectedId, onSelect } = props;
   const model = vm.project.model;
+  const deckTopZ = model.trailerDeckHeightM;
+  const packingBottomZ = deckTopZ;
+  const packingTopZ = packingBottomZ + Math.max(0, model.packing.heightM);
+  const cargoBottomZ = packingTopZ;
   const cargoBottomLeft = transform.toScreen({
     x: vm.cargo.extremeX,
     y: 0,
-    z: vm.cargo.bottomZM,
+    z: cargoBottomZ,
   });
   const cargoTopRight = transform.toScreen({
     x: vm.cargo.extremeX + vm.cargo.lengthM,
     y: 0,
-    z: vm.cargo.bottomZM + vm.cargo.heightM,
+    z: cargoBottomZ + vm.cargo.heightM,
   });
   const cargoWidthPx = cargoTopRight.x - cargoBottomLeft.x;
   const cargoHeightPx = cargoBottomLeft.y - cargoTopRight.y;
   const packingBottomLeft = transform.toScreen({
     x: vm.packing.extremeX,
     y: 0,
-    z: model.trailerDeckHeightM,
+    z: packingBottomZ,
   });
   const packingTopRight = transform.toScreen({
     x: vm.packing.extremeX + vm.packing.lengthM,
     y: 0,
-    z: model.trailerDeckHeightM + model.packing.heightM,
+    z: packingTopZ,
   });
   const groundStart = transform.toScreen({ x: vm.bounds.minX, y: 0, z: 0 });
-  const groundEnd = transform.toScreen({
-    x: vm.bounds.maxX,
-    y: 0,
-    z:
-      Math.tan((model.environment.longitudinalSlopeDeg * Math.PI) / 180) *
-      (vm.bounds.maxX - vm.bounds.minX),
-  });
+  const groundEnd = transform.toScreen({ x: vm.bounds.maxX, y: 0, z: 0 });
 
   return (
     <svg
@@ -66,20 +64,56 @@ export function SideView(props: EngineeringViewProps) {
         y2={groundEnd.y}
       />
       <text className="view-note" x={groundStart.x + 8} y={groundStart.y - 8}>
-        Longitudinal slope {model.environment.longitudinalSlopeDeg.toFixed(2)}°
+        Datum Z = 0 · longitudinal slope represented by shifted COG envelope
       </text>
 
       {preferences.layers.trailers &&
         vm.trailers.map((trailer) => {
-          const deckStart = transform.toScreen({
+          const trailerAxles = vm.axleLines.filter(
+            (axle) => axle.sourceTrailerId === trailer.sourceTrailerId,
+          );
+          const wheelDiameterM =
+            trailer.wheelDiameterM > 0
+              ? trailer.wheelDiameterM
+              : trailer.deckHeightM * 0.42;
+          const axleSpacingM =
+            trailer.axleLines > 0 ? trailer.lengthM / trailer.axleLines : wheelDiameterM * 2;
+          const deckDepthM = wheelDiameterM * 0.2;
+          const deckBottomZ = trailer.deckHeightM - deckDepthM;
+          const frameBottomZ = Math.max(
+            wheelDiameterM * 0.72,
+            deckBottomZ - wheelDiameterM * 0.5,
+          );
+          const endCapM = Math.min(axleSpacingM * 0.16, trailer.lengthM * 0.035);
+          const deckTopStart = transform.toScreen({
             x: trailer.startXM,
             y: trailer.centreYM,
             z: trailer.deckHeightM,
           });
-          const deckEnd = transform.toScreen({
+          const deckTopEnd = transform.toScreen({
             x: trailer.startXM + trailer.lengthM,
             y: trailer.centreYM,
             z: trailer.deckHeightM,
+          });
+          const deckBottomStart = transform.toScreen({
+            x: trailer.startXM,
+            y: trailer.centreYM,
+            z: deckBottomZ,
+          });
+          const deckBottomEnd = transform.toScreen({
+            x: trailer.startXM + trailer.lengthM,
+            y: trailer.centreYM,
+            z: deckBottomZ,
+          });
+          const frameBottomStart = transform.toScreen({
+            x: trailer.startXM + endCapM,
+            y: trailer.centreYM,
+            z: frameBottomZ,
+          });
+          const frameBottomEnd = transform.toScreen({
+            x: trailer.startXM + trailer.lengthM - endCapM,
+            y: trailer.centreYM,
+            z: frameBottomZ,
           });
           return (
             <g
@@ -92,20 +126,53 @@ export function SideView(props: EngineeringViewProps) {
                 onSelect(trailer.id);
               }}
             >
-              <rect
-                x={deckStart.x}
-                y={deckStart.y - 5}
-                width={deckEnd.x - deckStart.x}
-                height={10}
+              <path
+                className="spmt-deck-sill"
+                d={`M ${deckTopStart.x} ${deckTopStart.y} L ${deckTopEnd.x} ${deckTopEnd.y} L ${deckBottomEnd.x} ${deckBottomEnd.y} L ${frameBottomEnd.x} ${frameBottomEnd.y} L ${frameBottomStart.x} ${frameBottomStart.y} L ${deckBottomStart.x} ${deckBottomStart.y} Z`}
               />
               <line
-                className="centreline"
-                x1={deckStart.x}
-                y1={deckStart.y}
-                x2={deckEnd.x}
-                y2={deckEnd.y}
+                className="spmt-deck-top"
+                x1={deckTopStart.x}
+                y1={deckTopStart.y}
+                x2={deckTopEnd.x}
+                y2={deckTopEnd.y}
               />
-              <text x={(deckStart.x + deckEnd.x) / 2} y={deckStart.y + 24} textAnchor="middle">
+              {trailerAxles.map((axle, index) => {
+                const wheelRadiusM = wheelDiameterM / 2;
+                const hub = transform.toScreen({
+                  x: axle.xM,
+                  y: trailer.centreYM,
+                  z: wheelRadiusM,
+                });
+                const pivotDirection = index === trailerAxles.length - 1 ? -1 : 1;
+                const upperPivot = transform.toScreen({
+                  x: axle.xM + pivotDirection * axleSpacingM * 0.31,
+                  y: trailer.centreYM,
+                  z: deckBottomZ,
+                });
+                const strutTop = transform.toScreen({
+                  x: axle.xM + pivotDirection * axleSpacingM * 0.18,
+                  y: trailer.centreYM,
+                  z: deckBottomZ,
+                });
+                const strutBottom = transform.toScreen({
+                  x: axle.xM + pivotDirection * axleSpacingM * 0.08,
+                  y: trailer.centreYM,
+                  z: wheelRadiusM + wheelDiameterM * 0.34,
+                });
+                const armHalfDepthPx = Math.max(2, wheelDiameterM * transform.scale * 0.045);
+                return (
+                  <g key={`running-gear:${axle.id}`} className="spmt-running-gear">
+                    <line className="spmt-suspension-strut" x1={strutTop.x} y1={strutTop.y} x2={strutBottom.x} y2={strutBottom.y} />
+                    <path
+                      className="spmt-pendulum-arm"
+                      d={`M ${upperPivot.x} ${upperPivot.y - armHalfDepthPx} L ${hub.x} ${hub.y - armHalfDepthPx} L ${hub.x} ${hub.y + armHalfDepthPx} L ${upperPivot.x} ${upperPivot.y + armHalfDepthPx} Z`}
+                    />
+                    <circle className="spmt-pivot" cx={upperPivot.x} cy={upperPivot.y} r={Math.max(2, wheelDiameterM * transform.scale * 0.07)} />
+                  </g>
+                );
+              })}
+              <text x={(deckTopStart.x + deckTopEnd.x) / 2} y={frameBottomStart.y + 16} textAnchor="middle">
                 T{trailer.index + 1} · {trailer.definitionName}
               </text>
             </g>
@@ -127,6 +194,8 @@ export function SideView(props: EngineeringViewProps) {
             3,
             ((bogie?.wheelDiameterM ?? 0.5) * transform.scale) / 2,
           );
+          const hubRadius = Math.max(2, radius * 0.36);
+          const showHubDetail = radius >= 7 && vm.axleLines.length <= 160;
           const groupId = axle.groupIds[0] ?? 1;
           return (
             <g
@@ -140,12 +209,26 @@ export function SideView(props: EngineeringViewProps) {
               }}
             >
               <circle
+                className="spmt-tyre"
                 cx={centre.x}
                 cy={centre.y}
                 r={radius}
                 style={{ stroke: GROUP_COLOURS[groupId] }}
               />
-              <line x1={centre.x} y1={centre.y - radius} x2={centre.x} y2={centre.y - radius - 12} />
+              <circle className="spmt-wheel-hub" cx={centre.x} cy={centre.y} r={hubRadius} />
+              {showHubDetail && Array.from({ length: 6 }, (_, index) => {
+                const angle = (index / 6) * Math.PI * 2;
+                const lugRadius = hubRadius * 0.56;
+                return (
+                  <circle
+                    key={`lug:${index}`}
+                    className="spmt-wheel-lug"
+                    cx={centre.x + Math.cos(angle) * lugRadius}
+                    cy={centre.y + Math.sin(angle) * lugRadius}
+                    r={Math.max(0.7, hubRadius * 0.09)}
+                  />
+                );
+              })}
               <text x={centre.x} y={centre.y + radius + 12} textAnchor="middle">
                 {axle.axleLine}
               </text>
@@ -165,12 +248,12 @@ export function SideView(props: EngineeringViewProps) {
       {preferences.layers.supports && (
         <g className="side-supports">
           {vm.supportSpreads.map((spread) => {
-            const base = transform.toScreen({ x: spread.startXM, y: 0, z: 0 });
-            const end = transform.toScreen({ x: spread.endXM, y: 0, z: 0 });
+            const base = transform.toScreen({ x: spread.startXM, y: 0, z: packingBottomZ });
+            const end = transform.toScreen({ x: spread.endXM, y: 0, z: packingBottomZ });
             const topY = transform.toScreen({
               x: spread.startXM,
               y: 0,
-              z: vm.cargo.bottomZM,
+              z: cargoBottomZ,
             }).y;
             return (
               <rect
@@ -184,11 +267,11 @@ export function SideView(props: EngineeringViewProps) {
             );
           })}
           {vm.supports.map((support) => {
-            const bottom = transform.toScreen({ x: support.xM, y: 0, z: 0 });
+            const bottom = transform.toScreen({ x: support.xM, y: 0, z: packingBottomZ });
             const top = transform.toScreen({
               x: support.xM,
               y: 0,
-              z: vm.cargo.bottomZM,
+              z: cargoBottomZ,
             });
             return (
               <g
@@ -242,12 +325,12 @@ export function SideView(props: EngineeringViewProps) {
             const left = transform.toScreen({
               x: item.startXM,
               y: 0,
-              z: model.trailerDeckHeightM,
+              z: packingBottomZ,
             });
             const right = transform.toScreen({
               x: item.endXM,
               y: 0,
-              z: model.trailerDeckHeightM + 0.35,
+              z: cargoBottomZ,
             });
             return (
               <g
@@ -272,15 +355,37 @@ export function SideView(props: EngineeringViewProps) {
 
       {preferences.layers.trailers &&
         vm.powerPacks.map((ppu) => {
-          const left = transform.toScreen({
+          const trailer = vm.trailers[ppu.trailerIndex];
+          const wheelDiameterM =
+            trailer?.wheelDiameterM && trailer.wheelDiameterM > 0
+              ? trailer.wheelDiameterM
+              : deckTopZ * 0.42;
+          const ppuTopZ = trailer?.deckHeightM ?? deckTopZ;
+          const ppuBottomZ = Math.max(
+            wheelDiameterM * 0.12,
+            ppuTopZ - wheelDiameterM * 1.45,
+          );
+          const ppuLengthM = Math.max(0, ppu.endXM - ppu.startXM);
+          const chamferM = Math.min(ppuLengthM * 0.08, wheelDiameterM * 0.38);
+          const topLeft = transform.toScreen({
             x: ppu.startXM,
             y: ppu.centreYM,
-            z: model.trailerDeckHeightM,
+            z: ppuTopZ,
           });
-          const right = transform.toScreen({
+          const topRight = transform.toScreen({
             x: ppu.endXM,
             y: ppu.centreYM,
-            z: model.trailerDeckHeightM + 0.5,
+            z: ppuTopZ,
+          });
+          const bottomRight = transform.toScreen({
+            x: ppu.endXM - chamferM,
+            y: ppu.centreYM,
+            z: ppuBottomZ,
+          });
+          const bottomLeft = transform.toScreen({
+            x: ppu.startXM + chamferM,
+            y: ppu.centreYM,
+            z: ppuBottomZ,
           });
           return (
             <g
@@ -291,8 +396,13 @@ export function SideView(props: EngineeringViewProps) {
                 onSelect(ppu.id);
               }}
             >
-              <rect x={left.x} y={right.y} width={right.x - left.x} height={left.y - right.y} />
-              <text x={(left.x + right.x) / 2} y={right.y - 5} textAnchor="middle">
+              <path
+                className="spmt-ppu-body"
+                d={`M ${topLeft.x} ${topLeft.y} L ${topRight.x} ${topRight.y} L ${bottomRight.x} ${bottomRight.y} L ${bottomLeft.x} ${bottomLeft.y} Z`}
+              />
+              <line className="spmt-ppu-deck-datum" x1={topLeft.x} y1={topLeft.y} x2={topRight.x} y2={topRight.y} />
+              <line className="spmt-ppu-detail" x1={bottomLeft.x} y1={(topLeft.y + bottomLeft.y) / 2} x2={bottomRight.x} y2={(topRight.y + bottomRight.y) / 2} />
+              <text x={(topLeft.x + topRight.x) / 2} y={(topLeft.y + bottomLeft.y) / 2 - 5} textAnchor="middle">
                 PPU · {ppu.end.toUpperCase()}
               </text>
             </g>

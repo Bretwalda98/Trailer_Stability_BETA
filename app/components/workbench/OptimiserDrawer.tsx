@@ -24,7 +24,7 @@ const MAX_VISIBLE_TERMINAL_EVENTS = 240;
 type CandidateSortKey =
   | "rank" | "passRef" | "trains" | "axleLines" | "totalAxleLines" | "pitch"
   | "width" | "modules" | "split" | "x" | "pins" | "supports"
-  | "dynamicUtil" | "dynamicAngle" | "deflection" | "rating";
+  | "cargoOnly" | "dynamicUtil" | "dynamicAngle" | "deflection" | "rating";
 type SortDirection = "asc" | "desc";
 
 function terminalEventText(event: OptimiserRun["events"][number]): string {
@@ -92,6 +92,7 @@ export function OptimiserDrawer({
       case "x": return pass.e89;
       case "pins": return pass.pinnedAxleLines.length;
       case "supports": return pass.result.activeSupportCount;
+      case "cargoOnly": return pass.result.stabilityReferences.cargoOnlyPass ? 0 : 1;
       case "dynamicUtil": return pass.result.metrics.dynamicUtil.value;
       case "dynamicAngle": return pass.result.metrics.dynamicAngle.value;
       case "deflection": return pass.result.beam.absoluteDeflectionMm;
@@ -196,7 +197,7 @@ export function OptimiserDrawer({
                       {sortableHeaders("Rank", "rank")}{sortableHeaders("Pass ref", "passRef")}
                       {arrangementRun && <>{sortableHeaders("Trains", "trains")}{sortableHeaders("AL/train", "axleLines")}{sortableHeaders("Total AL", "totalAxleLines")}{sortableHeaders("Pitch", "pitch")}{sortableHeaders("Width", "width")}{sortableHeaders("Modules/train", "modules")}</>}
                       {!arrangementRun && sortableHeaders("AL", "axleLines")}
-                      {sortableHeaders("Split", "split")}{sortableHeaders("X (m)", "x")}{sortableHeaders("Pins", "pins")}{sortableHeaders("Supports", "supports")}{sortableHeaders("Dyn. util.", "dynamicUtil")}{sortableHeaders("Dyn. angle", "dynamicAngle")}{sortableHeaders("Defl.", "deflection")}{sortableHeaders("Rating", "rating")}
+                      {sortableHeaders("Split", "split")}{sortableHeaders("X (m)", "x")}{sortableHeaders("Pins", "pins")}{sortableHeaders("Supports", "supports")}{sortableHeaders("Cargo-only", "cargoOnly")}{sortableHeaders("Dyn. util.", "dynamicUtil")}{sortableHeaders("Dyn. angle", "dynamicAngle")}{sortableHeaders("Defl.", "deflection")}{sortableHeaders("Rating", "rating")}
                     </tr>
                   </thead>
                   <tbody>
@@ -218,13 +219,14 @@ export function OptimiserDrawer({
                         <td>{pass.e89.toFixed(3)}</td>
                         <td>{pass.pinnedAxleLines.join(", ") || "—"}</td>
                         <td>{pass.result.activeSupportCount}</td>
+                        <td className={pass.result.stabilityReferences.cargoOnlyPass ? "status-ok" : "status-nok"}>{pass.result.stabilityReferences.cargoOnlyPass ? "PASS" : pass.result.stabilityReferences.combinedCogPassOnly ? "COMBINED ONLY" : "FAIL"}</td>
                         <td>{pass.result.metrics.dynamicUtil.value === null ? "—" : `${(pass.result.metrics.dynamicUtil.value * 100).toFixed(1)}%`}</td>
                         <td>{pass.result.metrics.dynamicAngle.value?.toFixed(2) ?? "—"}°</td>
                         <td>{pass.result.beam.absoluteDeflectionMm.toFixed(3)} mm</td>
                         <td>{pass.rating?.toFixed(3) ?? "—"}</td>
                       </tr>
                     ))}
-                    {!ranked.length && <tr><td colSpan={arrangementRun ? 16 : 11}>No valid ranked passes yet.</td></tr>}
+                    {!ranked.length && <tr><td colSpan={arrangementRun ? 17 : 12}>No valid ranked passes yet.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -242,6 +244,8 @@ export function OptimiserDrawer({
                         <div><dt>Module build per train</dt><dd><b>{[selected.arrangement.modules6 && `${selected.arrangement.modules6}×6`, selected.arrangement.modules5 && `${selected.arrangement.modules5}×5`, selected.arrangement.modules4 && `${selected.arrangement.modules4}×4`].filter(Boolean).join(" + ")}</b></dd></div>
                         <div><dt>Equal centre spacing</dt><dd><b>{selected.arrangement.pitchM.toFixed(3)} m</b></dd></div>
                         <div><dt>Overall formation width</dt><dd><b>{selected.arrangement.overallWidthM.toFixed(3)} m</b></dd></div>
+                        <div><dt>Longitudinal formation</dt><dd><b>{selected.arrangement.formationMode === "STAGGERED" ? `${selected.arrangement.longitudinalSpanM.toFixed(3)} m stagger` : "In-line"}</b></dd></div>
+                        {selected.arrangement.formationMode === "STAGGERED" && <div><dt>Train X offsets</dt><dd><b>{selected.arrangement.longitudinalOffsetsM.map((value) => value.toFixed(3)).join(" / ")} m</b></dd></div>}
                       </>
                     )}
                     <div><dt>Axle lines</dt><dd>{startModel?.trailers[0]?.axleLines ?? "—"} → <b>{selected.c89}</b></dd></div>
@@ -249,6 +253,8 @@ export function OptimiserDrawer({
                     <div><dt>Trailer X</dt><dd>{startModel?.trailers[0]?.xM.toFixed(3) ?? "—"} → <b>{selected.e89.toFixed(3)} m</b></dd></div>
                     <div><dt>Pinned lines</dt><dd>{startModel?.groupings[0]?.pinnedAxleLines.join(", ") || "none"} → <b>{selected.pinnedAxleLines.join(", ") || "none"}</b></dd></div>
                     <div><dt>Active supports</dt><dd><b>{selected.result.activeSupportCount}</b></dd></div>
+                    <div><dt>Cargo-only stability</dt><dd><b className={selected.result.stabilityReferences.cargoOnlyPass ? "status-ok" : "status-nok"}>{selected.result.stabilityReferences.cargoOnlyPass ? "PASS" : selected.result.stabilityReferences.combinedCogPassOnly ? "COMBINED COG PASS ONLY" : "FAIL"}</b></dd></div>
+                    {selected.result.roadTransport.enabled && <div><dt>Road transport</dt><dd><b>{selected.result.roadTransport.status} · traction {selected.result.roadTransport.tractionUtilisation === null ? "N/A" : `${(selected.result.roadTransport.tractionUtilisation * 100).toFixed(1)}%`} · braking {selected.result.roadTransport.brakingUtilisation === null ? "N/A" : `${(selected.result.roadTransport.brakingUtilisation * 100).toFixed(1)}%`}</b></dd></div>}
                     <div><dt>Dynamic utilisation</dt><dd><b>{selected.result.metrics.dynamicUtil.value === null ? "—" : `${(selected.result.metrics.dynamicUtil.value * 100).toFixed(1)}%`}</b></dd></div>
                     <div><dt>Dynamic tipping angle</dt><dd><b>{selected.result.metrics.dynamicAngle.value?.toFixed(2) ?? "—"}°</b></dd></div>
                     <div><dt>All-inclusive COG</dt><dd><b>{selected.result.combinedCog.x.toFixed(3)}, {selected.result.combinedCog.y.toFixed(3)}</b></dd></div>

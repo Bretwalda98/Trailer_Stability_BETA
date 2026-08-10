@@ -241,10 +241,10 @@ export function StabilityView(props: EngineeringViewProps) {
               Required angle · {requiredAngle.toFixed(1)}°
             </text>
             <text x={12} y={124}>
-              Triangle area · {result.groupingQuality.triangleAreaM2.toFixed(3)} m²
+              Stability polygon area · {result.groupingQuality.polygonAreaM2.toFixed(3)} m²
             </text>
             <text x={12} y={144}>
-              Min. altitude · {result.groupingQuality.minimumAltitudeM.toFixed(3)} m ·{" "}
+              Min. polygon width · {result.groupingQuality.minimumAltitudeM.toFixed(3)} m ·{" "}
               {result.groupingQuality.narrow ? "NARROW" : "BROAD"}
             </text>
           </g>

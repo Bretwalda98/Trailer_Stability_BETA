@@ -19,7 +19,7 @@ export function buildHydraulicRouteSegments(vm: GeometryViewModel): HydraulicRou
   const segments: HydraulicRouteSegment[] = [];
   for (const trailer of vm.trailers) {
     for (const side of ["left", "right"] as const) {
-      for (const groupId of [1, 2, 3]) {
+      for (const groupId of vm.groups.map((group) => group.groupId)) {
         const members = vm.bogies
           .filter(
             (bogie) =>

@@ -405,6 +405,15 @@ export function ResultsInspector({
           <IconCheck size={20} />
         </section>
       )}
+      {result.stabilityReferences.combinedCogPassOnly && (
+        <section className="combined-cog-warning" role="status">
+          <IconAlertTriangle size={18} />
+          <div>
+            <b>COMBINED COG PASS ONLY</b>
+            <p>The cargo-only stability check fails. The basic, slope and dynamic angle checks pass only when the all-inclusive combined COG is used.</p>
+          </div>
+        </section>
+      )}
 
       <section className="inspector-section result-summary">
         <header><b>Results</b><span>{workerReady ? "Worker active" : "Safe fallback"}</span></header>
@@ -430,9 +439,22 @@ export function ResultsInspector({
               <div><dt>Controlling case</dt><dd>{result.analysis.controllingMode}</dd></div>
               <div><dt>Controlling edge</dt><dd>{result.analysis.controllingEdgeIndex + 1}</dd></div>
               <div><dt>Trailer overlaps</dt><dd>{result.trailerOverlaps.length || "none"}</dd></div>
-              <div><dt>Triangle altitude</dt><dd>{result.groupingQuality.minimumAltitudeM.toFixed(3)} m</dd></div>
+              <div><dt>Hydraulic system</dt><dd>{model.hydraulicSystemMode === "FOUR_POINT" ? "4-point" : "3-point"}</dd></div>
+              <div><dt>Cargo-only stability</dt><dd className={result.stabilityReferences.cargoOnlyPass ? "status-ok" : "status-nok"}>{result.stabilityReferences.cargoOnlyPass ? "PASS" : "FAIL"}</dd></div>
+              <div><dt>COG pass basis</dt><dd className={result.stabilityReferences.combinedCogPassOnly ? "status-nok" : "status-ok"}>{result.stabilityReferences.combinedCogPassOnly ? "COMBINED ONLY" : result.stabilityReferences.cargoOnlyPass ? "CARGO + COMBINED" : "NO ANGLE PASS"}</dd></div>
+              <div><dt>Polygon minimum width</dt><dd>{result.groupingQuality.minimumAltitudeM.toFixed(3)} m</dd></div>
               <div><dt>Calculation time</dt><dd>{result.calculationMs.toFixed(2)} ms</dd></div>
         </dl>
+        {result.roadTransport?.enabled && (
+          <dl className="secondary-results road-transport-results">
+            <div><dt>Road transport</dt><dd>{result.roadTransport.status}</dd></div>
+            <div><dt>Surface</dt><dd>{result.roadTransport.surface.replaceAll("_", " ").toLowerCase()} · {result.roadTransport.condition.toLowerCase()}</dd></div>
+            <div><dt>Traction utilisation</dt><dd>{result.roadTransport.tractionUtilisation === null ? "N/A" : formatEngineering(result.roadTransport.tractionUtilisation * 100, "%")}</dd></div>
+            <div><dt>Braking utilisation</dt><dd>{result.roadTransport.brakingUtilisation === null ? "N/A" : formatEngineering(result.roadTransport.brakingUtilisation * 100, "%")}</dd></div>
+            <div><dt>Driven / braked bogies</dt><dd>{result.roadTransport.drivenBogieCount} / {result.roadTransport.brakedBogieCount}</dd></div>
+            <div><dt>Maximum climb</dt><dd>{result.roadTransport.maximumClimbGradeDeg === null ? "N/A" : formatEngineering(result.roadTransport.maximumClimbGradeDeg, "°")}</dd></div>
+          </dl>
+        )}
       </section>
 
       <section className="inspector-section selected-section">

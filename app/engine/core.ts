@@ -1,6 +1,7 @@
 import { beamMetricsFromResult, solveContinuousBeam } from "./beam";
 import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
 import { hydraulicCornerForAxleLine } from "./orientation";
+import { calculateRoadTransport } from "./road-transport";
 import type {
   AxlePoint,
   BeamMetrics,
@@ -359,9 +360,9 @@ function buildAxles(model: ProjectModel, trailers: ResolvedTrailer[]): AxlePoint
   return result;
 }
 
-function groupCentres(axles: AxlePoint[]): GroupResult[] {
+function groupCentres(axles: AxlePoint[], maximumGroup: 3 | 4): GroupResult[] {
   const groups: GroupResult[] = [];
-  for (const group of [1, 2, 3]) {
+  for (let group = 1; group <= maximumGroup; group += 1) {
     const members = axles.filter((item) => item.group === group && !item.pinned);
     if (!members.length) continue;
     groups.push({
@@ -376,6 +377,36 @@ function groupCentres(axles: AxlePoint[]): GroupResult[] {
     });
   }
   return groups;
+}
+
+function cross(origin: Point2, a: Point2, b: Point2): number {
+  return (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
+}
+
+function convexHull(points: Point2[]): Point2[] {
+  const unique = [...new Map(points.map((point) => [`${point.x.toFixed(12)}:${point.y.toFixed(12)}`, point])).values()]
+    .sort((left, right) => left.x - right.x || left.y - right.y);
+  if (unique.length <= 2) return unique;
+  const lower: Point2[] = [];
+  for (const point of unique) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= EPS) lower.pop();
+    lower.push(point);
+  }
+  const upper: Point2[] = [];
+  for (let index = unique.length - 1; index >= 0; index -= 1) {
+    const point = unique[index];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= EPS) upper.pop();
+    upper.push(point);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+function polygonArea(points: Point2[]): number {
+  if (points.length < 3) return 0;
+  return Math.abs(points.reduce((sum, point, index) => {
+    const next = points[(index + 1) % points.length];
+    return sum + point.x * next.y - point.y * next.x;
+  }, 0)) / 2;
 }
 
 function findTrailerOverlaps(trailers: ResolvedTrailer[]): TrailerOverlap[] {
@@ -418,9 +449,14 @@ function hydraulicGroupingQuality(
   axles: AxlePoint[],
   groups: GroupResult[],
 ): HydraulicGroupingQuality {
-  if (groups.length !== 3) {
+  const boundary = convexHull(groups.map((group) => group.point));
+  const areaM2 = polygonArea(boundary);
+  if (boundary.length < 3 || areaM2 <= EPS) {
     return {
       triangleAreaM2: 0,
+      polygonAreaM2: 0,
+      populatedGroupCount: groups.length,
+      boundaryPointCount: boundary.length,
       minimumAltitudeM: 0,
       minimumEdgeM: 0,
       maximumEdgeM: 0,
@@ -429,17 +465,17 @@ function hydraulicGroupingQuality(
       dispersedGroups: [],
     };
   }
-  const [a, b, c] = groups.map((group) => group.point);
-  const triangleAreaM2 =
-    Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / 2;
-  const edgeLengths = [
-    Math.hypot(b.x - a.x, b.y - a.y),
-    Math.hypot(c.x - b.x, c.y - b.y),
-    Math.hypot(a.x - c.x, a.y - c.y),
-  ];
+  const edgeLengths = boundary.map((point, index) => {
+    const next = boundary[(index + 1) % boundary.length];
+    return Math.hypot(next.x - point.x, next.y - point.y);
+  });
   const minimumEdgeM = Math.min(...edgeLengths);
   const maximumEdgeM = Math.max(...edgeLengths);
-  const minimumAltitudeM = maximumEdgeM > EPS ? (2 * triangleAreaM2) / maximumEdgeM : 0;
+  const widths = boundary.map((point, index) => {
+    const next = boundary[(index + 1) % boundary.length];
+    return Math.max(...boundary.map((candidate) => distanceToLine(candidate, point, next)));
+  });
+  const minimumAltitudeM = widths.length ? Math.min(...widths) : 0;
   const aspectRatio = maximumEdgeM > EPS ? minimumAltitudeM / maximumEdgeM : 0;
 
   const dispersedGroups = groups
@@ -479,7 +515,12 @@ function hydraulicGroupingQuality(
     .map((group) => group.group);
 
   return {
-    triangleAreaM2,
+    // Retained for JSON/UI compatibility. In a four-point case this is the
+    // active convex stability-polygon area rather than a triangle-only area.
+    triangleAreaM2: areaM2,
+    polygonAreaM2: areaM2,
+    populatedGroupCount: groups.length,
+    boundaryPointCount: boundary.length,
     minimumAltitudeM,
     minimumEdgeM,
     maximumEdgeM,
@@ -499,21 +540,92 @@ function barycentric(point: Point2, triangle: Point2[]): number[] {
   return [l1, l2, 1 - l1 - l2];
 }
 
+function solveThreeByThree(matrix: number[][], rhs: number[]): number[] | null {
+  const augmented = matrix.map((row, index) => [...row, rhs[index] ?? 0]);
+  for (let column = 0; column < 3; column += 1) {
+    let pivot = column;
+    for (let row = column + 1; row < 3; row += 1) {
+      if (Math.abs(augmented[row][column]) > Math.abs(augmented[pivot][column])) pivot = row;
+    }
+    if (Math.abs(augmented[pivot][column]) <= 1e-12) return null;
+    [augmented[column], augmented[pivot]] = [augmented[pivot], augmented[column]];
+    const divisor = augmented[column][column];
+    for (let item = column; item < 4; item += 1) augmented[column][item] /= divisor;
+    for (let row = 0; row < 3; row += 1) {
+      if (row === column) continue;
+      const factor = augmented[row][column];
+      for (let item = column; item < 4; item += 1) {
+        augmented[row][item] -= factor * augmented[column][item];
+      }
+    }
+  }
+  return augmented.map((row) => row[3]);
+}
+
+/**
+ * Port of the v0.8 workbook TS_GroupReaction equilibrium solver. With three
+ * groups the force/two-moment system is unique. With four groups it selects
+ * the exact equilibrium solution that minimises differences in load per
+ * active bogie around the neutral bogie-proportional target.
+ */
+function groupReactionFractions(point: Point2, groups: GroupResult[]): number[] {
+  if (groups.length === 3) return barycentric(point, groups.map((group) => group.point));
+  if (groups.length !== 4) return [];
+  const totalBogies = groups.reduce((sum, group) => sum + Math.max(0, group.axleCount), 0);
+  if (totalBogies <= EPS) return [];
+  const target = groups.map((group) => Math.max(0, group.axleCount) / totalBogies);
+  const weightD = groups.map((group) => Math.max(0, group.axleCount) ** 2);
+  const rows = [
+    groups.map((group) => group.point.x),
+    groups.map((group) => group.point.y),
+    groups.map(() => 1),
+  ];
+  const targetMoments = rows.map((row) => row.reduce((sum, value, index) => sum + value * target[index], 0));
+  const rhs = [point.x - targetMoments[0], point.y - targetMoments[1], 1 - targetMoments[2]];
+  const matrix = rows.map((row) => rows.map((column) =>
+    row.reduce((sum, value, index) => sum + weightD[index] * value * column[index], 0),
+  ));
+  const lambda = solveThreeByThree(matrix, rhs);
+  if (!lambda) return [];
+  const reactions = groups.map((group, index) => target[index] + weightD[index] * (
+    group.point.x * lambda[0] + group.point.y * lambda[1] + lambda[2]
+  ));
+  return reactions.every(Number.isFinite) ? reactions : [];
+}
+
 function distanceToLine(point: Point2, a: Point2, b: Point2): number {
   const denominator = Math.hypot(b.y - a.y, b.x - a.x);
   if (denominator < EPS) return 0;
   return Math.abs((b.y - a.y) * point.x - (b.x - a.x) * point.y + b.x * a.y - b.y * a.x) / denominator;
 }
 
-function stabilityState(point: Point2, cogHeightM: number, polygon: Point2[]): StabilityState {
-  if (polygon.length !== 3) return { fractions: [], inside: false, minimumAngleDeg: 0, edgeDistances: [] };
-  const fractions = barycentric(point, polygon);
-  const inside = fractions.length === 3 && fractions.every((value) => value >= -1e-9);
-  const edgeDistances = [
-    distanceToLine(point, polygon[0], polygon[1]),
-    distanceToLine(point, polygon[1], polygon[2]),
-    distanceToLine(point, polygon[2], polygon[0]),
-  ];
+function pointInConvexPolygon(point: Point2, polygon: Point2[]): boolean {
+  if (polygon.length < 3) return false;
+  let positive = false;
+  let negative = false;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const edge = cross(polygon[index], polygon[(index + 1) % polygon.length], point);
+    if (edge > 1e-9) positive = true;
+    if (edge < -1e-9) negative = true;
+  }
+  return !(positive && negative);
+}
+
+function stabilityState(
+  point: Point2,
+  cogHeightM: number,
+  polygon: Point2[],
+  groups: GroupResult[],
+): StabilityState {
+  if (polygon.length < 3) return { fractions: [], inside: false, minimumAngleDeg: 0, edgeDistances: [] };
+  const fractions = groupReactionFractions(point, groups);
+  const inside =
+    pointInConvexPolygon(point, polygon) &&
+    fractions.length === groups.length &&
+    fractions.every((value) => value >= -1e-9);
+  const edgeDistances = polygon.map((vertex, index) =>
+    distanceToLine(point, vertex, polygon[(index + 1) % polygon.length]),
+  );
   const unsignedAngleDeg =
     (Math.atan2(Math.min(...edgeDistances), Math.max(cogHeightM, EPS)) * 180) / Math.PI;
   return {
@@ -521,7 +633,7 @@ function stabilityState(point: Point2, cogHeightM: number, polygon: Point2[]): S
     inside,
     // A distance-to-line magnitude alone cannot distinguish an inside point
     // from an outside point. Keep the useful magnitude, but make it negative
-    // outside the support triangle so an invalid case can never look safer.
+    // outside the support polygon so an invalid case can never look safer.
     minimumAngleDeg: inside ? unsignedAngleDeg : -unsignedAngleDeg,
     edgeDistances,
   };
@@ -838,7 +950,7 @@ function utilisationForPoint(
   axles: AxlePoint[],
   totalMassT: number,
 ): { state: StabilityState; utilisation: number; loads: number[]; axles: AxlePoint[] } {
-  const state = stabilityState(point, cogHeightM, polygon);
+  const state = stabilityState(point, cogHeightM, polygon, groups);
   if (!state.fractions.length) return { state, utilisation: Number.POSITIVE_INFINITY, loads: [], axles };
   const applied = applyLoadsToAxles(axles, groups, state.fractions, totalMassT);
   return { state, utilisation: applied.maximumUtilisation, loads: applied.groupLoads, axles: applied.axles };
@@ -976,7 +1088,10 @@ function analysisSummary(
         0,
       )
     : -1;
-  const edgeIndexes: Array<[number, number]> = [[0, 1], [1, 2], [2, 0]];
+  const edgeIndexes: Array<[number, number]> = polygon.map((_, index) => [
+    index,
+    (index + 1) % polygon.length,
+  ]);
   const edgePair = edgeIndexes[controllingEdgeIndex];
   const controllingEdge =
     edgePair && polygon[edgePair[0]] && polygon[edgePair[1]]
@@ -1054,6 +1169,9 @@ export function calculateProject(model: ProjectModel): CalculationResult {
       trailerOverlaps: [],
       groupingQuality: {
         triangleAreaM2: 0,
+        polygonAreaM2: 0,
+        populatedGroupCount: 0,
+        boundaryPointCount: 0,
         minimumAltitudeM: 0,
         minimumEdgeM: 0,
         maximumEdgeM: 0,
@@ -1061,6 +1179,7 @@ export function calculateProject(model: ProjectModel): CalculationResult {
         narrow: true,
         dispersedGroups: [],
       },
+      roadTransport: calculateRoadTransport(model, [], baseLoad.mass),
       stabilityPolygon: [],
       casePoints: { basic: [], slope: [], dynamic: [], spineLoadCase: model.spineLoadCase },
       componentCogs: {
@@ -1076,7 +1195,10 @@ export function calculateProject(model: ProjectModel): CalculationResult {
       stabilityReferences: {
         cargoBasicAngle: metric(null, 0, true, false),
         cargoSlopeAngle: metric(null, 0, true, false),
+        cargoDynamicAngle: metric(null, 0, true, false),
+        cargoOnlyPass: false,
         combinedCogRequired: false,
+        combinedCogPassOnly: false,
       },
       analysis: emptyAnalysis(baseLoad.point),
       resolvedTrailers: [],
@@ -1102,25 +1224,33 @@ export function calculateProject(model: ProjectModel): CalculationResult {
   }
 
   const axleBase = buildAxles(model, resolved.trailers);
-  const groups = groupCentres(axleBase);
+  const expectedGroupCount = model.hydraulicSystemMode === "FOUR_POINT" ? 4 : 3;
+  const groups = groupCentres(axleBase, expectedGroupCount);
   const limits = engineeringLimitsFor(model.engineeringDegree);
   const trailerOverlaps = findTrailerOverlaps(resolved.trailers);
   const groupingQuality = hydraulicGroupingQuality(axleBase, groups);
-  const polygon = groups.map((group) => group.point);
-  if (groups.length !== 3) warnings.push("Three populated hydraulic groups are required to form the stability triangle.");
+  const polygon = convexHull(groups.map((group) => group.point));
+  if (groups.length !== expectedGroupCount) {
+    warnings.push(
+      `${expectedGroupCount === 4 ? "Four" : "Three"} populated hydraulic groups are required for the selected ${expectedGroupCount}-point suspension system.`,
+    );
+  }
+  if (expectedGroupCount === 4 && polygon.length < 4) {
+    warnings.push("The four populated hydraulic groups do not form four distinct corners of the convex stability boundary.");
+  }
   trailerOverlaps.forEach((overlap) => {
     warnings.push(
       `Trailer ${overlap.firstTrailerIndex + 1} and Trailer ${overlap.secondTrailerIndex + 1} overlap by ${overlap.overlapXM.toFixed(3)} m longitudinally and ${overlap.overlapYM.toFixed(3)} m transversely.`,
     );
   });
-  if (groups.length === 3 && groupingQuality.narrow) {
+  if (groups.length === expectedGroupCount && groupingQuality.narrow) {
     warnings.push(
-      `The hydraulic group centres form a narrow stability triangle (minimum altitude ${groupingQuality.minimumAltitudeM.toFixed(3)} m). Keep each group local and separate the three group centres where practical.`,
+      `The hydraulic group centres form a narrow stability polygon (minimum width ${groupingQuality.minimumAltitudeM.toFixed(3)} m). Keep each group local and separate the group centres where practical.`,
     );
   }
   if (groupingQuality.dispersedGroups.length) {
     warnings.push(
-      `Hydraulic ${groupingQuality.dispersedGroups.map((group) => `G${group}`).join(", ")} ${groupingQuality.dispersedGroups.length === 1 ? "is" : "are"} spread across distant axle regions. Each group should be a local cluster around one triangle corner.`,
+      `Hydraulic ${groupingQuality.dispersedGroups.map((group) => `G${group}`).join(", ")} ${groupingQuality.dispersedGroups.length === 1 ? "is" : "are"} spread across distant axle regions. Each group should be a local cluster around one stability-polygon corner.`,
     );
   }
 
@@ -1229,20 +1359,53 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     cargoSlopeShift.y,
     model.environment.combinationFactor,
   );
+  const cargoWindShift = {
+    x:
+      model.cargo.massT > EPS
+        ? (windPressureKNPerM2 * model.cargo.frontWindAreaM2 * model.cargo.frontDragCoefficient * windLeverArmXM) /
+          (model.cargo.massT * GRAVITY)
+        : 0,
+    y:
+      model.cargo.massT > EPS
+        ? (windPressureKNPerM2 * model.cargo.sideWindAreaM2 * model.cargo.sideDragCoefficient * windLeverArmYM) /
+          (model.cargo.massT * GRAVITY)
+        : 0,
+  };
+  const cargoAccelerationShift = {
+    x: (cargoPoint.z * model.environment.longitudinalAccelerationMps2) / GRAVITY,
+    y: (cargoPoint.z * model.environment.transverseAccelerationMps2) / GRAVITY,
+  };
+  const cargoDynamicShift = {
+    x: cargoAccelerationShift.x + cargoWindShift.x,
+    y: cargoAccelerationShift.y + cargoWindShift.y,
+  };
+  const cargoDynamicPoints = perimeterCases(
+    cargoPoint,
+    cargoEnvelopeX,
+    cargoEnvelopeY,
+    cargoSlopeShift.x + cargoDynamicShift.x,
+    cargoSlopeShift.y + cargoDynamicShift.y,
+    model.environment.combinationFactor,
+  );
   const cargoBasicCases = cargoBasicPoints.map((point) =>
     utilisationForPoint(point, cargoPoint.z, polygon, groups, axleBase, resolved.mass),
   );
   const cargoSlopeCases = cargoSlopePoints.map((point) =>
     utilisationForPoint(point, cargoPoint.z, polygon, groups, axleBase, resolved.mass),
   );
+  const cargoDynamicCases = cargoDynamicPoints.map((point) =>
+    utilisationForPoint(point, cargoPoint.z, polygon, groups, axleBase, model.cargo.massT),
+  );
   const cargoBasicAngle = minimumOf(cargoBasicCases.map((item) => item.state.minimumAngleDeg));
   const cargoSlopeAngle = minimumOf(cargoSlopeCases.map((item) => item.state.minimumAngleDeg));
+  const cargoDynamicAngle = minimumOf(cargoDynamicCases.map((item) => item.state.minimumAngleDeg));
   const cargoBasicMetric = metric(cargoBasicAngle, limits.basicAngle, true);
   const cargoSlopeMetric = metric(cargoSlopeAngle, limits.slopeAngle, true);
-  const combinedCogRequired = cargoBasicMetric.status === "NOK" || cargoSlopeMetric.status === "NOK";
-  if (combinedCogRequired) {
-    warnings.push("Combined COG must be considered: the cargo-only basic or slope stability angle is below the required limit.");
-  }
+  const cargoDynamicMetric = metric(cargoDynamicAngle, limits.dynamicAngle, true);
+  const cargoOnlyPass = [cargoBasicMetric, cargoSlopeMetric, cargoDynamicMetric].every(
+    (item) => item.status === "OK",
+  );
+  const combinedCogRequired = !cargoOnlyPass;
   const analysedTrailer = resolved.trailers[analysedTrailerIndex] ?? resolved.trailers[0];
   const supportsOutsideTrailer = analysedTrailer
     ? model.supports
@@ -1313,13 +1476,39 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     localBendingUtil: metric(beam.localBendingUtilisation, 1, false, detailed && beam.points.length > 0),
     axleLinesUsed: metric(axleLinesUsed, Number.POSITIVE_INFINITY),
   };
+  const roadTransport = calculateRoadTransport(model, axlePoints, resolved.mass);
+  warnings.push(...roadTransport.warnings);
   const geometryPass =
-    groups.length === 3 &&
+    groups.length === expectedGroupCount &&
+    polygon.length === expectedGroupCount &&
     [...basicCases, ...slopeCases, ...dynamicCases].every(
-      (item) => item.state.fractions.length === 3 && item.state.inside,
+      (item) => item.state.fractions.length === expectedGroupCount && item.state.inside,
     );
+  const combinedStabilityPass =
+    geometryPass &&
+    [metrics.basicAngle, metrics.slopeAngle, metrics.dynamicAngle].every((item) => item.status === "OK");
+  const combinedCogPassOnly = combinedCogRequired && combinedStabilityPass;
+  if (combinedCogPassOnly) {
+    const failedCargoChecks = [
+      { name: "basic", metric: cargoBasicMetric },
+      { name: "slope", metric: cargoSlopeMetric },
+      { name: "dynamic", metric: cargoDynamicMetric },
+    ]
+      .filter((item) => item.metric.status === "NOK")
+      .map((item) => item.name)
+      .join(", ");
+    warnings.push(
+      `COMBINED COG PASS ONLY: cargo-only ${failedCargoChecks} stability does not meet the required angle; this arrangement passes the angle checks only when the all-inclusive combined COG is used.`,
+    );
+  } else if (combinedCogRequired) {
+    warnings.push(
+      "Cargo-only stability check failed and the combined COG does not provide a complete basic, slope and dynamic stability-angle pass.",
+    );
+  }
   const requiredMetrics = Object.values(metrics).filter((item) => item.active);
-  const engineeringPass = requiredMetrics.every((item) => item.status === "OK");
+  const engineeringPass =
+    requiredMetrics.every((item) => item.status === "OK") &&
+    (!roadTransport.enabled || roadTransport.status === "OK");
   let status: CalculationResult["status"] = "PASS";
   let failClass = "";
   let failDetail = "";
@@ -1330,8 +1519,8 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     failDetail = `Trailer ${overlap.firstTrailerIndex + 1} and Trailer ${overlap.secondTrailerIndex + 1} footprints overlap. Reposition them before continuing; trailers cannot occupy the same physical space.`;
   } else if (!geometryPass) {
     status = "GEOMETRY_FAIL";
-    failClass = "STABILITY_TRIANGLE";
-    failDetail = "The active hydraulic groups do not form a valid stability triangle.";
+    failClass = "STABILITY_POLYGON";
+    failDetail = `The active hydraulic groups do not form a valid ${expectedGroupCount}-point stability polygon.`;
   } else if (!allSupportsOnTrailer) {
     status = "SUPPORT_FAIL";
     failClass = "SUPPORT_OUTSIDE_TRAILER";
@@ -1342,14 +1531,18 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     failDetail = `Only ${activeSupportCount} supports remain active; the configured minimum is ${model.optimiser.minimumActiveSupports}.`;
   } else if (!engineeringPass) {
     status = "NOK_FAIL";
-    failClass = "ENGINEERING_LIMIT";
-    failDetail = Object.entries(metrics)
-      .filter(([, value]) => value.active && value.status === "NOK")
-      .map(([name]) => name)
-      .join(", ");
+    failClass = roadTransport.enabled && roadTransport.status !== "OK"
+      ? "ROAD_TRANSPORT_LIMIT"
+      : "ENGINEERING_LIMIT";
+    failDetail = [
+      ...Object.entries(metrics)
+        .filter(([, value]) => value.active && value.status === "NOK")
+        .map(([name]) => name),
+      ...(roadTransport.enabled && roadTransport.status !== "OK" ? ["roadTransport"] : []),
+    ].join(", ");
   }
-  if (basicCases.some((item) => !item.state.inside)) warnings.push("One or more static COG envelope points fall outside the stability triangle.");
-  if (dynamicCases.some((item) => !item.state.inside)) warnings.push("One or more dynamic COG points fall outside the stability triangle.");
+  if (basicCases.some((item) => !item.state.inside)) warnings.push("One or more static COG envelope points fall outside the stability polygon.");
+  if (dynamicCases.some((item) => !item.state.inside)) warnings.push("One or more dynamic COG points fall outside the stability polygon.");
   const componentMassCogs = resolvedComponentCogs(model, resolved.trailers, baseLoad);
   const analysis = analysisSummary(
     groups,
@@ -1382,6 +1575,7 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     minimumActiveSupports: model.optimiser.minimumActiveSupports,
     trailerOverlaps,
     groupingQuality,
+    roadTransport,
     stabilityPolygon: polygon,
     casePoints: {
       basic: basicPoints,
@@ -1402,7 +1596,10 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     stabilityReferences: {
       cargoBasicAngle: cargoBasicMetric,
       cargoSlopeAngle: cargoSlopeMetric,
+      cargoDynamicAngle: cargoDynamicMetric,
+      cargoOnlyPass,
       combinedCogRequired,
+      combinedCogPassOnly,
     },
     analysis,
     resolvedTrailers: resolved.trailers.map((item) => ({
@@ -1449,8 +1646,11 @@ export function applySharedX(model: ProjectModel, xM: number): ProjectModel {
     ...model,
     trailers: model.trailers.map((trailer) => ({
       ...trailer,
-      xM: value,
-      offsetFromReference: { ...trailer.offsetFromReference, x: value },
+      xM: value + finite(trailer.formationOffsetXM, 0),
+      offsetFromReference: {
+        ...trailer.offsetFromReference,
+        x: value + finite(trailer.formationOffsetXM, 0),
+      },
     })),
   };
 }

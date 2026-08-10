@@ -19,11 +19,14 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { applyAutomaticCargoCogEnvelopeInputs, derivedCargoCogEnvelopeInputs } from "../../engine/cargo-envelope";
 import {
+  applyArrangementEnvironmentalActions,
   collectArrangementIssues,
+  longitudinalOffsetCandidates,
   minimumTotalAxleLines,
   spacingCandidates,
   validAxleLineValues,
 } from "../../engine/arrangement";
+import { EZTRAILER_ROAD_SURFACES } from "../../engine/road-transport";
 import { createBlankSetupModel } from "../../engine/setup";
 import type {
   ArrangementOptimiserSettings,
@@ -209,6 +212,10 @@ export function ArrangementWizard({
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
 
   const settings = draftModel.arrangementOptimiser;
+  const environmentalSelection = useMemo(
+    () => applyArrangementEnvironmentalActions(draftModel),
+    [draftModel],
+  );
   const updateSettings = (patch: Partial<ArrangementOptimiserSettings>) =>
     setDraftModel((current) => ({
       ...current,
@@ -256,7 +263,11 @@ export function ArrangementWizard({
         capacityLowerBound,
         first,
         pitches: pitches.length,
-        searches: values.length * pitches.length,
+        formationTemplates: longitudinalOffsetCandidates(settings, trainCount).length,
+        searches:
+          values.length *
+          pitches.length *
+          longitudinalOffsetCandidates(settings, trainCount).length,
       };
     });
   }, [definition, draftModel, settings]);
@@ -474,6 +485,68 @@ export function ArrangementWizard({
           <small>The PPU mass is included in the minimum axle-line capacity bound.</small>
         </label>
       </FormSection>
+      <FormSection title="Hydraulic suspension model" description="Choose the hydraulic stability system that every generated formation must use.">
+        <label className="wizard-field is-valid">
+          <span>Hydraulic suspension</span>
+          <select
+            value={draftModel.hydraulicSystemMode}
+            onChange={(event) => setDraftModel((current) => ({
+              ...current,
+              hydraulicSystemMode: event.target.value as ProjectModel["hydraulicSystemMode"],
+            }))}
+          >
+            <option value="THREE_POINT">Three-point · stability triangle</option>
+            <option value="FOUR_POINT">Four-point · convex stability polygon</option>
+          </select>
+          <small>Four-point reactions use exact force and X/Y moment equilibrium with load-per-bogie balancing, matching the recovered v0.8 engineering logic.</small>
+        </label>
+      </FormSection>
+      <FormSection title="Road transport analysis" description="Optional powered-traction and braking check using the recovered EZTrailer surface and bogie data.">
+        <label className="wizard-toggle">
+          <input
+            type="checkbox"
+            checked={draftModel.roadTransport.enabled}
+            onChange={(event) => setDraftModel((current) => ({
+              ...current,
+              roadTransport: { ...current.roadTransport, enabled: event.target.checked },
+            }))}
+          />
+          <span><b>Check road transport traction and braking</b><small>Uses adhesion, rolling resistance, route grade, PPU drive limit and the recovered 60/55 kN bogie limits.</small></span>
+        </label>
+        <div className="wizard-field-grid three">
+          <label className="wizard-field is-valid">
+            <span>Road surface</span>
+            <select
+              disabled={!draftModel.roadTransport.enabled}
+              value={draftModel.roadTransport.surface}
+              onChange={(event) => setDraftModel((current) => ({
+                ...current,
+                roadTransport: { ...current.roadTransport, surface: event.target.value as ProjectModel["roadTransport"]["surface"] },
+              }))}
+            >
+              {EZTRAILER_ROAD_SURFACES.map((surface) => <option key={surface.id} value={surface.id}>{surface.label}</option>)}
+            </select>
+          </label>
+          <label className="wizard-field is-valid">
+            <span>Surface condition</span>
+            <select disabled={!draftModel.roadTransport.enabled} value={draftModel.roadTransport.condition} onChange={(event) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, condition: event.target.value as ProjectModel["roadTransport"]["condition"] } }))}>
+              <option value="DRY">Dry</option><option value="WET">Wet</option>
+            </select>
+          </label>
+          <label className="wizard-field is-valid">
+            <span>PPU drive capacity</span>
+            <select disabled={!draftModel.roadTransport.enabled} value={draftModel.roadTransport.ppuCapacity} onChange={(event) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, ppuCapacity: event.target.value as ProjectModel["roadTransport"]["ppuCapacity"] } }))}>
+              <option value="STANDARD_26">Standard · 26 driven bogies/PPU</option>
+              <option value="ALASKA_32">Alaska · 32 driven bogies/PPU</option>
+              <option value="CUSTOM">Custom verified limit</option>
+            </select>
+          </label>
+          <NumberField label="Transport speed" value={draftModel.roadTransport.speedKph} unit="km/h" min={0} disabled={!draftModel.roadTransport.enabled} onChange={(speedKph) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, speedKph } }))} />
+          <NumberField label="Drive acceleration" value={draftModel.roadTransport.driveAccelerationMps2} unit="m/s²" min={0} disabled={!draftModel.roadTransport.enabled} onChange={(driveAccelerationMps2) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, driveAccelerationMps2 } }))} />
+          <NumberField label="Brake deceleration" value={draftModel.roadTransport.brakeDecelerationMps2} unit="m/s²" min={0} disabled={!draftModel.roadTransport.enabled} onChange={(brakeDecelerationMps2) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, brakeDecelerationMps2 } }))} />
+          {draftModel.roadTransport.ppuCapacity === "CUSTOM" && <NumberField label="Driven bogies per PPU" value={draftModel.roadTransport.customDrivenBogieLimit} min={0} step={1} disabled={!draftModel.roadTransport.enabled} onChange={(customDrivenBogieLimit) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, customDrivenBogieLimit: Math.round(customDrivenBogieLimit) } }))} />}
+        </div>
+      </FormSection>
       <FormSection title="Available 4/5/6-AL modules" description="Only axle-line totals that can be built exactly from these module sizes are searched.">
         <div className="arrangement-module-grid">
           {([4, 5, 6] as const).map((size) => {
@@ -553,13 +626,56 @@ export function ArrangementWizard({
           </span>
         </label>
       </FormSection>
+      <FormSection title="Longitudinal formation" description="Allow trains to be staggered in X without expanding an independent grid for every train.">
+        <label className="wizard-field is-valid">
+          <span>Formation templates</span>
+          <select value={settings.formationMode} onChange={(event) => updateSettings({ formationMode: event.target.value as ArrangementOptimiserSettings["formationMode"] })}>
+            <option value="ALLOW_STAGGERED">In-line plus bounded staggered templates · recommended</option>
+            <option value="INLINE_ONLY">In-line trains only · legacy</option>
+          </select>
+          <small>Staggered mode checks mirrored linear X layouts in increasing complexity; the exact longitudinal solver then moves the complete formation.</small>
+        </label>
+        <div className="wizard-field-grid two">
+          <NumberField label="Maximum end-to-end stagger" value={settings.maximumLongitudinalStaggerM} unit="m" min={0} disabled={settings.formationMode === "INLINE_ONLY"} onChange={(maximumLongitudinalStaggerM) => updateSettings({ maximumLongitudinalStaggerM })} />
+          <NumberField label="Stagger template samples" value={settings.longitudinalStaggerSamples} min={1} max={7} step={1} disabled={settings.formationMode === "INLINE_ONLY"} onChange={(longitudinalStaggerSamples) => updateSettings({ longitudinalStaggerSamples: Math.round(longitudinalStaggerSamples) })} />
+        </div>
+      </FormSection>
+      <FormSection title="Search-only wind and acceleration" description="The project design actions are retained unless this explicit override is enabled.">
+        <label className="wizard-toggle">
+          <input
+            type="checkbox"
+            checked={settings.allowReducedEnvironmentalActions}
+            onChange={(event) => updateSettings({
+              allowReducedEnvironmentalActions: event.target.checked,
+              reducedEnvironmentalActionsAccepted: false,
+              ...(event.target.checked ? {
+                searchWindSpeedMps: draftModel.environment.windSpeedMps,
+                searchLongitudinalAccelerationMps2: draftModel.environment.longitudinalAccelerationMps2,
+                searchTransverseAccelerationMps2: draftModel.environment.transverseAccelerationMps2,
+              } : {}),
+            })}
+          />
+          <span><b>Allow alternative wind and acceleration values</b><small>Any reduction below the active project values changes the applied case to Third-degree verification.</small></span>
+        </label>
+        <div className="wizard-field-grid three">
+          <NumberField label="Search wind speed" value={settings.searchWindSpeedMps} unit="m/s" min={0} disabled={!settings.allowReducedEnvironmentalActions} onChange={(searchWindSpeedMps) => updateSettings({ searchWindSpeedMps })} />
+          <NumberField label="Search longitudinal acceleration" value={settings.searchLongitudinalAccelerationMps2} unit="m/s²" min={0} disabled={!settings.allowReducedEnvironmentalActions} onChange={(searchLongitudinalAccelerationMps2) => updateSettings({ searchLongitudinalAccelerationMps2 })} />
+          <NumberField label="Search transverse acceleration" value={settings.searchTransverseAccelerationMps2} unit="m/s²" min={0} disabled={!settings.allowReducedEnvironmentalActions} onChange={(searchTransverseAccelerationMps2) => updateSettings({ searchTransverseAccelerationMps2 })} />
+        </div>
+        {settings.allowReducedEnvironmentalActions && (
+          <div className={`wizard-notice${environmentalSelection.reduced ? " warning" : ""}`}>
+            <IconAlertTriangle size={15} />
+            <span>{environmentalSelection.detail}</span>
+          </div>
+        )}
+      </FormSection>
       <FormSection title="Mathematical planner sequence">
         <ol className="arrangement-rule-list">
           <li><b>1</b><span>Calculate gross capacity bounds including packing, tare, PPU and configured axle utilisation.</span></li>
           <li><b>2</b><span>Generate only constructible 4/5/6-AL module combinations.</span></li>
           <li><b>3</b><span>Intersect the stability inequalities to solve the longitudinal X interval for every load-case COG point.</span></li>
-          <li><b>4</b><span>Verify the preferred spacing and independent minimum, maximum and sampled spacings so the preferred value cannot narrow the search.</span></li>
-          <li><b>5</b><span>Run a complete final engineering search on the winning formation before it can rank first.</span></li>
+          <li><b>4</b><span>Verify preferred and independent Y spacings across the enabled in-line and bounded staggered X templates.</span></li>
+          <li><b>5</b><span>Run a complete final engineering, hydraulic, support and optional road-transport search on the winning formation.</span></li>
         </ol>
       </FormSection>
     </>
@@ -609,7 +725,8 @@ export function ArrangementWizard({
   const apply = (run: boolean) => {
     if (blocking.length > 0 || (run && !canRun)) return;
     localStorage.removeItem(ARRANGEMENT_WIZARD_DRAFT_KEY);
-    onApply(hydrateProjectModel(structuredClone(draftModel)), run);
+    const selectedActions = applyArrangementEnvironmentalActions(structuredClone(draftModel));
+    onApply(hydrateProjectModel(selectedActions.model), run);
   };
 
   return (
@@ -636,10 +753,10 @@ export function ArrangementWizard({
           <div className="arrangement-preview-hero"><span>CAPACITY-DERIVED START</span><b>{minimumCapacityStart} <small>total AL</small></b><p>Gross load, trailer tare, selected PPU mass and the axle-utilisation limit are included before module rounding.</p></div>
           <div className="arrangement-plan-table">
             <header><b>First buildable candidates</b><span>{settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? `${plannedSearches.toLocaleString()} bounded formation levels` : settings.searchMode === "ADAPTIVE_BOUNDED" ? `${plannedSearches.toLocaleString()} bounded seed cases` : `${plannedSearches.toLocaleString()} legacy formation searches`}</span></header>
-            {planRows.map((row) => <div key={row.trainCount}><span><b>{row.trainCount}</b><small>train{row.trainCount === 1 ? "" : "s"}</small></span><span><b>{row.first?.axleLines ?? "—"} AL/train</b><small>{row.first ? moduleText(row.first.composition.modules4, row.first.composition.modules5, row.first.composition.modules6) : "No stock combination"}</small></span><span><b>{row.first ? row.first.axleLines * row.trainCount : "—"} total AL</b><small>{row.pitches} spacing seed{row.pitches === 1 ? "" : "s"}</small></span></div>)}
+            {planRows.map((row) => <div key={row.trainCount}><span><b>{row.trainCount}</b><small>train{row.trainCount === 1 ? "" : "s"}</small></span><span><b>{row.first?.axleLines ?? "—"} AL/train</b><small>{row.first ? moduleText(row.first.composition.modules4, row.first.composition.modules5, row.first.composition.modules6) : "No stock combination"}</small></span><span><b>{row.first ? row.first.axleLines * row.trainCount : "—"} total AL</b><small>{row.pitches} Y seed{row.pitches === 1 ? "" : "s"} · {row.formationTemplates} X template{row.formationTemplates === 1 ? "" : "s"}</small></span></div>)}
             {!planRows.length && <p className="fast-support-empty">Select a trailer and enter valid search bounds to create the plan.</p>}
           </div>
-          <div className="arrangement-preview-facts"><span><small>Payload mass</small><b>{(draftModel.cargo.massT + draftModel.packing.massT + draftModel.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0)).toFixed(2)} t</b></span><span><small>Selected trailer</small><b>{definition?.name ?? "Not selected"}</b></span><span><small>Deck height</small><b>{draftModel.trailerDeckHeightM.toFixed(3)} m</b></span><span><small>PPU</small><b>{settings.ppuPosition === "NONE" ? "None" : settings.ppuPosition === "REAR" ? "Rear" : settings.ppuPosition === "FRONT" ? "Front" : "Both ends"}</b></span><span><small>Allowed supports</small><b>{draftModel.supports.filter((item) => item.allowed).length}</b></span><span><small>Search</small><b>{settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? "Math branch & bound" : settings.searchMode === "ADAPTIVE_BOUNDED" ? "Legacy bounded" : "Legacy grid"}</b></span></div>
+          <div className="arrangement-preview-facts"><span><small>Payload mass</small><b>{(draftModel.cargo.massT + draftModel.packing.massT + draftModel.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0)).toFixed(2)} t</b></span><span><small>Selected trailer</small><b>{definition?.name ?? "Not selected"}</b></span><span><small>Deck height</small><b>{draftModel.trailerDeckHeightM.toFixed(3)} m</b></span><span><small>PPU</small><b>{settings.ppuPosition === "NONE" ? "None" : settings.ppuPosition === "REAR" ? "Rear" : settings.ppuPosition === "FRONT" ? "Front" : "Both ends"}</b></span><span><small>Hydraulics</small><b>{draftModel.hydraulicSystemMode === "FOUR_POINT" ? "4-point" : "3-point"}</b></span><span><small>Formation</small><b>{settings.formationMode === "ALLOW_STAGGERED" ? "In-line + staggered" : "In-line only"}</b></span><span><small>Road check</small><b>{draftModel.roadTransport.enabled ? "Active" : "Off"}</b></span><span><small>Verification</small><b>{environmentalSelection.reduced ? "Third degree" : draftModel.engineeringDegree}</b></span></div>
           <div className="setup-wizard-preview-findings">{blocking.length ? <span className="blocking"><IconX size={13} /> {blocking.length} blocking</span> : <span className="valid"><IconCheck size={13} /> Search valid</span>}</div>
         </section>
         <footer className="setup-wizard-footer">

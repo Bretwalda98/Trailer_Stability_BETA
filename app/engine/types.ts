@@ -5,6 +5,11 @@ export type PlacementReference = "ABSOLUTE" | "LOAD_COG" | "ALL_INCLUSIVE_COG";
 export type PackingFootprintMode = "CARGO_ESTIMATE" | "CUSTOM";
 export type CalculationMode = "NATIVE_VERIFIED" | "WORKBOOK_PARITY";
 export type EngineeringDegree = "First" | "Second" | "Third";
+export type HydraulicSystemMode = "THREE_POINT" | "FOUR_POINT";
+export type RoadSurface = "ASPHALT" | "CONCRETE" | "SOIL_EARTH" | "GRAVEL" | "SAND" | "STEEL";
+export type RoadSurfaceCondition = "DRY" | "WET";
+export type RoadPpuCapacity = "STANDARD_26" | "ALASKA_32" | "CUSTOM";
+export type ArrangementFormationMode = "INLINE_ONLY" | "ALLOW_STAGGERED";
 export type SpineLoadCase =
   | "Neutral"
   | "A"
@@ -105,6 +110,8 @@ export interface TrailerInput {
   singleFile: boolean;
   xM: number;
   yM: number;
+  /** Optimiser-owned offset retained when the common longitudinal datum moves. */
+  formationOffsetXM?: number;
   placementReference: PlacementReference;
   offsetFromReference: Point2;
   ppuLeft: boolean;
@@ -150,6 +157,17 @@ export interface EnvironmentInput {
   longitudinalAccelerationMps2: number;
   transverseAccelerationMps2: number;
   windSpeedMps: number;
+}
+
+export interface RoadTransportInput {
+  enabled: boolean;
+  surface: RoadSurface;
+  condition: RoadSurfaceCondition;
+  speedKph: number;
+  driveAccelerationMps2: number;
+  brakeDecelerationMps2: number;
+  ppuCapacity: RoadPpuCapacity;
+  customDrivenBogieLimit: number;
 }
 
 export interface OptimiserWeights {
@@ -251,6 +269,14 @@ export interface ArrangementOptimiserSettings {
   spacingSamples: number;
   spacingToleranceM: number;
   ppuPosition: ArrangementPpuPosition;
+  formationMode: ArrangementFormationMode;
+  maximumLongitudinalStaggerM: number;
+  longitudinalStaggerSamples: number;
+  allowReducedEnvironmentalActions: boolean;
+  reducedEnvironmentalActionsAccepted: boolean;
+  searchWindSpeedMps: number;
+  searchLongitudinalAccelerationMps2: number;
+  searchTransverseAccelerationMps2: number;
 }
 
 export interface ArrangementDescriptor {
@@ -266,10 +292,13 @@ export interface ArrangementDescriptor {
   clearanceM: number;
   overallWidthM: number;
   ppuPosition: ArrangementPpuPosition;
+  formationMode: "INLINE" | "STAGGERED";
+  longitudinalOffsetsM: number[];
+  longitudinalSpanM: number;
 }
 
 export interface ProjectModel {
-  schemaVersion: 2;
+  schemaVersion: 3;
   longitudinalOrientation: "REAR_LEFT_FRONT_RIGHT";
   sourceWorkbook: string;
   engineeringDegree: EngineeringDegree;
@@ -280,8 +309,10 @@ export interface ProjectModel {
   trailerDeckHeightM: number;
   trailers: TrailerInput[];
   groupings: HydraulicGrouping[];
+  hydraulicSystemMode: HydraulicSystemMode;
   supports: CargoSupport[];
   environment: EnvironmentInput;
+  roadTransport: RoadTransportInput;
   optimiser: OptimiserSettings;
   arrangementOptimiser: ArrangementOptimiserSettings;
   catalogue: TrailerDefinition[];
@@ -371,7 +402,10 @@ export interface CaseMetrics {
 export interface StabilityReferenceChecks {
   cargoBasicAngle: MetricValue;
   cargoSlopeAngle: MetricValue;
+  cargoDynamicAngle: MetricValue;
+  cargoOnlyPass: boolean;
   combinedCogRequired: boolean;
+  combinedCogPassOnly: boolean;
 }
 
 export interface ComponentCogs {
@@ -421,12 +455,48 @@ export interface TrailerOverlap {
 
 export interface HydraulicGroupingQuality {
   triangleAreaM2: number;
+  polygonAreaM2: number;
+  populatedGroupCount: number;
+  boundaryPointCount: number;
   minimumAltitudeM: number;
   minimumEdgeM: number;
   maximumEdgeM: number;
   aspectRatio: number;
   narrow: boolean;
   dispersedGroups: number[];
+}
+
+export interface RoadTransportResult {
+  enabled: boolean;
+  surface: RoadSurface;
+  condition: RoadSurfaceCondition;
+  frictionCoefficient: number;
+  rollingResistanceCoefficient: number;
+  speedKph: number;
+  moduleCount: number;
+  totalBogieCount: number;
+  drivenBogieCount: number;
+  brakedBogieCount: number;
+  ppuDrivenBogieLimit: number;
+  rollingResistanceKN: number;
+  gradeForceKN: number;
+  accelerationForceKN: number;
+  brakingForceKN: number;
+  tractionDemandKN: number;
+  tractionCapacityKN: number;
+  tractionAdhesionLimitKN: number;
+  tractionMechanicalLimitKN: number;
+  tractionUtilisation: number | null;
+  brakingDemandKN: number;
+  brakingCapacityKN: number;
+  brakingAdhesionLimitKN: number;
+  brakingMechanicalLimitKN: number;
+  brakingUtilisation: number | null;
+  maximumClimbGradeDeg: number | null;
+  maximumDescentGradeDeg: number | null;
+  status: "OK" | "NOK" | "N/A";
+  source: string;
+  warnings: string[];
 }
 
 export interface CalculationResult {
@@ -445,6 +515,7 @@ export interface CalculationResult {
   minimumActiveSupports: number;
   trailerOverlaps: TrailerOverlap[];
   groupingQuality: HydraulicGroupingQuality;
+  roadTransport: RoadTransportResult;
   stabilityPolygon: Point2[];
   casePoints: {
     basic: Point2[];

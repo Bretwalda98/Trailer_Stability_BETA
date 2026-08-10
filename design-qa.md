@@ -165,6 +165,76 @@ final result: passed
 
 ---
 
+# SPMT Side-View Renderer — Design QA
+
+## Comparison target
+
+- Source visual truth: `C:/Users/Harry/AppData/Local/Temp/codex-clipboard-a4462180-c3eb-432e-b56c-18c8d0973a76.jpg` (1044 × 374 px manufacturer side/end drawing).
+- Rendered implementation: `qa-evidence/side-view-spmt-20260809.png` (1320 × 1248 px desktop capture).
+- Route and state: `http://localhost:4174/`, saved K2400 ST case, Side tab, dimensions and grid visible, fit-model zoom.
+- CSS viewport and density: 1320 × 1248 CSS px at native screenshot density; no density conversion was required.
+- The manufacturer reference and rendered implementation were opened together in the same comparison input. The differing axle count is intentional: the source shows a four-axle module while the selected project contains nine axle lines.
+
+## Findings
+
+- Earlier P1 finding: the trailer was represented by a thin deck rectangle and isolated wheel circles, so it did not read as an SPMT.
+  - Fix: replaced the Side-only trailer renderer with a continuous deck sill, derived lower frame, repeated suspension struts, pendulum-arm bodies, pivots, tyre profiles, hubs and optional lug detail.
+- Earlier P1 finding: the PPU was drawn above the trailer deck.
+  - Fix: the PPU top now uses the selected trailer's exact deck-top Z datum and its body extends downward; its length comes from the selected catalogue PPU geometry.
+- Earlier P1 finding: the cargo/packing/support stack was visually ambiguous.
+  - Fix: the side renderer now establishes one explicit stack: deck top = packing bottom, packing top = cargo bottom. Support and loose-packing graphics use the same two datums and no longer extend through the running gear.
+- No actionable P0, P1 or P2 findings remain.
+- [P3] At fit-model scale, very tall cargo makes axle numbers and support labels dense around the trailer. The existing zoom and layer controls resolve this without obscuring persistent controls.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing compact technical typography is unchanged. Labels remain subordinate to the engineering geometry; no new display typography was introduced.
+- Spacing and layout rhythm: the selected trailer's axle spacing drives each repeated running-gear station. The deck, packing and cargo meet at shared Z datums without visible gaps or overlaps.
+- Colors and visual tokens: the black technical canvas and white structure remain consistent, while hydraulic group colours continue to identify each tyre/axle station.
+- Image quality and asset fidelity: the live vector drawing follows the supplied manufacturer silhouette while remaining data-driven. Wheel diameter, axle count, axle spacing, trailer length, deck height and PPU length come from the selected model rather than a trailer-specific picture or fixed K2400 drawing.
+- Copy and content: PPU rear/front and trailer-model labels remain consistent with the application's established rear-left/front-right orientation.
+
+## Full-view and focused comparison evidence
+
+- The complete capture shows the cargo, packing, deck, PPU and running gear in one vertical coordinate system.
+- The manufacturer reference and implementation both show a continuous top deck with one suspended wheel assembly repeated at each axle station.
+- The implementation intentionally repeats nine assemblies because the live selected model has nine axle lines; changing the selected trailer or axle count changes the visual automatically.
+- Hub-lug detail is suppressed for formations above 160 axle lines or when the on-screen tyre radius is below 7 px, retaining the correct silhouette without excessive SVG cost on large arrangements.
+- No separate crop was required for the final result because the full native-resolution capture keeps the trailer assemblies legible and the important stacking relationship visible.
+
+## Interaction and technical evidence
+
+- Tested startup resume, Side-tab selection, reload, fit-model and zoom controls in the in-app browser.
+- The side renderer updated through hot reload and remained selectable.
+- Browser logs contain development connection and hot-update messages only; no errors or warnings were reported.
+- TypeScript typecheck passed after implementation.
+
+## Comparison history
+
+### Iteration 1 — simplified trailer
+
+- P1: deck-only body, wheels attached by short vertical lines, PPU above deck and supports extending through the running gear.
+- Evidence: pre-change Side capture in the active browser.
+
+### Iteration 2 — manufacturer-derived SPMT silhouette
+
+- Fixes: data-driven deck/frame profile, pendulum and suspension geometry, detailed hubs, deck-aligned PPU, and explicit deck/packing/cargo datums.
+- Post-fix evidence: `qa-evidence/side-view-spmt-20260809.png`.
+
+## Implementation checklist
+
+- [x] Keep Plan and End renderers unchanged.
+- [x] Derive repeated side running gear from selected trailer and axle data.
+- [x] Align the PPU top with the deck top.
+- [x] Place packing on the deck and cargo on the packing.
+- [x] Prevent support graphics from extending through the trailer running gear.
+- [x] Preserve selection, pinned-axle and hydraulic-group states.
+- [x] Limit decorative hub detail for very large formations.
+
+final result: passed
+
+---
+
 # SPMT End-View Renderer - Design QA
 
 ## Comparison target

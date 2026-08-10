@@ -48,6 +48,8 @@ export function ReportWorkspace({
             <div><dt>Cargo mass</dt><dd>{formatEngineering(model.cargo.massT, "t")}</dd></div>
             <div><dt>All-inclusive mass</dt><dd>{formatEngineering(result.totalMassT, "t")}</dd></div>
             <div><dt>Trailer units</dt><dd>{model.trailers.length}</dd></div>
+            <div><dt>Hydraulic system</dt><dd>{model.hydraulicSystemMode === "FOUR_POINT" ? "Four-point" : "Three-point"}</dd></div>
+            <div><dt>Stability polygon area</dt><dd>{formatEngineering(result.groupingQuality.polygonAreaM2, "m²")}</dd></div>
             <div><dt>Active supports</dt><dd>{result.activeSupportCount} / {model.supports.length}</dd></div>
           </dl>
         </section>
@@ -72,9 +74,13 @@ export function ReportWorkspace({
           <dl>
             <div><dt>Cargo-only basic tipping</dt><dd className={result.stabilityReferences.cargoBasicAngle.status === "NOK" ? "status-nok" : "status-ok"}>{formatEngineering(result.stabilityReferences.cargoBasicAngle.value, "Â°")}</dd></div>
             <div><dt>Cargo-only slope tipping</dt><dd className={result.stabilityReferences.cargoSlopeAngle.status === "NOK" ? "status-nok" : "status-ok"}>{formatEngineering(result.stabilityReferences.cargoSlopeAngle.value, "Â°")}</dd></div>
+            <div><dt>Cargo-only dynamic tipping</dt><dd className={result.stabilityReferences.cargoDynamicAngle.status === "NOK" ? "status-nok" : "status-ok"}>{formatEngineering(result.stabilityReferences.cargoDynamicAngle.value, "°")}</dd></div>
+            <div><dt>Cargo-only stability</dt><dd className={result.stabilityReferences.cargoOnlyPass ? "status-ok" : "status-nok"}>{result.stabilityReferences.cargoOnlyPass ? "PASS" : "FAIL"}</dd></div>
             <div><dt>Combined COG required</dt><dd className={result.stabilityReferences.combinedCogRequired ? "status-nok" : "status-ok"}>{result.stabilityReferences.combinedCogRequired ? "YES" : "NO"}</dd></div>
+            <div><dt>COG pass basis</dt><dd className={result.stabilityReferences.combinedCogPassOnly ? "status-nok" : "status-ok"}>{result.stabilityReferences.combinedCogPassOnly ? "COMBINED COG PASS ONLY" : result.stabilityReferences.cargoOnlyPass ? "CARGO + COMBINED" : "NO COMPLETE ANGLE PASS"}</dd></div>
           </dl>
-          <p className="report-inline-note">Cargo-only checks are shown separately. Combined COG governs the arrangement when either cargo-only basic or slope tipping is below its engineering limit. Slope and dynamic results include the configured route/residual slopes, wind and acceleration shifts.</p>
+          {result.stabilityReferences.combinedCogPassOnly && <p className="report-cog-warning"><b>COMBINED COG PASS ONLY:</b> the cargo-only check fails; the arrangement meets all three stability-angle limits only on the all-inclusive combined COG basis.</p>}
+          <p className="report-inline-note">Cargo-only basic, slope and dynamic checks are shown separately. Combined COG governs the arrangement when any cargo-only angle is below its engineering limit. Slope and dynamic results include the configured route/residual slopes, wind and acceleration shifts.</p>
         </section>
         <section>
           <header><b>Controlling condition</b></header>
@@ -100,6 +106,23 @@ export function ReportWorkspace({
             <div><dt>Calculation time</dt><dd>{result.calculationMs.toFixed(2)} ms</dd></div>
           </dl>
         </section>
+        {result.roadTransport?.enabled && (
+          <section>
+            <header><b>Road transport analysis</b></header>
+            <dl>
+              <div><dt>Result</dt><dd className={result.roadTransport.status === "OK" ? "status-ok" : "status-nok"}>{result.roadTransport.status}</dd></div>
+              <div><dt>Surface / condition</dt><dd>{result.roadTransport.surface.replaceAll("_", " ")} / {result.roadTransport.condition}</dd></div>
+              <div><dt>Friction / rolling resistance</dt><dd>{result.roadTransport.frictionCoefficient.toFixed(3)} / {result.roadTransport.rollingResistanceCoefficient.toFixed(3)}</dd></div>
+              <div><dt>Driven / braked bogies</dt><dd>{result.roadTransport.drivenBogieCount} / {result.roadTransport.brakedBogieCount}</dd></div>
+              <div><dt>Traction demand / capacity</dt><dd>{formatEngineering(result.roadTransport.tractionDemandKN, "kN")} / {formatEngineering(result.roadTransport.tractionCapacityKN, "kN")}</dd></div>
+              <div><dt>Traction utilisation</dt><dd>{result.roadTransport.tractionUtilisation === null ? "N/A" : formatEngineering(result.roadTransport.tractionUtilisation * 100, "%")}</dd></div>
+              <div><dt>Braking demand / capacity</dt><dd>{formatEngineering(result.roadTransport.brakingDemandKN, "kN")} / {formatEngineering(result.roadTransport.brakingCapacityKN, "kN")}</dd></div>
+              <div><dt>Braking utilisation</dt><dd>{result.roadTransport.brakingUtilisation === null ? "N/A" : formatEngineering(result.roadTransport.brakingUtilisation * 100, "%")}</dd></div>
+              <div><dt>Maximum climb / descent</dt><dd>{formatEngineering(result.roadTransport.maximumClimbGradeDeg, "°")} / {formatEngineering(result.roadTransport.maximumDescentGradeDeg, "°")}</dd></div>
+              <div><dt>Recovered data source</dt><dd>{result.roadTransport.source}</dd></div>
+            </dl>
+          </section>
+        )}
         <section className="report-notes">
           <header><b>Notes, warnings and unresolved display data</b></header>
           {[...result.warnings, ...vm.unresolvedData].map((item) => <p key={item}>{item}</p>)}

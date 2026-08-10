@@ -464,6 +464,7 @@ input[type="checkbox"] {
 .group-dot.g1 { color: var(--cyan); }
 .group-dot.g2 { color: var(--amber); }
 .group-dot.g3 { color: var(--violet); }
+.group-dot.g4 { color: var(--green); }
 
 .tree-actions {
   display: grid;
@@ -707,7 +708,8 @@ input[type="checkbox"] {
 .trailer-unit.is-selected path,
 .end-trailer.is-selected rect,
 .end-trailer.is-selected polygon,
-.side-trailer.is-selected rect {
+.side-trailer.is-selected rect,
+.side-trailer.is-selected path.spmt-deck-sill {
   stroke: var(--blue);
 }
 
@@ -777,7 +779,7 @@ input[type="checkbox"] {
 }
 
 .axle-line.pinned line,
-.side-axle.pinned circle,
+.side-axle.pinned .spmt-tyre,
 .wheel.pinned {
   stroke: var(--red);
   stroke-width: 2;
@@ -991,6 +993,39 @@ input[type="checkbox"] {
   stroke-width: 1.1;
 }
 
+.side-trailer .spmt-deck-sill {
+  fill: #171b1e;
+  stroke: #eff2f4;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.side-trailer .spmt-deck-top {
+  stroke: #fff;
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.spmt-running-gear .spmt-suspension-strut {
+  stroke: #aeb6bd;
+  stroke-width: 2.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.spmt-running-gear .spmt-pendulum-arm {
+  fill: #20262a;
+  stroke: #d8dde1;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.spmt-running-gear .spmt-pivot {
+  fill: #08090a;
+  stroke: #e4e8eb;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
 .end-spmt .spmt-subframe {
   fill: none;
   stroke: #e4e8eb;
@@ -1157,6 +1192,7 @@ input[type="checkbox"] {
 .viewport-legend i.g1 { border-color: var(--cyan); border-top-style: dashed; }
 .viewport-legend i.g2 { border-color: var(--amber); border-top-style: dashed; }
 .viewport-legend i.g3 { border-color: var(--violet); border-top-style: dashed; }
+.viewport-legend i.g4 { border-color: var(--green); border-top-style: dashed; }
 .viewport-legend i.polygon { border-color: #6c9ff5; border-top-style: dashed; }
 .viewport-legend i.cog {
   width: 7px;
@@ -1726,6 +1762,74 @@ input[type="checkbox"] {
   margin-top: 4px;
   color: #d8a4a7;
   font-size: 9px;
+}
+
+.side-axle .spmt-tyre {
+  fill: #111416;
+  stroke-width: 2;
+}
+
+.side-axle .spmt-wheel-hub {
+  fill: #262c30;
+  stroke: #d5dadd;
+  stroke-width: 1.1;
+}
+
+.side-axle .spmt-wheel-lug {
+  fill: #aeb5ba;
+  stroke: none;
+}
+
+.power-pack .spmt-ppu-body {
+  fill: rgba(116, 127, 136, 0.14);
+  stroke: #c6cdd2;
+  stroke-width: 1.2;
+  stroke-dasharray: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.power-pack .spmt-ppu-deck-datum {
+  stroke: #fff;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.power-pack .spmt-ppu-detail {
+  stroke: #76818a;
+  stroke-width: 1;
+  stroke-dasharray: 5 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.combined-cog-warning {
+  display: flex;
+  gap: 9px;
+  margin: 9px;
+  border: 1px solid var(--amber);
+  background: #201706;
+  padding: 9px;
+  color: #ffd278;
+}
+
+.combined-cog-warning b {
+  display: block;
+  color: #fff2c7;
+  font-size: 10px;
+  letter-spacing: 0.035em;
+}
+
+.combined-cog-warning p {
+  margin: 4px 0 0;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.report-cog-warning {
+  margin: 8px;
+  border-left: 3px solid var(--amber);
+  background: #201706;
+  padding: 8px 10px;
+  color: #ffd278;
 }
 
 .result-state {
@@ -4285,7 +4389,7 @@ input[type="checkbox"] {
 
 .wizard-hydraulic-groups {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
   gap: 5px;
   margin-bottom: 8px;
 }
@@ -4303,6 +4407,7 @@ input[type="checkbox"] {
 .wizard-hydraulic-groups .g1 { color: var(--cyan); }
 .wizard-hydraulic-groups .g2 { color: var(--amber); }
 .wizard-hydraulic-groups .g3 { color: var(--violet); }
+.wizard-hydraulic-groups .g4 { color: var(--green); }
 
 .wizard-hydraulic-groups b {
   margin-top: 2px;

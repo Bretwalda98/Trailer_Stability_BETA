@@ -7,12 +7,14 @@ import {
 } from "./core";
 import {
   applyArrangementDescriptor,
+  applyArrangementEnvironmentalActions,
   arrangementSummary,
   collectArrangementIssues,
   createArrangementDescriptor,
   effectiveMaximumFormationWidth,
   formationPitchBounds,
   minimumTotalAxleLines,
+  longitudinalOffsetCandidates,
   spacingCandidates,
   validAxleLineValues,
 } from "./arrangement";
@@ -36,7 +38,7 @@ export interface HydraulicYPitchBound {
 }
 
 function hydraulicGroupYSpan(result: ReturnType<typeof calculateProject>): number {
-  if (result.groups.length !== 3) return 0;
+  if (result.groups.length < 3) return 0;
   const values = result.groups.map((group) => group.point.y);
   return Math.max(...values) - Math.min(...values);
 }
@@ -158,7 +160,7 @@ export function rankArrangementPasses(passes: PassResult[], model: ProjectModel)
       ? Math.max(...groupFractions) - Math.min(...groupFractions)
       : Number.POSITIVE_INFINITY;
     return {
-      combinedCogRequired: result.stabilityReferences.combinedCogRequired ? 1 : 0,
+      cargoOnlyPassPriority: result.stabilityReferences.cargoOnlyPass ? 0 : 1,
       supportReserve: result.activeSupportCount - result.minimumActiveSupports,
       stabilityMargin,
       peakUtilisation,
@@ -177,13 +179,14 @@ export function rankArrangementPasses(passes: PassResult[], model: ProjectModel)
       return (
         leftArrangement.trainCount - rightArrangement.trainCount ||
         leftArrangement.totalAxleLines - rightArrangement.totalAxleLines ||
-        leftQuality.combinedCogRequired - rightQuality.combinedCogRequired ||
+        leftQuality.cargoOnlyPassPriority - rightQuality.cargoOnlyPassPriority ||
         rightQuality.supportReserve - leftQuality.supportReserve ||
         rightQuality.stabilityMargin - leftQuality.stabilityMargin ||
         leftQuality.peakUtilisation - rightQuality.peakUtilisation ||
         leftQuality.deflection - rightQuality.deflection ||
         rightQuality.hydraulicAltitude - leftQuality.hydraulicAltitude ||
         leftQuality.groupBalance - rightQuality.groupBalance ||
+        leftArrangement.longitudinalSpanM - rightArrangement.longitudinalSpanM ||
         Math.abs(leftArrangement.pitchM - preferredPitch) -
           Math.abs(rightArrangement.pitchM - preferredPitch) ||
         (left.rating ?? Infinity) - (right.rating ?? Infinity) ||
@@ -332,7 +335,8 @@ export async function runArrangementOptimiser(
   callbacks: ArrangementOptimiserCallbacks = {},
 ): Promise<OptimiserRun> {
   const started = performance.now();
-  const model = clone(sourceModel);
+  const actionSelection = applyArrangementEnvironmentalActions(clone(sourceModel));
+  const model = actionSelection.model;
   const settings = model.arrangementOptimiser;
   const run = createEmptyRun();
   run.runReference = runReference();
@@ -378,7 +382,7 @@ export async function runArrangementOptimiser(
     const pitchesPerBucket = settings.searchMode === "MATHEMATICAL_BRANCH_BOUND"
       ? mathematicalPitchEvaluationUpperBound(definition, settings, trainCount, model.cargo.widthM)
       : spacingCandidates(definition, settings, trainCount, model.cargo.widthM).length;
-    return axleBuckets * pitchesPerBucket;
+    return axleBuckets * pitchesPerBucket * longitudinalOffsetCandidates(settings, trainCount).length;
   }).reduce((sum, count) => sum + count, 0);
   run.progress.overallPlanned = Math.max(1, plannedFormationUpperBound + 1);
   run.progress.phasePlanned = Math.max(1, plannedFormationUpperBound);
@@ -392,6 +396,16 @@ export async function runArrangementOptimiser(
     "Arrangement search planned",
     `${settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? "Mathematical branch-and-bound" : settings.searchMode === "ADAPTIVE_BOUNDED" ? "Legacy bounded convergence" : "Legacy grid search"}; ${plannedFormationUpperBound} upper formation evaluations before capacity, buildability and lexicographic pruning.`,
   );
+  if (settings.allowReducedEnvironmentalActions) {
+    addEvent(
+      run,
+      started,
+      "Planning",
+      actionSelection.reduced ? "Third-degree reduced actions active" : "Environmental action override active",
+      actionSelection.detail,
+      actionSelection.reduced ? "WARN" : "INFO",
+    );
+  }
   await notify(true, true);
 
   let completedUnits = 0;
@@ -405,6 +419,7 @@ export async function runArrangementOptimiser(
     pitchM: number,
     finalVerification = false,
     verificationTemplate?: PassResult,
+    longitudinalOffsetsM: number[] = [],
   ): Promise<boolean> => {
     throwIfStopped(callbacks.signal);
     if (completedUnits + 1 >= run.progress.overallPlanned) {
@@ -416,6 +431,7 @@ export async function runArrangementOptimiser(
       trainCount,
       composition,
       pitchM,
+      longitudinalOffsetsM,
     );
     const arranged = applyArrangementDescriptor(model, descriptor);
     const mathematical = settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" && !finalVerification;
@@ -508,6 +524,31 @@ export async function runArrangementOptimiser(
     }
     await notify(true, true);
     return hasPass;
+  };
+
+  const evaluateFormationTemplates = async (
+    trainCount: number,
+    axleLines: number,
+    composition: Parameters<typeof createArrangementDescriptor>[3],
+    pitchM: number,
+  ): Promise<boolean> => {
+    let passed = false;
+    for (const offsets of longitudinalOffsetCandidates(settings, trainCount)) {
+      passed = await evaluateFormation(
+        trainCount,
+        axleLines,
+        composition,
+        pitchM,
+        false,
+        undefined,
+        offsets,
+      );
+      // Train count and total AL are the hard objectives. The templates are
+      // ordered in-line first, then by increasing stagger, so the first exact
+      // pass is also the least complex formation at this economic level.
+      if (passed) break;
+    }
+    return passed;
   };
 
   try {
@@ -618,7 +659,7 @@ export async function runArrangementOptimiser(
             const previous = tested.get(key);
             if (previous !== undefined) return previous;
             const passCountBefore = run.passes.length;
-            const passed = await evaluateFormation(trainCount, axleLines, composition, rounded);
+            const passed = await evaluateFormationTemplates(trainCount, axleLines, composition, rounded);
             const outcome = {
               passed,
               caseCount: run.passes.length - passCountBefore,
@@ -687,7 +728,7 @@ export async function runArrangementOptimiser(
               skippedPitches += 1;
               continue;
             }
-            if (await evaluateFormation(trainCount, axleLines, composition, pitchM)) {
+            if (await evaluateFormationTemplates(trainCount, axleLines, composition, pitchM)) {
               bucketHasPass = true;
               passingDistance = Math.min(passingDistance, pitchDistance);
             }
@@ -852,6 +893,7 @@ export async function runArrangementOptimiser(
               moduleCount: bestArrangement.moduleCountPerTrain,
             },
             pitchM,
+            bestArrangement.longitudinalOffsetsM,
           );
           let candidateModel = applyArrangementDescriptor(model, descriptor);
           candidateModel = applySharedSplit(candidateModel, best.d138);
@@ -903,6 +945,7 @@ export async function runArrangementOptimiser(
           arrangement.pitchM,
           true,
           best,
+          arrangement.longitudinalOffsetsM,
         );
       }
     }

@@ -64,6 +64,7 @@ import type {
   TrailerInput,
 } from "../../engine/types";
 import { importWorkbook } from "../../engine/workbook";
+import { EZTRAILER_ROAD_SURFACES } from "../../engine/road-transport";
 import { applyAutomaticCargoWindInputs, derivedCargoWindInputs } from "../../engine/wind";
 import { buildGeometryViewModel } from "../../geometry/buildGeometryViewModel";
 import { useEngineeringEngine } from "../../hooks/useEngineeringEngine";
@@ -877,6 +878,21 @@ export function SetupWizard({
                 {draftModel.catalogue.map((definition) => <option key={definition.id} value={definition.id}>{definition.name} · {definition.category}</option>)}
               </SelectField>
               <NumberField
+                label="Individual X stagger"
+                value={selected.formationOffsetXM ?? 0}
+                unit="m"
+                hint="0 keeps this train in-line; positive moves it toward the front and negative toward the rear."
+                highlight={() => setSelectedId(`trailer:${selected.id}`)}
+                onChange={(formationOffsetXM) => updateTrailer(selectedTrailerIndex, {
+                  formationOffsetXM,
+                  xM: sharedLongitudinal + formationOffsetXM,
+                  offsetFromReference: {
+                    ...selected.offsetFromReference,
+                    x: sharedLongitudinal + formationOffsetXM,
+                  },
+                })}
+              />
+              <NumberField
                 label={selected.placementReference === "ABSOLUTE" ? "Centre Y" : "Y offset"}
                 value={selected.placementReference === "ABSOLUTE" ? selected.yM : selected.offsetFromReference.y}
                 unit="m"
@@ -902,8 +918,24 @@ export function SetupWizard({
 
   const renderHydraulics = () => {
     const pins = draftModel.groupings[0]?.pinnedAxleLines ?? [];
+    const hydraulicGroupIds = draftModel.hydraulicSystemMode === "FOUR_POINT"
+      ? [1, 2, 3, 4]
+      : [1, 2, 3];
     return (
       <>
+        <FormSection title="Hydraulic suspension system" description="Three-point uses a stability triangle. Four-point uses the active convex polygon and exact four-reaction equilibrium.">
+          <SelectField
+            label="Hydraulic system"
+            value={draftModel.hydraulicSystemMode}
+            onChange={(hydraulicSystemMode) => setDraftModel((current) => ({
+              ...current,
+              hydraulicSystemMode: hydraulicSystemMode as ProjectModel["hydraulicSystemMode"],
+            }))}
+          >
+            <option value="THREE_POINT">Three-point suspension</option>
+            <option value="FOUR_POINT">Four-point suspension</option>
+          </SelectField>
+        </FormSection>
         <FormSection title="Shared split and pinned axles" description="Changes are applied consistently across every trailer.">
           <div className="wizard-field-grid two">
             <NumberField label="Split after axle line" value={draftModel.groupings[0]?.splitAfterAxleLine ?? 1} step={1} min={1} max={Math.max(1, (draftModel.trailers[0]?.axleLines ?? 2) - 1)} highlight={() => setSelectedId("stability-boundary")} onChange={(value) => setDraftModel((current) => applySharedSplit(current, value))} />
@@ -918,9 +950,9 @@ export function SetupWizard({
             )) : <span>No axle lines pinned</span>}
           </div>
         </FormSection>
-        <FormSection title="Manual hydraulic grouping table" description="The interactive drawing and these labelled controls edit the same three-group model.">
+        <FormSection title="Manual hydraulic grouping table" description={`The interactive drawing and these labelled controls edit the same ${hydraulicGroupIds.length}-group model.`}>
           <div className="wizard-hydraulic-groups">
-            {[1, 2, 3].map((groupId) => {
+            {hydraulicGroupIds.map((groupId) => {
               const centre = engine.result.groups.find((group) => group.group === groupId);
               return (
                 <div key={groupId} className={`g${groupId}`}>
@@ -939,7 +971,7 @@ export function SetupWizard({
                   const corners = draftModel.groupings[index]?.cornerGroups ?? { rearLeft: 1, rearRight: 2, frontLeft: 3, frontRight: 3 };
                   const cell = (key: CornerKey) => (
                     <select aria-label={`Trailer ${index + 1} ${key} hydraulic group`} value={corners[key]} onChange={(event) => updateCorner(index, key, Number(event.target.value))}>
-                      <option value={1}>G1</option><option value={2}>G2</option><option value={3}>G3</option>
+                      {hydraulicGroupIds.map((groupId) => <option key={groupId} value={groupId}>G{groupId}</option>)}
                     </select>
                   );
                   return (
@@ -956,8 +988,8 @@ export function SetupWizard({
             </table>
           </div>
           <dl className="wizard-quality">
-            <div><dt>Triangle area</dt><dd>{engine.result.groupingQuality.triangleAreaM2.toFixed(3)} m²</dd></div>
-            <div><dt>Minimum altitude</dt><dd>{engine.result.groupingQuality.minimumAltitudeM.toFixed(3)} m</dd></div>
+            <div><dt>Stability polygon area</dt><dd>{engine.result.groupingQuality.polygonAreaM2.toFixed(3)} m²</dd></div>
+            <div><dt>Minimum polygon width</dt><dd>{engine.result.groupingQuality.minimumAltitudeM.toFixed(3)} m</dd></div>
             <div><dt>Aspect ratio</dt><dd>{engine.result.groupingQuality.aspectRatio.toFixed(3)}</dd></div>
           </dl>
         </FormSection>
@@ -1007,6 +1039,41 @@ export function SetupWizard({
           <NumberField label="Analysed trailer" value={draftModel.analysedTrailer} step={1} min={1} max={draftModel.trailers.length} onChange={(analysedTrailer) => setDraftModel((current) => ({ ...current, analysedTrailer: Math.round(analysedTrailer) }))} />
         </div>
       </FormSection>
+      <FormSection title="Road transport traction and braking" description="Uses the recovered EZTrailer friction, rolling-resistance, driven-bogie and brake-force data.">
+        <ToggleField
+          label="Enable road transport analysis"
+          checked={draftModel.roadTransport.enabled}
+          hint="When enabled, a failed traction or braking check makes the engineering result NOK."
+          onChange={(enabled) => setDraftModel((current) => ({
+            ...current,
+            roadTransport: { ...current.roadTransport, enabled },
+          }))}
+        />
+        <div className="wizard-field-grid three">
+          <SelectField label="Road surface" value={draftModel.roadTransport.surface} onChange={(surface) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, surface: surface as ProjectModel["roadTransport"]["surface"] } }))}>
+            {EZTRAILER_ROAD_SURFACES.map((surface) => <option key={surface.id} value={surface.id}>{surface.label}</option>)}
+          </SelectField>
+          <SelectField label="Surface condition" value={draftModel.roadTransport.condition} onChange={(condition) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, condition: condition as ProjectModel["roadTransport"]["condition"] } }))}>
+            <option value="DRY">Dry</option><option value="WET">Wet</option>
+          </SelectField>
+          <SelectField label="PPU drive capacity" value={draftModel.roadTransport.ppuCapacity} onChange={(ppuCapacity) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, ppuCapacity: ppuCapacity as ProjectModel["roadTransport"]["ppuCapacity"] } }))}>
+            <option value="STANDARD_26">Standard · 26 driven bogies/PPU</option>
+            <option value="ALASKA_32">Alaska · 32 driven bogies/PPU</option>
+            <option value="CUSTOM">Custom verified limit</option>
+          </SelectField>
+          <NumberField label="Transport speed" value={draftModel.roadTransport.speedKph} unit="km/h" min={0} onChange={(speedKph) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, speedKph } }))} />
+          <NumberField label="Drive acceleration" value={draftModel.roadTransport.driveAccelerationMps2} unit="m/s²" min={0} onChange={(driveAccelerationMps2) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, driveAccelerationMps2 } }))} />
+          <NumberField label="Brake deceleration" value={draftModel.roadTransport.brakeDecelerationMps2} unit="m/s²" min={0} onChange={(brakeDecelerationMps2) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, brakeDecelerationMps2 } }))} />
+          {draftModel.roadTransport.ppuCapacity === "CUSTOM" && <NumberField label="Driven bogies per PPU" value={draftModel.roadTransport.customDrivenBogieLimit} min={0} step={1} onChange={(customDrivenBogieLimit) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, customDrivenBogieLimit: Math.round(customDrivenBogieLimit) } }))} />}
+        </div>
+        {draftModel.roadTransport.enabled && engine.result.roadTransport && (
+          <dl className="wizard-quality">
+            <div><dt>Traction</dt><dd>{engine.result.roadTransport.tractionUtilisation === null ? "N/A" : `${(engine.result.roadTransport.tractionUtilisation * 100).toFixed(1)}%`}</dd></div>
+            <div><dt>Braking</dt><dd>{engine.result.roadTransport.brakingUtilisation === null ? "N/A" : `${(engine.result.roadTransport.brakingUtilisation * 100).toFixed(1)}%`}</dd></div>
+            <div><dt>Road result</dt><dd>{engine.result.roadTransport.status}</dd></div>
+          </dl>
+        )}
+      </FormSection>
     </>
   );
 
@@ -1024,7 +1091,7 @@ export function SetupWizard({
           </h3>
           <p>
             {setupValidEngineeringNok
-              ? "The three-group setup is valid, but the current load case is outside an engineering geometry limit. It can still be saved."
+              ? `The ${draftModel.hydraulicSystemMode === "FOUR_POINT" ? "four" : "three"}-group setup is valid, but the current load case is outside an engineering limit. It can still be saved.`
               : engine.result.failDetail || "The setup is calculation-ready."}
           </p>
         </div>
@@ -1039,7 +1106,9 @@ export function SetupWizard({
         <div><span>Basic tipping</span><b>{metric(engine.result.metrics.basicAngle.value, "°")}</b><small>{engine.result.metrics.basicAngle.status}</small></div>
         <div><span>Dynamic tipping</span><b>{metric(engine.result.metrics.dynamicAngle.value, "°")}</b><small>{engine.result.metrics.dynamicAngle.status}</small></div>
         <div><span>Cargo-only basic</span><b>{metric(engine.result.stabilityReferences.cargoBasicAngle.value, "°")}</b><small>{engine.result.stabilityReferences.cargoBasicAngle.status}</small></div>
-        <div><span>Combined COG</span><b>{engine.result.stabilityReferences.combinedCogRequired ? "REQUIRED" : "NOT REQUIRED"}</b><small>{engine.result.stabilityReferences.combinedCogRequired ? "Cargo-only limit not met" : "Cargo-only limits met"}</small></div>
+        <div><span>Cargo-only slope</span><b>{metric(engine.result.stabilityReferences.cargoSlopeAngle.value, "°")}</b><small>{engine.result.stabilityReferences.cargoSlopeAngle.status}</small></div>
+        <div><span>Cargo-only dynamic</span><b>{metric(engine.result.stabilityReferences.cargoDynamicAngle.value, "°")}</b><small>{engine.result.stabilityReferences.cargoDynamicAngle.status}</small></div>
+        <div><span>COG pass basis</span><b>{engine.result.stabilityReferences.combinedCogPassOnly ? "COMBINED ONLY" : engine.result.stabilityReferences.cargoOnlyPass ? "CARGO + COMBINED" : "NO ANGLE PASS"}</b><small>{engine.result.stabilityReferences.combinedCogPassOnly ? "Cargo-only stability fails" : engine.result.stabilityReferences.cargoOnlyPass ? "Cargo-only limits met" : "Combined limits also incomplete"}</small></div>
         <div><span>Spine beam</span><b>{metric(engine.result.metrics.spineUtil.value, "%", 100)}</b><small>{engine.result.metrics.spineUtil.status}</small></div>
         <div><span>Active supports</span><b>{engine.result.activeSupportCount}</b><small>minimum {draftModel.optimiser.minimumActiveSupports}</small></div>
       </div>
@@ -1212,7 +1281,7 @@ export function SetupWizard({
             <div><span>Dynamic util.</span><b>{metric(engine.result.metrics.dynamicUtil.value, "%", 100)}</b></div>
             <div><span>Dynamic angle</span><b>{metric(engine.result.metrics.dynamicAngle.value, "°")}</b></div>
             <div><span>Active supports</span><b>{engine.result.activeSupportCount}/{draftModel.supports.length}</b></div>
-            <div><span>Hydraulic triangle</span><b>{engine.result.groupingQuality.triangleAreaM2.toFixed(2)} m²</b></div>
+            <div><span>Hydraulic boundary</span><b>{engine.result.groupingQuality.polygonAreaM2.toFixed(2)} m²</b></div>
           </div>
           <div className="setup-wizard-preview-findings">
             {blockingCount ? <span className="blocking"><IconX size={13} /> {blockingCount} blocking</span> : <span className="valid"><IconCheck size={13} /> Setup geometry valid</span>}

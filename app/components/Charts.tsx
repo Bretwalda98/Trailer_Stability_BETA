@@ -26,6 +26,7 @@ function formatNumber(value: number, digits = 2): string {
 }
 
 export function StabilityChart({ result }: { result: CalculationResult }) {
+  const boundaryName = result.stabilityPolygon.length === 3 ? "Stability triangle" : "Stability polygon";
   const points = [
     ...result.stabilityPolygon,
     ...result.casePoints.basic,
@@ -48,7 +49,7 @@ export function StabilityChart({ result }: { result: CalculationResult }) {
       <div className="chart-title-row">
         <div>
           <p className="eyebrow">Plan view</p>
-          <h3>Stability triangle &amp; COG</h3>
+          <h3>{boundaryName} &amp; COG</h3>
         </div>
         <div className="chart-legend">
           <span><i className="legend-dot cog" />All-inclusive COG</span>
@@ -58,7 +59,7 @@ export function StabilityChart({ result }: { result: CalculationResult }) {
           <span><i className="legend-dot dynamic" />Dynamic envelope</span>
         </div>
       </div>
-      <svg className="engineering-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Stability triangle plan">
+      <svg className="engineering-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${boundaryName} plan`}>
         <defs>
           <pattern id="grid" width="38" height="38" patternUnits="userSpaceOnUse">
             <path d="M 38 0 L 0 0 0 38" fill="none" stroke="rgba(129,151,176,.16)" strokeWidth="1" />
@@ -69,7 +70,7 @@ export function StabilityChart({ result }: { result: CalculationResult }) {
           </filter>
         </defs>
         <rect x="0" y="0" width={width} height={height} rx="14" fill="url(#grid)" />
-        {result.stabilityPolygon.length === 3 && (
+        {result.stabilityPolygon.length >= 3 && (
           <polygon points={polygon} className="stability-polygon" />
         )}
         {result.casePoints.slope.length > 2 && (

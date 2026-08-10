@@ -21,6 +21,7 @@ import {
 import { derivedCargoCogEnvelopeInputs } from "../app/engine/cargo-envelope";
 import {
   applyArrangementDescriptor,
+  applyArrangementEnvironmentalActions,
   bestModuleComposition,
   collectArrangementIssues,
   createArrangementDescriptor,
@@ -28,10 +29,12 @@ import {
   formationPitchBounds,
   mathematicalPitchSeeds,
   minimumTotalAxleLines,
+  longitudinalOffsetCandidates,
   moduleCompositions,
   spacingCandidates,
   validAxleLineValues,
 } from "../app/engine/arrangement";
+import { EZTRAILER_ROAD_SURFACES } from "../app/engine/road-transport";
 import {
   deriveHydraulicYPitchBound,
   rankArrangementPasses,
@@ -77,8 +80,77 @@ function text(bytes: Uint8Array): string {
 async function main(): Promise<void> {
   const root = process.cwd();
   const model = createDefaultModel();
-  assert.equal(model.schemaVersion, 2);
+  assert.equal(model.schemaVersion, 3);
   assert.equal(model.longitudinalOrientation, LONGITUDINAL_ORIENTATION_ID);
+  assert.equal(model.hydraulicSystemMode, "THREE_POINT");
+  assert.equal(EZTRAILER_ROAD_SURFACES.find((item) => item.id === "ASPHALT")?.dryFriction, 0.8);
+  assert.equal(EZTRAILER_ROAD_SURFACES.find((item) => item.id === "STEEL")?.wetFriction, 0.1);
+  assert.equal(EZTRAILER_ROAD_SURFACES.find((item) => item.id === "SAND")?.rollingResistance, 0.3);
+
+  const reducedActionModel = structuredClone(model);
+  reducedActionModel.arrangementOptimiser.allowReducedEnvironmentalActions = true;
+  reducedActionModel.arrangementOptimiser.searchWindSpeedMps = 10;
+  reducedActionModel.arrangementOptimiser.searchLongitudinalAccelerationMps2 = 0.3;
+  reducedActionModel.arrangementOptimiser.searchTransverseAccelerationMps2 = 0.1;
+  const reducedActions = applyArrangementEnvironmentalActions(reducedActionModel);
+  assert.equal(reducedActions.reduced, true);
+  assert.equal(reducedActions.model.engineeringDegree, "Third");
+  assert.equal(reducedActions.model.environment.windSpeedMps, 10);
+
+  const roadModel = structuredClone(model);
+  roadModel.roadTransport.enabled = true;
+  const roadResult = calculateProject(roadModel).roadTransport;
+  assert.equal(roadResult.enabled, true);
+  assert.equal(roadResult.frictionCoefficient, 0.8);
+  assert.equal(roadResult.rollingResistanceCoefficient, 0.01);
+  assert.equal(roadResult.moduleCount, 4);
+  assert.ok(roadResult.tractionMechanicalLimitKN > 0);
+  assert.ok(roadResult.brakingMechanicalLimitKN > 0);
+  assert.match(roadResult.source, /EZTrailer salvage/);
+
+  const fourPointModel = structuredClone(model);
+  fourPointModel.hydraulicSystemMode = "FOUR_POINT";
+  fourPointModel.cargo.massT = 100;
+  fourPointModel.cargo.heightM = 5;
+  fourPointModel.cargo.cog.z = 2.5;
+  fourPointModel.trailers[0].yM = 1;
+  fourPointModel.trailers[1].yM = 4.5;
+  fourPointModel.groupings[0].cornerGroups = {
+    rearLeft: 1, rearRight: 1, frontLeft: 3, frontRight: 3,
+  };
+  fourPointModel.groupings[1].cornerGroups = {
+    rearLeft: 2, rearRight: 2, frontLeft: 4, frontRight: 4,
+  };
+  const fourPointResult = calculateProject(fourPointModel);
+  assert.deepEqual(fourPointResult.groups.map((group) => group.group), [1, 2, 3, 4]);
+  assert.equal(fourPointResult.groupingQuality.boundaryPointCount, 4);
+  assert.ok(fourPointResult.groupingQuality.polygonAreaM2 > 0);
+  assert.ok(Math.abs(fourPointResult.groups.reduce((sum, group) => sum + group.loadT, 0) - fourPointResult.totalMassT) < 1e-7);
+  assert.ok(Math.abs(fourPointResult.groups.reduce((sum, group) => sum + group.loadT * group.point.x, 0) - fourPointResult.totalMassT * fourPointResult.combinedCog.x) < 1e-6);
+  assert.ok(Math.abs(fourPointResult.groups.reduce((sum, group) => sum + group.loadT * group.point.y, 0) - fourPointResult.totalMassT * fourPointResult.combinedCog.y) < 1e-6);
+  assert.equal(fourPointResult.stabilityReferences.cargoOnlyPass, false);
+  assert.equal(fourPointResult.stabilityReferences.combinedCogPassOnly, true);
+  assert.ok(fourPointResult.warnings.some((warning) => warning.startsWith("COMBINED COG PASS ONLY:")));
+
+  const staggerTemplates = longitudinalOffsetCandidates(
+    { ...model.arrangementOptimiser, formationMode: "ALLOW_STAGGERED", maximumLongitudinalStaggerM: 4, longitudinalStaggerSamples: 1 },
+    2,
+  );
+  assert.deepEqual(staggerTemplates[0], [0, 0]);
+  assert.ok(staggerTemplates.some((offsets) => Math.abs(offsets[1] - offsets[0]) === 4));
+  const staggerDefinition = model.catalogue.find((item) => item.id === model.arrangementOptimiser.trailerDefinitionId)!;
+  const staggerComposition = bestModuleComposition(8, model.arrangementOptimiser, 2)!;
+  const staggerDescriptor = createArrangementDescriptor(
+    staggerDefinition,
+    model.arrangementOptimiser,
+    2,
+    staggerComposition,
+    3,
+    [-2, 2],
+  );
+  assert.equal(staggerDescriptor.formationMode, "STAGGERED");
+  const staggeredModel = applySharedX(applyArrangementDescriptor(model, staggerDescriptor), 10);
+  assert.equal(staggeredModel.trailers[1].xM - staggeredModel.trailers[0].xM, 4);
   assert.equal(longitudinalEndForAxleLine(1, 2), "rear");
   assert.equal(longitudinalEndForAxleLine(3, 2), "front");
   const migratedV1 = hydrateProjectModel({
@@ -90,7 +162,7 @@ async function main(): Promise<void> {
       cog: model.packing.cog,
     },
   });
-  assert.equal(migratedV1.schemaVersion, 2);
+  assert.equal(migratedV1.schemaVersion, 3);
   assert.equal(migratedV1.packing.footprint.mode, "CARGO_ESTIMATE");
   assert.equal(migratedV1.packing.footprint.lengthM, model.cargo.lengthM);
   const legacyOrientation = structuredClone(model) as Partial<typeof model>;
@@ -115,7 +187,7 @@ async function main(): Promise<void> {
   const hydratedDraft = hydrateWizardDraftPayload(JSON.parse(JSON.stringify(draftPayload)));
   assert.ok(hydratedDraft);
   assert.equal(hydratedDraft.step, "packing");
-  assert.equal(hydratedDraft.model.schemaVersion, 2);
+  assert.equal(hydratedDraft.model.schemaVersion, 3);
   assert.equal(hydratedDraft.updatedAt, "2026-07-28T12:00:00.000Z");
   assert.deepEqual(validateCatalogue(model.catalogue), []);
   assert.equal(model.catalogue.length, 15);
@@ -365,6 +437,22 @@ async function main(): Promise<void> {
   assert.equal(preferredCandidate.overallRank, 1);
   assert.equal(widerCandidate.overallRank, 2);
 
+  const cargoOnlyCandidate = structuredClone(preferredCandidate);
+  cargoOnlyCandidate.id = `${preferredCandidate.id}-CARGO-ONLY`;
+  cargoOnlyCandidate.sequence = 2;
+  cargoOnlyCandidate.result.stabilityReferences.cargoOnlyPass = true;
+  cargoOnlyCandidate.result.stabilityReferences.combinedCogRequired = false;
+  cargoOnlyCandidate.result.stabilityReferences.combinedCogPassOnly = false;
+  const combinedOnlyCandidate = structuredClone(cargoOnlyCandidate);
+  combinedOnlyCandidate.id = `${preferredCandidate.id}-COMBINED-ONLY`;
+  combinedOnlyCandidate.sequence = 1;
+  combinedOnlyCandidate.result.stabilityReferences.cargoOnlyPass = false;
+  combinedOnlyCandidate.result.stabilityReferences.combinedCogRequired = true;
+  combinedOnlyCandidate.result.stabilityReferences.combinedCogPassOnly = true;
+  rankArrangementPasses([combinedOnlyCandidate, cargoOnlyCandidate], compactArrangementSearch);
+  assert.equal(cargoOnlyCandidate.overallRank, 1, "A cargo-only pass is preferred at equal train and axle counts.");
+  assert.equal(combinedOnlyCandidate.overallRank, 2);
+
   const largeCargoSearch = createDefaultModel();
   largeCargoSearch.cargo = {
     ...largeCargoSearch.cargo,
@@ -529,6 +617,16 @@ async function main(): Promise<void> {
     model.trailers.filter((trailer) => trailer.enabled).reduce((sum, trailer) => sum + trailer.axleLines, 0),
   );
   assert.ok(result.supportIterations >= 1);
+  assert.equal(result.stabilityReferences.cargoDynamicAngle.active, true);
+  assert.equal(
+    result.stabilityReferences.cargoOnlyPass,
+    [
+      result.stabilityReferences.cargoBasicAngle,
+      result.stabilityReferences.cargoSlopeAngle,
+      result.stabilityReferences.cargoDynamicAngle,
+    ].every((item) => item.status === "OK"),
+  );
+  assert.equal(result.stabilityReferences.combinedCogRequired, !result.stabilityReferences.cargoOnlyPass);
   assert.deepEqual(engineeringLimitsFor("First"), {
     basicUtil: 0.7,
     basicAngle: 9,

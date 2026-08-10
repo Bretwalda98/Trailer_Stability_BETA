@@ -160,22 +160,26 @@ export function setSharedPlacementReference(
   result: CalculationResult,
   placementReference: PlacementReference,
 ): ProjectModel {
+  const firstResolvedX = resolvedTrailerPosition(model, result, 0).x;
   return {
     ...model,
     trailers: model.trailers.map((trailer, index) => {
       const resolved = resolvedTrailerPosition(model, result, index);
+      const formationOffsetXM = resolved.x - firstResolvedX;
       if (placementReference === "ABSOLUTE") {
         return {
           ...trailer,
           placementReference,
           xM: resolved.x,
           yM: resolved.y,
+          formationOffsetXM,
         };
       }
       const reference = referencePoint(placementReference, result);
       return {
         ...trailer,
         placementReference,
+        formationOffsetXM,
         offsetFromReference: {
           x: resolved.x - reference.x,
           y: resolved.y - reference.y,
@@ -201,9 +205,12 @@ export function applySharedLongitudinalPlacement(
       relative
         ? {
             ...trailer,
-            offsetFromReference: { ...trailer.offsetFromReference, x: value },
+            offsetFromReference: {
+              ...trailer.offsetFromReference,
+              x: value + (trailer.formationOffsetXM ?? 0),
+            },
           }
-        : { ...trailer, xM: value },
+        : { ...trailer, xM: value + (trailer.formationOffsetXM ?? 0) },
     ),
   };
 }
@@ -400,6 +407,8 @@ function trailerIssues(model: ProjectModel, calculation: CalculationResult): Set
 
 function hydraulicIssues(model: ProjectModel, calculation: CalculationResult): SetupIssue[] {
   const result: SetupIssue[] = [];
+  const expectedGroupCount = model.hydraulicSystemMode === "FOUR_POINT" ? 4 : 3;
+  const validGroupIds = Array.from({ length: expectedGroupCount }, (_, index) => index + 1);
   if (model.groupings.length < model.trailers.length) {
     result.push(issue("grouping-count", "hydraulics", "blocking", "Every trailer needs a hydraulic grouping", "Add the missing trailer hydraulic rows."));
   }
@@ -429,18 +438,29 @@ function hydraulicIssues(model: ProjectModel, calculation: CalculationResult): S
     const values = corners
       ? [corners.frontLeft, corners.frontRight, corners.rearLeft, corners.rearRight]
       : grouping.groups;
-    if (values.some((group) => ![1, 2, 3].includes(group))) {
-      result.push(issue(`group-id-${index}`, "hydraulics", "blocking", "Hydraulic groups must be G1, G2 or G3", "Choose one of the three supported groups for every active circuit."));
+    if (values.some((group) => !validGroupIds.includes(group))) {
+      result.push(issue(`group-id-${index}`, "hydraulics", "blocking", `Hydraulic groups must be G1–G${expectedGroupCount}`, `Choose one of the ${expectedGroupCount} supported groups for every active circuit.`));
     }
   }
   const populated = new Set(calculation.groups.map((group) => group.group));
-  if (populated.size !== 3 || calculation.groupingQuality.triangleAreaM2 <= 1e-8) {
-    result.push(issue("triangle", "hydraulics", "blocking", "A valid three-group stability triangle is required", "Populate G1, G2 and G3 with unpinned axle bogies whose centres form a non-degenerate triangle.", "stability-boundary"));
+  if (
+    populated.size !== expectedGroupCount ||
+    calculation.groupingQuality.boundaryPointCount !== expectedGroupCount ||
+    calculation.groupingQuality.polygonAreaM2 <= 1e-8
+  ) {
+    result.push(issue(
+      "triangle",
+      "hydraulics",
+      "blocking",
+      `A valid ${expectedGroupCount}-point stability polygon is required`,
+      `Populate ${validGroupIds.map((group) => `G${group}`).join(", ")} with unpinned axle bogies whose centres form ${expectedGroupCount} non-degenerate convex boundary corners.`,
+      "stability-boundary",
+    ));
   } else if (calculation.groupingQuality.narrow) {
-    result.push(issue("triangle-narrow", "hydraulics", "warning", "The hydraulic triangle is narrow", "The setup is editable, but wider local group centres generally improve the stability boundary.", "stability-boundary"));
+    result.push(issue("triangle-narrow", "hydraulics", "warning", "The hydraulic stability polygon is narrow", "The setup is editable, but wider local group centres generally improve the stability boundary.", "stability-boundary"));
   }
   if (calculation.groupingQuality.dispersedGroups.length) {
-    result.push(issue("groups-dispersed", "hydraulics", "warning", "One or more hydraulic groups are dispersed", `Review ${calculation.groupingQuality.dispersedGroups.map((group) => `G${group}`).join(", ")}; grouping distant bogies can create a narrow or unintuitive effective triangle.`));
+    result.push(issue("groups-dispersed", "hydraulics", "warning", "One or more hydraulic groups are dispersed", `Review ${calculation.groupingQuality.dispersedGroups.map((group) => `G${group}`).join(", ")}; grouping distant bogies can create a narrow or unintuitive stability polygon.`));
   }
   return result;
 }
@@ -467,6 +487,21 @@ function supportIssues(model: ProjectModel, calculation: CalculationResult): Set
   const environmentNumbers = Object.values(model.environment);
   if (!environmentNumbers.every(finite)) {
     result.push(issue("environment", "supports", "blocking", "Route or dynamic input is invalid", "Every slope, acceleration, wind and combination field must contain a finite number."));
+  }
+  if (model.roadTransport.enabled) {
+    const roadNumbers = [
+      model.roadTransport.speedKph,
+      model.roadTransport.driveAccelerationMps2,
+      model.roadTransport.brakeDecelerationMps2,
+      model.roadTransport.customDrivenBogieLimit,
+    ];
+    if (roadNumbers.some((value) => !finite(value) || value < 0)) {
+      result.push(issue("road-inputs", "supports", "blocking", "Road transport inputs are invalid", "Speed, acceleration, deceleration and the optional PPU limit must be finite and non-negative."));
+    } else if (calculation.roadTransport.status === "N/A") {
+      result.push(issue("road-unavailable", "supports", "blocking", "Road transport analysis is unavailable", calculation.roadTransport.warnings.join(" ") || "Use an exact 4/5/6-AL SPMT module build and verified PPU data."));
+    } else if (calculation.roadTransport.status === "NOK") {
+      result.push(issue("road-nok", "supports", "warning", "Road transport traction or braking is NOK", "The case can be saved, but it cannot pass while the enabled road-motion check exceeds 100% utilisation."));
+    }
   }
   return result;
 }

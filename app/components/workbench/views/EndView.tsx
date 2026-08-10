@@ -1,13 +1,14 @@
 "use client";
 
-import type { Bogie, COGPoint, TrailerUnit } from "../../../geometry/types";
+import { buildEndTippingConstructions } from "../../../geometry/end-tipping";
+import type { Bogie, TrailerUnit } from "../../../geometry/types";
 import { CogMarker, DimensionLine, ViewGrid } from "../svg-primitives";
 import type { EngineeringViewProps } from "./view-types";
 
 const END_TIPPING_CASES = [
-  { key: "basicAngle", cogType: "all-inclusive", label: "BASIC", colour: "#38bdf8" },
-  { key: "slopeAngle", cogType: "slope-shifted", label: "SLOPE", colour: "#f59e0b" },
-  { key: "dynamicAngle", cogType: "dynamic-shifted", label: "DYNAMIC", colour: "#f472b6" },
+  { mode: "basic", label: "BASIC", colour: "#38bdf8" },
+  { mode: "slope", label: "SLOPE", colour: "#f59e0b" },
+  { mode: "dynamic", label: "DYNAMIC", colour: "#f472b6" },
 ] as const;
 
 function nearestBogie(bogies: Bogie[], yM: number): Bogie | undefined {
@@ -233,36 +234,11 @@ export function EndView(props: EngineeringViewProps) {
     z: model.trailerDeckHeightM + model.packing.heightM,
   });
   const groundStart = transform.toScreen({ x: 0, y: vm.bounds.minY, z: 0 });
-  const groundEnd = transform.toScreen({
-    x: 0,
-    y: vm.bounds.maxY,
-    z:
-      Math.tan((model.environment.transverseSlopeDeg * Math.PI) / 180) *
-      (vm.bounds.maxY - vm.bounds.minY),
-  });
-  const controllingEdge = vm.tippingEdges.find((edge) => edge.critical);
-  const controllingEdgeY = controllingEdge
-    ? (controllingEdge.start.y + controllingEdge.end.y) / 2
-    : result.combinedCog.y;
-  const hydraulicCentroidY = result.stabilityPolygon.length === 3
-    ? result.stabilityPolygon.reduce((sum, point) => sum + point.y, 0) / result.stabilityPolygon.length
-    : result.combinedCog.y;
-  // The construction must leave the triangle from the selected edge. Using
-  // the COG alone can point the ray back through the triangle when the COG is
-  // close to, or outside, the controlling edge.
-  const direction = controllingEdgeY >= hydraulicCentroidY ? 1 : -1;
-  const controllingSide = direction < 0 ? "RIGHT" : "LEFT";
-  const groundAtEdgeZ =
-    Math.tan((model.environment.transverseSlopeDeg * Math.PI) / 180) *
-    (controllingEdgeY - vm.bounds.minY);
-  const tippingRays = END_TIPPING_CASES.flatMap((definition) => {
-    const angleDeg = result.metrics[definition.key].value;
-    const cog = vm.cogs.find((item) => item.cogType === definition.cogType) as COGPoint | undefined;
-    const heightM = (cog?.point.z ?? result.combinedCog.z) - groundAtEdgeZ;
-    if (angleDeg === null || angleDeg < 0 || heightM <= 0) return [];
-    const distanceM = Math.tan((angleDeg * Math.PI) / 180) * heightM;
-    return [{ ...definition, angleDeg, heightM, distanceM }];
-  });
+  const groundEnd = transform.toScreen({ x: 0, y: vm.bounds.maxY, z: 0 });
+  const tippingRays = buildEndTippingConstructions(result).map((construction) => ({
+    ...construction,
+    ...END_TIPPING_CASES.find((definition) => definition.mode === construction.mode)!,
+  }));
 
   return (
     <svg
@@ -280,7 +256,7 @@ export function EndView(props: EngineeringViewProps) {
       <ViewGrid width={width} height={height} visible={preferences.grid} />
       <line className="ground-line" x1={groundStart.x} y1={groundStart.y} x2={groundEnd.x} y2={groundEnd.y} />
       <text className="view-note" x={groundStart.x + 8} y={groundStart.y - 8}>
-        Cross slope {model.environment.transverseSlopeDeg.toFixed(2)}°
+        Datum Z = 0 · cross slope represented by shifted COG envelope
       </text>
 
       {vm.trailers.map((trailer) => (
@@ -356,42 +332,43 @@ export function EndView(props: EngineeringViewProps) {
         </g>
       )}
 
-      {preferences.layers.stability && controllingEdge && (
+      {preferences.layers.stability && tippingRays.length > 0 && (
         <g className="end-stability">
-          {(() => {
-            const pivot = transform.toScreen({ x: 0, y: controllingEdgeY, z: groundAtEdgeZ });
-            const verticalTop = transform.toScreen({ x: 0, y: controllingEdgeY, z: result.combinedCog.z });
+          {tippingRays.map((ray, index) => {
+            const pivot = transform.toScreen({ x: 0, y: ray.foot.y, z: 0 });
+            const cogRing = transform.toScreen({ x: 0, y: ray.cogPoint.y, z: result.combinedCog.z });
+            const verticalTop = transform.toScreen({ x: 0, y: ray.foot.y, z: result.combinedCog.z });
+            const inwardDirection = ray.outwardDirectionY * -1;
+            const labelX = (pivot.x + cogRing.x) / 2 + inwardDirection * 8;
+            const labelY = (pivot.y + cogRing.y) / 2 - 8 - index * 12;
+            const firstRayForEdge = tippingRays.findIndex((candidate) => candidate.edgeIndex === ray.edgeIndex) === index;
             return (
-              <>
-                <line className="stability-side-line" x1={pivot.x} y1={pivot.y} x2={verticalTop.x} y2={verticalTop.y} />
-                <circle className="tipping-pivot" cx={pivot.x} cy={pivot.y} r={4} />
-                <text className="critical-side-label" x={pivot.x + direction * 8} y={pivot.y - 10} textAnchor={direction > 0 ? "start" : "end"}>
-                  EDGE {controllingEdge.edgeIndex + 1} · {controllingSide}
+              <g key={ray.metricKey} className="end-tipping-ray" style={{ color: ray.colour }}>
+                {firstRayForEdge && (
+                  <>
+                    <line className="stability-side-line" x1={pivot.x} y1={pivot.y} x2={verticalTop.x} y2={verticalTop.y} />
+                    <circle className="tipping-pivot" cx={pivot.x} cy={pivot.y} r={4} />
+                    <text
+                      className="critical-side-label"
+                      x={pivot.x + inwardDirection * 8}
+                      y={pivot.y - 10}
+                      textAnchor={inwardDirection > 0 ? "start" : "end"}
+                    >
+                      EDGE {ray.edgeIndex + 1} · {ray.side}
+                    </text>
+                  </>
+                )}
+                <line x1={cogRing.x} y1={cogRing.y} x2={pivot.x} y2={pivot.y} />
+                <circle cx={cogRing.x} cy={cogRing.y} r={3.2} />
+                <text x={labelX} y={labelY} textAnchor={inwardDirection > 0 ? "start" : "end"}>
+                  {ray.label} {ray.angleDeg.toFixed(1)}°
                 </text>
-                {tippingRays.map((ray, index) => {
-                  const boundary = transform.toScreen({
-                    x: 0,
-                    y: controllingEdgeY + direction * ray.distanceM,
-                    z: groundAtEdgeZ + ray.heightM,
-                  });
-                  const labelX = (pivot.x + boundary.x) / 2 + direction * 8;
-                  const labelY = (pivot.y + boundary.y) / 2 - 8 - index * 12;
-                  return (
-                    <g key={ray.key} className="end-tipping-ray" style={{ color: ray.colour }}>
-                      <line x1={pivot.x} y1={pivot.y} x2={boundary.x} y2={boundary.y} />
-                      <circle cx={boundary.x} cy={boundary.y} r={3.2} />
-                      <text x={labelX} y={labelY} textAnchor={direction > 0 ? "start" : "end"}>
-                        {ray.label} {ray.angleDeg.toFixed(1)}°
-                      </text>
-                      <desc>
-                        {ray.label} tipping angle construction from the controlling edge to the projected COG boundary.
-                      </desc>
-                    </g>
-                  );
-                })}
-              </>
+                <desc>
+                  {ray.label} tipping-angle construction from its controlling shifted COG-envelope ring to edge {ray.edgeIndex + 1}.
+                </desc>
+              </g>
             );
-          })()}
+          })}
         </g>
       )}
 

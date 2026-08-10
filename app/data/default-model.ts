@@ -24,7 +24,7 @@ export const balancedWeights: OptimiserWeights = {
 
 export function createDefaultModel(): ProjectModel {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     longitudinalOrientation: LONGITUDINAL_ORIENTATION_ID,
     sourceWorkbook: "Standalone web project",
     engineeringDegree: "Second",
@@ -107,6 +107,7 @@ export function createDefaultModel(): ProjectModel {
         pinnedAxleLines: [],
       },
     ],
+    hydraulicSystemMode: "THREE_POINT",
     supports: [
       { id: "support-1", xM: 1, widthM: 0.5, allowed: true, active: true },
       { id: "support-2", xM: 4, widthM: 0.5, allowed: true, active: true },
@@ -122,6 +123,16 @@ export function createDefaultModel(): ProjectModel {
       longitudinalAccelerationMps2: 0.5,
       transverseAccelerationMps2: 0.2,
       windSpeedMps: 15,
+    },
+    roadTransport: {
+      enabled: false,
+      surface: "ASPHALT",
+      condition: "DRY",
+      speedKph: 5,
+      driveAccelerationMps2: 0.5,
+      brakeDecelerationMps2: 0.5,
+      ppuCapacity: "STANDARD_26",
+      customDrivenBogieLimit: 26,
     },
     optimiser: {
       calculationMode: "NATIVE_VERIFIED",
@@ -187,6 +198,14 @@ export function createDefaultModel(): ProjectModel {
       spacingSamples: 3,
       spacingToleranceM: 0.05,
       ppuPosition: "NONE",
+      formationMode: "ALLOW_STAGGERED",
+      maximumLongitudinalStaggerM: 6,
+      longitudinalStaggerSamples: 1,
+      allowReducedEnvironmentalActions: false,
+      reducedEnvironmentalActionsAccepted: false,
+      searchWindSpeedMps: 15,
+      searchLongitudinalAccelerationMps2: 0.5,
+      searchTransverseAccelerationMps2: 0.2,
     },
     catalogue: builtinTrailerCatalogue.map((item) => ({ ...item })),
     analysedTrailer: 1,
@@ -219,6 +238,7 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
     ProjectModel["packing"]["footprint"]
   >;
   const environment = objectValue(source.environment) as Partial<ProjectModel["environment"]>;
+  const roadTransport = objectValue(source.roadTransport) as Partial<ProjectModel["roadTransport"]>;
   const optimiser = objectValue(source.optimiser) as Partial<ProjectModel["optimiser"]>;
   const arrangementOptimiser = objectValue(source.arrangementOptimiser) as Partial<
     ProjectModel["arrangementOptimiser"]
@@ -231,11 +251,23 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
   const loosePackingItems = objectItems(source.loosePacking);
   const hasCurrentOrientation =
     source.longitudinalOrientation === LONGITUDINAL_ORIENTATION_ID;
+  const importedUsesGroupFour = groupingItems.some((item) => {
+    const corners = objectValue(item.cornerGroups);
+    const values = [
+      ...Object.values(corners),
+      ...(Array.isArray(item.groups) ? item.groups : []),
+    ];
+    return values.some((entry) => Number(entry) === 4);
+  });
   return {
     ...base,
     ...source,
-    schemaVersion: 2,
+    schemaVersion: 3,
     longitudinalOrientation: LONGITUDINAL_ORIENTATION_ID,
+    hydraulicSystemMode:
+      source.hydraulicSystemMode === "FOUR_POINT" || importedUsesGroupFour
+        ? "FOUR_POINT"
+        : "THREE_POINT",
     cargo: applyAutomaticCargoCogEnvelopeInputs({
       ...base.cargo,
       ...cargo,
@@ -278,6 +310,10 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
         typeof environment.routeTransverseSlopeDeg === "number"
           ? environment.routeTransverseSlopeDeg
           : environment.transverseSlopeDeg ?? base.environment.routeTransverseSlopeDeg,
+    },
+    roadTransport: {
+      ...base.roadTransport,
+      ...roadTransport,
     },
     optimiser: {
       ...base.optimiser,

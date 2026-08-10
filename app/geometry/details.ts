@@ -411,18 +411,18 @@ export function buildEngineeringDetailRows(
       { status: result.trailerOverlaps.length ? "NOK" : "OK" },
     ),
     row(
-      "hydraulic-triangle-area",
+      "hydraulic-polygon-area",
       "Geometry validation",
-      "Hydraulic triangle area",
-      result.groupingQuality.triangleAreaM2,
+      "Hydraulic stability polygon area",
+      result.groupingQuality.polygonAreaM2,
       "m²",
       "Engine groupingQuality",
-      { status: result.groups.length === 3 ? "OK" : "NOK" },
+      { status: result.groups.length === (model.hydraulicSystemMode === "FOUR_POINT" ? 4 : 3) ? "OK" : "NOK" },
     ),
     row(
-      "hydraulic-triangle-altitude",
+      "hydraulic-polygon-width",
       "Geometry validation",
-      "Hydraulic triangle minimum altitude",
+      "Hydraulic polygon minimum width",
       result.groupingQuality.minimumAltitudeM,
       "m",
       "Engine groupingQuality",
@@ -431,7 +431,7 @@ export function buildEngineeringDetailRows(
     row(
       "hydraulic-triangle-aspect",
       "Geometry validation",
-      "Hydraulic triangle altitude / longest edge",
+      "Hydraulic polygon width / longest edge",
       result.groupingQuality.aspectRatio,
       "",
       "Engine groupingQuality",
@@ -488,8 +488,31 @@ export function buildEngineeringDetailRows(
   rows.push(
     row("cargo-basic-angle", "COG reference decision", "Cargo-only basic tipping angle", result.stabilityReferences.cargoBasicAngle.value, "Â°", "Engine stabilityReferences.cargoBasicAngle", { status: result.stabilityReferences.cargoBasicAngle.status }),
     row("cargo-slope-angle", "COG reference decision", "Cargo-only slope tipping angle", result.stabilityReferences.cargoSlopeAngle.value, "Â°", "Engine stabilityReferences.cargoSlopeAngle", { status: result.stabilityReferences.cargoSlopeAngle.status }),
+    row("cargo-dynamic-angle", "COG reference decision", "Cargo-only dynamic tipping angle", result.stabilityReferences.cargoDynamicAngle.value, "°", "Engine stabilityReferences.cargoDynamicAngle", { status: result.stabilityReferences.cargoDynamicAngle.status }),
+    row("cargo-only-pass", "COG reference decision", "Cargo-only stability pass", result.stabilityReferences.cargoOnlyPass ? "YES" : "NO", "", "Engine stabilityReferences.cargoOnlyPass", { status: result.stabilityReferences.cargoOnlyPass ? "OK" : "NOK", valueType: "text" }),
     row("combined-cog-required", "COG reference decision", "Combined COG required", result.stabilityReferences.combinedCogRequired ? "YES" : "NO", "", "Engine stabilityReferences.combinedCogRequired", { status: result.stabilityReferences.combinedCogRequired ? "NOK" : "OK", valueType: "text" }),
+    row("combined-cog-pass-only", "COG reference decision", "Combined COG pass only", result.stabilityReferences.combinedCogPassOnly ? "YES" : "NO", "", "Engine stabilityReferences.combinedCogPassOnly", { status: result.stabilityReferences.combinedCogPassOnly ? "NOK" : "OK", valueType: "text" }),
   );
+
+  if (result.roadTransport?.enabled) {
+    const road = result.roadTransport;
+    rows.push(
+      row("road-status", "Road transport analysis", "Road transport result", road.status, "", road.source, { status: road.status, valueType: "text" }),
+      row("road-surface", "Road transport analysis", "Surface / condition", `${road.surface.replaceAll("_", " ")} / ${road.condition}`, "", road.source, { valueType: "text" }),
+      row("road-friction", "Road transport analysis", "Friction coefficient", road.frictionCoefficient, "", road.source),
+      row("road-rolling-resistance", "Road transport analysis", "Rolling-resistance coefficient", road.rollingResistanceCoefficient, "", road.source),
+      row("road-driven-bogies", "Road transport analysis", "Driven bogies", road.drivenBogieCount, "", road.source),
+      row("road-braked-bogies", "Road transport analysis", "Braked bogies", road.brakedBogieCount, "", road.source),
+      row("road-traction-demand", "Road transport analysis", "Traction demand", road.tractionDemandKN, "kN", "Engine roadTransport"),
+      row("road-traction-capacity", "Road transport analysis", "Available traction", road.tractionCapacityKN, "kN", "Engine roadTransport"),
+      row("road-traction-util", "Road transport analysis", "Traction utilisation", road.tractionUtilisation === null ? null : road.tractionUtilisation * 100, "%", "Engine roadTransport", { status: road.tractionUtilisation !== null && road.tractionUtilisation <= 1 ? "OK" : "NOK" }),
+      row("road-braking-demand", "Road transport analysis", "Braking demand", road.brakingDemandKN, "kN", "Engine roadTransport"),
+      row("road-braking-capacity", "Road transport analysis", "Available braking", road.brakingCapacityKN, "kN", "Engine roadTransport"),
+      row("road-braking-util", "Road transport analysis", "Braking utilisation", road.brakingUtilisation === null ? null : road.brakingUtilisation * 100, "%", "Engine roadTransport", { status: road.brakingUtilisation !== null && road.brakingUtilisation <= 1 ? "OK" : "NOK" }),
+      row("road-maximum-climb", "Road transport analysis", "Maximum climb angle", road.maximumClimbGradeDeg, "°", "Engine roadTransport"),
+      row("road-maximum-descent", "Road transport analysis", "Maximum descent angle", road.maximumDescentGradeDeg, "°", "Engine roadTransport"),
+    );
+  }
 
   result.analysis.groupLoadContributions.forEach((contribution) => {
     rows.push(

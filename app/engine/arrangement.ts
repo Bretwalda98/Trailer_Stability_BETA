@@ -266,10 +266,17 @@ export function createArrangementDescriptor(
   trainCount: number,
   composition: ModuleComposition,
   pitchM: number,
+  longitudinalOffsetsM: number[] = [],
 ): ArrangementDescriptor {
   const trains = integer(trainCount, 1, 12);
   const pitch = trains === 1 ? 0 : Math.max(0, pitchM);
   const overallWidthM = definition.trailerWidthM + Math.max(0, trains - 1) * pitch;
+  const offsets = Array.from(
+    { length: trains },
+    (_, index) => Number.isFinite(longitudinalOffsetsM[index]) ? longitudinalOffsetsM[index] : 0,
+  );
+  const minimumOffset = Math.min(...offsets);
+  const maximumOffset = Math.max(...offsets);
   return {
     trailerDefinitionId: definition.id,
     trainCount: trains,
@@ -283,18 +290,114 @@ export function createArrangementDescriptor(
     clearanceM: trains === 1 ? 0 : Math.max(0, pitch - definition.trailerWidthM),
     overallWidthM,
     ppuPosition: settings.ppuPosition,
+    formationMode: maximumOffset - minimumOffset > EPS ? "STAGGERED" : "INLINE",
+    longitudinalOffsetsM: offsets,
+    longitudinalSpanM: maximumOffset - minimumOffset,
   };
+}
+
+export function applyArrangementEnvironmentalActions(model: ProjectModel): {
+  model: ProjectModel;
+  reduced: boolean;
+  detail: string;
+} {
+  const settings = model.arrangementOptimiser;
+  if (!settings.allowReducedEnvironmentalActions) {
+    return {
+      model: {
+        ...model,
+        arrangementOptimiser: {
+          ...settings,
+          reducedEnvironmentalActionsAccepted: false,
+        },
+      },
+      reduced: false,
+      detail: "Project wind and acceleration values retained.",
+    };
+  }
+  const nextWind = Math.max(0, settings.searchWindSpeedMps);
+  const nextLongitudinal = Math.max(0, settings.searchLongitudinalAccelerationMps2);
+  const nextTransverse = Math.max(0, settings.searchTransverseAccelerationMps2);
+  const reduced = settings.reducedEnvironmentalActionsAccepted ||
+    nextWind < model.environment.windSpeedMps - EPS ||
+    nextLongitudinal < model.environment.longitudinalAccelerationMps2 - EPS ||
+    nextTransverse < model.environment.transverseAccelerationMps2 - EPS;
+  return {
+    model: {
+      ...model,
+      engineeringDegree: reduced ? "Third" : model.engineeringDegree,
+      arrangementOptimiser: {
+        ...settings,
+        reducedEnvironmentalActionsAccepted: reduced,
+      },
+      environment: {
+        ...model.environment,
+        windSpeedMps: nextWind,
+        longitudinalAccelerationMps2: nextLongitudinal,
+        transverseAccelerationMps2: nextTransverse,
+      },
+    },
+    reduced,
+    detail: `${reduced ? "Reduced actions accepted; Third-degree verification required" : "Search action override applied without reduction"}: wind ${nextWind.toFixed(3)} m/s, longitudinal acceleration ${nextLongitudinal.toFixed(3)} m/s², transverse acceleration ${nextTransverse.toFixed(3)} m/s².`,
+  };
+}
+
+/**
+ * Bounded non-inline templates. The optimiser checks aligned trains plus
+ * mirrored linear and alternating stagger patterns instead of expanding an
+ * independent X grid for every train.
+ */
+export function longitudinalOffsetCandidates(
+  settings: ArrangementOptimiserSettings,
+  trainCount: number,
+): number[][] {
+  const trains = integer(trainCount, 1, 12);
+  const aligned = Array.from({ length: trains }, () => 0);
+  if (settings.formationMode !== "ALLOW_STAGGERED" || trains < 2) return [aligned];
+  const maximum = Math.max(0, settings.maximumLongitudinalStaggerM);
+  const samples = integer(settings.longitudinalStaggerSamples, 1, 7);
+  if (maximum <= EPS) return [aligned];
+  const candidates: number[][] = [aligned];
+  for (let sample = 1; sample <= samples; sample += 1) {
+    const span = (maximum * sample) / samples;
+    const linear = Array.from(
+      { length: trains },
+      (_, index) => ((index / (trains - 1)) - 0.5) * span,
+    );
+    candidates.push(linear, linear.map((value) => -value));
+  }
+  const normalised = candidates.map((candidate) => {
+    const mean = candidate.reduce((sum, value) => sum + value, 0) / candidate.length;
+    return candidate.map((value) => Math.round((value - mean) * 1e6) / 1e6);
+  });
+  return [...new Map(normalised.map((candidate) => [candidate.join(","), candidate])).values()];
 }
 
 function groupingForTrain(
   index: number,
   trainCount: number,
   axleLines: number,
+  fourPoint: boolean,
 ): HydraulicGrouping {
   const splitAfterAxleLine = Math.max(1, Math.min(axleLines - 1, Math.round(axleLines / 3)));
   const relative = index - (trainCount - 1) / 2;
   const lower = relative < -EPS;
   const upper = relative > EPS;
+  if (fourPoint) {
+    const rearLeft = lower ? 1 : upper ? 2 : 1;
+    const rearRight = lower ? 1 : upper ? 2 : 2;
+    const frontLeft = lower ? 3 : upper ? 4 : 3;
+    const frontRight = lower ? 3 : upper ? 4 : 4;
+    return {
+      splitAfterAxleLine,
+      groups: Array.from(
+        { length: axleLines },
+        (_, axleIndex) => axleIndex < splitAfterAxleLine ? rearLeft : frontLeft,
+      ),
+      cornerGroups: { rearLeft, rearRight, frontLeft, frontRight },
+      pinnedAxleLines: [],
+    };
+  }
   const frontLeft = lower ? 2 : upper ? 3 : 2;
   const frontRight = lower ? 2 : upper ? 3 : 3;
   return {
@@ -327,21 +430,28 @@ export function applyArrangementDescriptor(
   const groupings: HydraulicGrouping[] = [];
   for (let index = 0; index < descriptor.trainCount; index += 1) {
     const transverseOffset = (index - (descriptor.trainCount - 1) / 2) * descriptor.pitchM;
+    const longitudinalOffset = descriptor.longitudinalOffsetsM[index] ?? 0;
     trailers.push({
       id: `arranged-train-${index + 1}`,
       definitionId: descriptor.trailerDefinitionId,
       axleLines: descriptor.axleLinesPerTrain,
       singleFile: false,
-      xM: loadCentreX + centreXOffset,
+      xM: loadCentreX + centreXOffset + longitudinalOffset,
       yM: loadCentreY + transverseOffset,
+      formationOffsetXM: longitudinalOffset,
       placementReference: "ALL_INCLUSIVE_COG",
-      offsetFromReference: { x: centreXOffset, y: transverseOffset },
+      offsetFromReference: { x: centreXOffset + longitudinalOffset, y: transverseOffset },
       ppuLeft: descriptor.ppuPosition === "REAR" || descriptor.ppuPosition === "BOTH",
       ppuRight: descriptor.ppuPosition === "FRONT" || descriptor.ppuPosition === "BOTH",
       enabled: true,
     });
     groupings.push(
-      groupingForTrain(index, descriptor.trainCount, descriptor.axleLinesPerTrain),
+      groupingForTrain(
+        index,
+        descriptor.trainCount,
+        descriptor.axleLinesPerTrain,
+        base.hydraulicSystemMode === "FOUR_POINT",
+      ),
     );
   }
   return {
@@ -440,6 +550,35 @@ export function collectArrangementIssues(
       severity: "blocking",
       title: "Spacing tolerance is invalid",
       detail: "Enter a positive fine-spacing tolerance.",
+    });
+  }
+  if (
+    !["INLINE_ONLY", "ALLOW_STAGGERED"].includes(settings.formationMode) ||
+    !(settings.maximumLongitudinalStaggerM >= 0) ||
+    !Number.isInteger(settings.longitudinalStaggerSamples) ||
+    settings.longitudinalStaggerSamples < 1 ||
+    settings.longitudinalStaggerSamples > 7
+  ) {
+    issues.push({
+      id: "longitudinal-formation",
+      severity: "blocking",
+      title: "Longitudinal formation search is invalid",
+      detail: "Select in-line or bounded staggered formations, a non-negative stagger and 1–7 template samples.",
+    });
+  }
+  if (
+    settings.allowReducedEnvironmentalActions &&
+    [
+      settings.searchWindSpeedMps,
+      settings.searchLongitudinalAccelerationMps2,
+      settings.searchTransverseAccelerationMps2,
+    ].some((value) => !Number.isFinite(value) || value < 0)
+  ) {
+    issues.push({
+      id: "reduced-actions",
+      severity: "blocking",
+      title: "Reduced environmental actions are invalid",
+      detail: "Wind speed and both acceleration values must be finite and non-negative.",
     });
   }
   if (
@@ -547,5 +686,5 @@ export function arrangementSummary(descriptor: ArrangementDescriptor): string {
     descriptor.modules5 ? `${descriptor.modules5}×5` : "",
     descriptor.modules4 ? `${descriptor.modules4}×4` : "",
   ].filter(Boolean).join(" + ");
-  return `${descriptor.trainCount} train${descriptor.trainCount === 1 ? "" : "s"}; ${descriptor.axleLinesPerTrain} AL/train (${modules}); ${descriptor.totalAxleLines} AL total; ${descriptor.overallWidthM.toFixed(3)} m wide`;
+  return `${descriptor.trainCount} train${descriptor.trainCount === 1 ? "" : "s"}; ${descriptor.axleLinesPerTrain} AL/train (${modules}); ${descriptor.totalAxleLines} AL total; ${descriptor.overallWidthM.toFixed(3)} m wide; ${descriptor.formationMode === "STAGGERED" ? `${descriptor.longitudinalSpanM.toFixed(3)} m longitudinal stagger` : "in-line"}`;
 }

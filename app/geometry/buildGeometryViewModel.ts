@@ -44,6 +44,7 @@ export const GROUP_COLOURS: Record<number, string> = {
   1: "#22d3ee",
   2: "#f59e0b",
   3: "#a78bfa",
+  4: "#34d399",
 };
 
 export const COG_COLOURS = {
@@ -383,7 +384,10 @@ export function buildGeometryViewModel(
     reactionFraction: group.reactionFraction,
   }));
 
-  const groups: HydraulicGroup[] = [1, 2, 3].map((groupId) => {
+  const groups: HydraulicGroup[] = Array.from(
+    { length: model.hydraulicSystemMode === "FOUR_POINT" ? 4 : 3 },
+    (_, index) => index + 1,
+  ).map((groupId) => {
     const groupBogies = bogies.filter((bogie) => bogie.groupId === groupId);
     const groupAxles = axleLines.filter((axle) => axle.groupIds.includes(groupId));
     const centre = groupCentres.find((item) => item.groupId === groupId);
@@ -791,18 +795,29 @@ export function buildGeometryViewModel(
     };
   });
 
+  const stabilityBoundaryName = result.stabilityPolygon.length === 3
+    ? "Stability triangle"
+    : "Stability polygon";
   const stabilityBoundary: StabilityBoundary = {
     ...base("stability-boundary", "stability-boundary", { ...result.stabilityPolygon[0] ?? result.combinedCog, z: 0 }, {
-      active: result.stabilityPolygon.length === 3,
-      selection: selection("stability-boundary", "Stability triangle", "Stability", false),
-      label: label("Stability triangle"),
+      active: result.stabilityPolygon.length >= 3,
+      selection: selection("stability-boundary", stabilityBoundaryName, "Stability", false),
+      label: label(stabilityBoundaryName),
       source: "Engine: stabilityPolygon",
     }),
     points: result.stabilityPolygon,
     closed: true,
   };
 
-  const edgePairs: Array<[number, number]> = [[0, 1], [1, 2], [2, 0]];
+  // The engine returns the convex stability boundary in perimeter order. Build
+  // every perimeter edge from that result so three-point systems close as a
+  // triangle and four-point systems close as a quadrilateral. The previous
+  // fixed 0-1, 1-2, 2-0 list drew a diagonal across four-point boundaries and
+  // made the visual fall back to a triangle even though the engine had four
+  // valid corners.
+  const edgePairs: Array<[number, number]> = result.stabilityPolygon.map(
+    (_point, index) => [index, (index + 1) % result.stabilityPolygon.length],
+  );
   const tippingEdges: TippingEdge[] = edgePairs
     .filter(([start, end]) => result.stabilityPolygon[start] && result.stabilityPolygon[end])
     .map(([start, end], edgeIndex) => {

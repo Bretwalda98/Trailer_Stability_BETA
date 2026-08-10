@@ -47,7 +47,7 @@ test("server-renders the standalone engineering workbench", async () => {
 });
 
 test("keeps phone, offline and workbook-verification capabilities wired", async () => {
-  const [page, layout, manifest, workbench, optimiserDrawer, engineHook, worker, planView, css, serviceWorker, setupWizard, optimiserWizard, optimiserWizardEngine, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine] = await Promise.all([
+  const [page, layout, manifest, workbench, optimiserDrawer, engineHook, worker, planView, endView, sideView, css, serviceWorker, setupWizard, optimiserWizard, optimiserWizardEngine, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
@@ -56,6 +56,8 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
     readFile(new URL("../app/hooks/useEngineeringEngine.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/workers/engineering.worker.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/components/workbench/views/PlanView.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/workbench/views/EndView.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/workbench/views/SideView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../app/components/workbench/SetupWizard.tsx", import.meta.url), "utf8"),
@@ -84,6 +86,10 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(engineHook, /message\.detailIncluded/);
   assert.match(planView, /buildHydraulicRouteSegments/);
   assert.match(planView, /stabilityBoundary/);
+  assert.match(endView, /cross slope represented by shifted COG envelope/);
+  assert.doesNotMatch(endView, /Math\.tan\(\(model\.environment\.transverseSlopeDeg/);
+  assert.match(sideView, /longitudinal slope represented by shifted COG envelope/);
+  assert.doesNotMatch(sideView, /Math\.tan\(\(model\.environment\.longitudinalSlopeDeg/);
   assert.match(css, /--bg:\s*#050505/);
   assert.match(css, /@media \(max-width:\s*780px\)/);
   assert.match(css, /@media \(max-width:\s*450px\)/);
