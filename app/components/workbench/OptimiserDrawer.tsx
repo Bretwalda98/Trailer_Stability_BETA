@@ -150,7 +150,7 @@ export function OptimiserDrawer({
   return (
     <section className={`optimiser-drawer${open ? " open" : ""}`}>
       <button className="drawer-handle" onClick={() => onOpenChange(!open)} aria-expanded={open}>
-        <span><IconTargetArrow size={15} /> {arrangementRun ? "Automatic arrangement" : "Optimisation"} · {run.state}</span>
+        <span><IconTargetArrow size={15} /> Arrangement search · {run.state}</span>
         <span>
           {run.progress.reference || "No active case"} · {run.passes.length} evaluated ·{" "}
           {ranked.length} valid
@@ -269,18 +269,18 @@ export function OptimiserDrawer({
 
           <div className="optimiser-log terminal-log">
             <header>
-              <div className="terminal-heading"><b>Live activity terminal</b><span>Showing {visibleTerminalEvents.length} of {run.events.length} diagnostic events</span></div>
+              <div className="terminal-heading"><b>Search activity</b><span>Showing {visibleTerminalEvents.length} of {run.events.length} recorded events</span></div>
               <div className="terminal-actions">
                 <button onClick={() => void copyTerminal("visible")} disabled={!visibleTerminalText}><IconCopy size={13} /> {copiedLog === "visible" ? "Copied" : "Copy visible"}</button>
                 <button onClick={() => void copyTerminal("full")} disabled={!fullTerminalText}><IconCopy size={13} /> {copiedLog === "full" ? "Copied" : "Copy complete log"}</button>
                 <button onClick={() => downloadText(fullTerminalText, `${run.runReference || "optimiser"}-diagnostic.log`, "text/plain;charset=utf-8")} disabled={!fullTerminalText}><IconDownload size={13} /> Save log</button>
               </div>
             </header>
-            <div className="terminal-output" role="log" aria-live="polite" aria-label="Detailed optimiser diagnostic terminal">
+            <div className="terminal-output" role="log" aria-live="polite" aria-label="Detailed arrangement-search activity log">
               {visibleTerminalEvents.map((event) => (
                 <pre key={event.id} className={`terminal-entry terminal-${event.level.toLowerCase()}`}>{terminalEventText(event)}</pre>
               ))}
-              {!visibleTerminalEvents.length && <pre className="terminal-empty">No diagnostic activity has been recorded.</pre>}
+              {!visibleTerminalEvents.length && <pre className="terminal-empty">No search activity has been recorded.</pre>}
             </div>
             <footer className="terminal-footer">The display is limited to the latest {MAX_VISIBLE_TERMINAL_EVENTS} events for responsiveness. Copy complete log includes the full chronological run.</footer>
           </div>

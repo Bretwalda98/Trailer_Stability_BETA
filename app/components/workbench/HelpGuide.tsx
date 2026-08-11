@@ -14,7 +14,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
-export const HELP_GUIDE_REVISION = "Interface revision 0.7.9 · reviewed 9 August 2026";
+export const HELP_GUIDE_REVISION = "Professional workbench revision 0.8.0 · reviewed 11 August 2026";
 
 const GUIDE_SECTIONS = [
   {
@@ -22,14 +22,14 @@ const GUIDE_SECTIONS = [
     label: "Quick start",
     icon: IconSettings,
     title: "Set up a calculation-ready case",
-    intro: "Use the guided setup when creating, importing or revising a transport case.",
+    intro: "Every new case starts in the arrangement-search wizard. Existing cases can be opened from project JSON or a verification workbook.",
     steps: [
-      "At startup, choose Mathematical arrangement optimiser, Build an arrangement manually, or Open saved file. Continue saved case resumes the project stored on this device.",
-      "Select Set up case in the top bar whenever you want to reopen the wizard.",
-      "Blank case starts with no cargo, trailers, hydraulics or supports on the drawing. The arrangement appears only as you enter setup data.",
-      "Work through case basics, cargo, packing, trailers, hydraulics, supports and review.",
-      "Resolve blocking findings. Engineering-limit NOK results remain visible but do not prevent saving a geometrically valid setup.",
-      "Choose Finish setup, or Finish & run optimisation when you are ready to search alternatives.",
+      "Choose New arrangement search to start blank, Open case to load a file, or Continue case on this device to resume local work.",
+      "Work through Cargo & case, Packing & supports, Trailer & PPU, Search limits, then Check & run.",
+      "A new case contains no trailer formation. The search builds geometry only after the required inputs are entered and a result is applied.",
+      "Resolve each blocking finding before moving on. Warnings remain visible and do not silently change engineering inputs.",
+      "Select Run arrangement search on the final step. Progress, ranked candidates and the complete activity log open below the workbench.",
+      "Use Edit inputs in the top bar after setup when you need direct access to every retained case input.",
     ],
   },
   {
@@ -51,9 +51,10 @@ const GUIDE_SECTIONS = [
     label: "Workspace",
     icon: IconLayoutSidebarLeftCollapse,
     title: "Navigate without losing the model tree",
-    intro: "The left rail separates the application workspace from the objects in the active model.",
+    intro: "The left navigator combines the analysis workspace selector and the active model tree.",
     steps: [
-      "Select WORKSPACE to fold the workspace list open or closed.",
+      "Use Model navigator to collapse the whole left panel when the drawing needs more room; the compact analysis icons remain available.",
+      "Select WORKSPACE to choose Arrangement, Hydraulics, Load cases, Stability, Spine beam or Report.",
       "Use the model tree to select cargo, trailers, axle lines, supports and hydraulic groups.",
       "On a phone, use View, Model and Results to move between the drawing, model tree and result editor.",
       "The Plan, End, Side, Hydraulics, Stability and Spine beam views all use the current authoritative result.",
@@ -103,29 +104,13 @@ const GUIDE_SECTIONS = [
     ],
   },
   {
-    id: "optimisation",
-    label: "Optimisation",
-    icon: IconPlayerPlay,
-    title: "Run and review the optimiser",
-    intro: "The optimiser keeps the engineering sequence and support-settling logic for every retained case.",
-    steps: [
-      "Select Run optimisation in the top bar to open the guided optimiser wizard.",
-      "Work through goal, search range, pass rules, pin search, refinement, weighting and review. Amber fields or blocking findings must be corrected before the run can start.",
-      "The live plan shows the coarse-case count and upper estimates for pin and refinement work. Automatic hydraulic-boundary searches finalise their exact total while running.",
-      "Choose Apply & start optimisation. The settings are applied, the active case is recalculated, then progress, ETA, activity and ranked passes appear in the optimisation drawer.",
-      "Experienced users can still choose Run with current optimiser settings from the top-bar More menu, or edit every field directly in the Optimise workspace.",
-      "Stop retains completed work. Apply a ranked pass only when you want it to replace the active setup.",
-      "The winning pass is recalculated and verified before the run reaches 100%.",
-    ],
-  },
-  {
     id: "arrangement",
-    label: "Auto arrangement",
+    label: "Arrangement search",
     icon: IconPlayerPlay,
     title: "Find the minimum constructible SPMT arrangement",
-    intro: "This separate optimiser designs in-line or bounded staggered train formations before applying the exact engineering search to retained cases.",
+    intro: "This is the product's single optimisation workflow. It designs in-line or bounded staggered train formations and verifies every retained case with the engineering engine.",
     steps: [
-      "Choose Mathematical arrangement optimiser on the start screen, or Open mathematical arrangement wizard from the top-bar More menu.",
+      "Choose New arrangement search on the start screen or Find arrangement in the top bar.",
       "Enter the cargo, cargo COG, packing, trailer deck height and packing supports. New mathematical-search cases begin blank and do not insert a trailer arrangement before the search finishes.",
       "Choose the trailer family, PPU location (none, rear, front or both ends) and available 4-, 5- and 6-axle-line modules.",
       "Set train-count, stock and formation limits. A per-train axle count is eligible only when it is exactly constructible from the enabled module sizes.",
@@ -258,7 +243,7 @@ export function HelpGuide({
 
         <footer>
           <span>{HELP_GUIDE_REVISION}</span>
-          <span>Guide coverage: setup · wind · hydraulics · road transport · results · optimisation · arrangement · phone</span>
+          <span>Guide coverage: setup · wind · hydraulics · road transport · results · arrangement search · exchange · phone</span>
         </footer>
       </div>
     </dialog>

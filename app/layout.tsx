@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./professional-workbench.css";
 import { assetPath } from "./site-path";
 
 export const metadata: Metadata = {
-  title: "Trailer Stability | Native Engineering Suite",
-  description: "Standalone trailer stability and optimiser application.",
+  title: "Trailer Stability | SPMT Engineering Workbench",
+  description: "Standalone SPMT arrangement, stability and verification workbench.",
   manifest: assetPath("/manifest.webmanifest"),
   icons: {
     icon: assetPath("/favicon.svg"),

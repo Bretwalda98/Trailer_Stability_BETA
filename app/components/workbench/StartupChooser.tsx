@@ -4,7 +4,6 @@ import {
   IconFileImport,
   IconFolderOpen,
   IconLoader2,
-  IconPlus,
   IconRestore,
   IconTargetArrow,
 } from "@tabler/icons-react";
@@ -15,7 +14,6 @@ interface StartupChooserProps {
   busy: boolean;
   hasLocalProject: boolean;
   onFastArrangement(): void;
-  onNewSetup(): void;
   onOpenFile(file: File): Promise<boolean>;
   onContinue(): void;
 }
@@ -25,7 +23,6 @@ export function StartupChooser({
   busy,
   hasLocalProject,
   onFastArrangement,
-  onNewSetup,
   onOpenFile,
   onContinue,
 }: StartupChooserProps) {
@@ -64,33 +61,25 @@ export function StartupChooser({
     >
       <div className="startup-choice-shell">
         <header>
-          <span>TRAILER STABILITY</span>
-          <h2 id="startup-choice-title">How would you like to start?</h2>
-          <p>Start a guided setup or open a case you saved earlier.</p>
+          <span>SPMT ARRANGEMENT AND STABILITY</span>
+          <h2 id="startup-choice-title">Start a case</h2>
+          <p>Create a new arrangement search or open existing case data.</p>
         </header>
 
         <div className="startup-choice-options">
           <button ref={newSetupRef} className="startup-primary startup-fast-arrangement" disabled={busy} onClick={onFastArrangement}>
             <IconTargetArrow size={22} />
             <span>
-              <b>Mathematical arrangement optimiser</b>
-              <small>Find the fewest trains and axle lines using capacity bounds, exact module rules, COG-height stability spacing and solved X/Y limits.</small>
-            </span>
-          </button>
-
-          <button disabled={busy} onClick={onNewSetup}>
-            <IconPlus size={22} />
-            <span>
-              <b>Build an arrangement manually</b>
-              <small>Use the complete legacy seven-step case, trailer and hydraulics setup.</small>
+              <b>New arrangement search</b>
+              <small>Define route conditions, cargo, packing, supports and available SPMT stock, then find the minimum buildable formation.</small>
             </span>
           </button>
 
           <button disabled={busy} onClick={() => fileInputRef.current?.click()}>
             {busy ? <IconLoader2 className="spin" size={22} /> : <IconFolderOpen size={22} />}
             <span>
-              <b>{busy ? "Opening file…" : "Open saved file"}</b>
-              <small>Load a standalone project or an exported verification file.</small>
+              <b>{busy ? "Opening file…" : "Open case"}</b>
+              <small>Open project JSON or a verification workbook from this device.</small>
             </span>
           </button>
         </div>
@@ -99,8 +88,8 @@ export function StartupChooser({
           <button className="startup-continue" disabled={busy} onClick={onContinue}>
             <IconRestore size={17} />
             <span>
-              <b>Continue saved case</b>
-              <small>Resume the case stored on this device.</small>
+              <b>Continue case on this device</b>
+              <small>Resume the last locally saved project.</small>
             </span>
           </button>
         )}
@@ -109,7 +98,7 @@ export function StartupChooser({
 
         <footer>
           <IconFileImport size={14} />
-          Files and engineering calculations stay local in this browser. Legacy optimiser controls remain available after opening a case.
+          Project data and engineering calculations remain on this device unless you export a file.
         </footer>
 
         <input

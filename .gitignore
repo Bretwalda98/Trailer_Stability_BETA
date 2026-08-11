@@ -41,6 +41,7 @@ next-env.d.ts
 /outputs/
 /work/
 /test-output/
+/qa-evidence/
 /.devserver.log
 /.devserver.err
 *.tsbuildinfo

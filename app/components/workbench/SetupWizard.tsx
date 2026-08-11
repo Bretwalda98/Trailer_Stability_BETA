@@ -9,11 +9,11 @@ import {
   IconFileImport,
   IconLayersSubtract,
   IconLoader2,
-  IconPlayerPlay,
   IconPlus,
   IconRefresh,
   IconRuler2,
   IconSettings,
+  IconTargetArrow,
   IconTrash,
   IconTruck,
   IconUpload,
@@ -1300,7 +1300,7 @@ export function SetupWizard({
               <button type="button" className="wizard-primary" disabled={!canContinue} onClick={next}>Next <IconChevronRight size={15} /></button>
             ) : (
               <>
-                <button type="button" className="wizard-run-finish" disabled={!finishReady} onClick={() => finish(true)}><IconPlayerPlay size={15} /> Finish & run optimisation</button>
+                <button type="button" className="wizard-run-finish" disabled={!finishReady} onClick={() => finish(true)}><IconTargetArrow size={15} /> Finish & define search</button>
                 <button type="button" className="wizard-primary" disabled={!finishReady} onClick={() => finish(false)}><IconCheck size={15} /> Finish setup</button>
               </>
             )}

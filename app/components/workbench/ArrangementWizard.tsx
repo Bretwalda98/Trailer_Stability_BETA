@@ -2,6 +2,8 @@
 
 import {
   IconAlertTriangle,
+  IconArrowsMaximize,
+  IconArrowsMinimize,
   IconBox,
   IconCheck,
   IconChevronLeft,
@@ -42,11 +44,11 @@ type StepId = "cargo" | "packing" | "trailer" | "search" | "review";
 type InitialSource = "CURRENT" | "BLANK";
 
 const STEPS: Array<{ id: StepId; label: string; description: string; icon: ReactNode }> = [
-  { id: "cargo", label: "Cargo", description: "Envelope, mass and COG", icon: <IconBox size={17} /> },
+  { id: "cargo", label: "Cargo & case", description: "Envelope, mass and COG", icon: <IconBox size={17} /> },
   { id: "packing", label: "Packing & supports", description: "Packing, deck and load supports", icon: <IconGauge size={17} /> },
-  { id: "trailer", label: "Trailer stock", description: "Model, modules and PPU", icon: <IconTruck size={17} /> },
-  { id: "search", label: "Math search", description: "Bounds, spacing and method", icon: <IconRoute size={17} /> },
-  { id: "review", label: "Review & run", description: "Preflight and start", icon: <IconCheck size={17} /> },
+  { id: "trailer", label: "Trailer & PPU", description: "Model, modules and PPU", icon: <IconTruck size={17} /> },
+  { id: "search", label: "Search limits", description: "Bounds, spacing and method", icon: <IconRoute size={17} /> },
+  { id: "review", label: "Check & run", description: "Preflight and start", icon: <IconCheck size={17} /> },
 ];
 
 interface ArrangementWizardProps {
@@ -210,6 +212,7 @@ export function ArrangementWizard({
   const [initialised, setInitialised] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
 
   const settings = draftModel.arrangementOptimiser;
   const environmentalSelection = useMemo(
@@ -353,7 +356,7 @@ export function ArrangementWizard({
 
   const renderCargo = () => (
     <>
-      <FormSection title="Cargo case" description="Start with the load that the optimiser must support.">
+      <FormSection title="Cargo case" description="Start with the load that the arrangement must support.">
         <div className="wizard-field-grid two">
           <TextField label="Case / cargo name" value={draftModel.cargo.name} required onChange={(name) => updateCargo({ name })} />
           <TextField label="Client reference" value={draftModel.cargo.clientReference} onChange={(clientReference) => updateCargo({ clientReference })} />
@@ -709,7 +712,7 @@ export function ArrangementWizard({
           : renderReview();
 
   const discard = () => {
-    if (!window.confirm("Discard this fast-arrangement draft?")) return;
+    if (!window.confirm("Discard this arrangement-search draft?")) return;
     localStorage.removeItem(ARRANGEMENT_WIZARD_DRAFT_KEY);
     onClose();
   };
@@ -726,14 +729,14 @@ export function ArrangementWizard({
 
   return (
     <dialog ref={dialogRef} className="setup-wizard-dialog arrangement-wizard-dialog" aria-labelledby="arrangement-wizard-title" onCancel={(event) => { event.preventDefault(); onClose(); }}>
-      <div className="setup-wizard-shell optimiser-wizard-shell arrangement-wizard-shell">
+      <div className={`setup-wizard-shell optimiser-wizard-shell arrangement-wizard-shell${previewExpanded ? " preview-expanded" : ""}`}>
         <header className="setup-wizard-header">
-          <div><span>MATHEMATICAL TRAILER ARRANGEMENT</span><h2 id="arrangement-wizard-title">{currentStep.label}</h2></div>
+          <div><span>ARRANGEMENT SEARCH</span><h2 id="arrangement-wizard-title">{currentStep.label}</h2></div>
           <div className="setup-wizard-mobile-progress"><span>{stepIndex + 1} / {STEPS.length} · {currentStep.label}</span><div><i style={{ width: `${((stepIndex + 1) / STEPS.length) * 100}%` }} /></div></div>
           <button type="button" className="icon-button" aria-label="Save draft and close" onClick={onClose}><IconX size={16} /></button>
         </header>
         <nav className="setup-wizard-rail" aria-label="Mathematical arrangement setup steps">
-          <div className="setup-wizard-rail-title"><span>MATHEMATICAL SEARCH</span><b>Find minimum SPMT formation</b></div>
+          <div className="setup-wizard-rail-title"><span>ARRANGEMENT SEARCH</span><b>Find minimum SPMT formation</b></div>
           <ol>{STEPS.map((item, index) => { const active = item.id === step; const complete = index < stepIndex; return <li key={item.id}><button type="button" className={`${active ? "active" : ""}${complete ? " complete" : ""}`} onClick={() => setStep(item.id)}><i>{complete ? <IconCheck size={13} /> : item.icon}</i><span><b>{item.label}</b><small>{item.description}</small></span></button></li>; })}</ol>
           <div className="setup-wizard-rail-footer"><span><i className="ok" /> Exact retained calculations</span><span>{draftSavedAt ? `Draft saved ${new Date(draftSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Draft autosave pending"}</span></div>
         </nav>
@@ -744,7 +747,7 @@ export function ArrangementWizard({
           {step !== "review" && stepIssues.length > 0 && <FormSection title="Step preflight"><div className="wizard-issue-list">{stepIssues.map((issue) => <div key={issue.id} className={issue.severity}><IconAlertTriangle size={14} /><span><b>{issue.title}</b><small>{issue.detail}</small></span></div>)}</div></FormSection>}
         </section>
         <section className="setup-wizard-preview arrangement-wizard-preview" aria-label="Mathematical arrangement plan">
-          <div className="setup-wizard-preview-status"><div><span>LIVE MATHEMATICAL PLAN</span><b>{draftModel.cargo.name || "New arrangement case"}</b></div><div className={calculating ? "working" : "ready"}>{calculating && <IconLoader2 size={14} />}<span>{calculating ? "Active case updating" : "Draft inputs ready"}</span></div></div>
+          <div className="setup-wizard-preview-status"><div><span>SEARCH PLAN</span><b>{draftModel.cargo.name || "New arrangement case"}</b></div><div className="wizard-preview-status-actions"><div className={calculating ? "working" : "ready"}>{calculating && <IconLoader2 size={14} />}<span>{calculating ? "Active case updating" : "Inputs ready"}</span></div><button type="button" className="mobile-preview-toggle" onClick={() => setPreviewExpanded((current) => !current)} aria-expanded={previewExpanded} aria-label={previewExpanded ? "Return to inputs" : "Expand preview"}>{previewExpanded ? <IconArrowsMinimize size={14} /> : <IconArrowsMaximize size={14} />}<span>{previewExpanded ? "Return to inputs" : "Expand preview"}</span></button></div></div>
           <div className="arrangement-preview-hero"><span>CAPACITY-DERIVED START</span><b>{minimumCapacityStart} <small>total AL</small></b><p>Gross load, trailer tare, selected PPU mass and the axle-utilisation limit are included before module rounding.</p></div>
           <div className="arrangement-plan-table">
             <header><b>First buildable candidates</b><span>{settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? `${plannedSearches.toLocaleString()} bounded formation levels` : settings.searchMode === "ADAPTIVE_BOUNDED" ? `${plannedSearches.toLocaleString()} bounded seed cases` : `${plannedSearches.toLocaleString()} legacy formation searches`}</span></header>
@@ -756,7 +759,7 @@ export function ArrangementWizard({
         </section>
         <footer className="setup-wizard-footer">
           <div className="setup-wizard-footer-secondary"><button type="button" className="wizard-discard" onClick={discard}><IconTrash size={14} /> Discard</button><button type="button" onClick={reset}><IconTargetArrow size={14} /> Reset {initialSourceType === "BLANK" ? "blank" : "current"}</button><button type="button" disabled={blocking.length > 0} onClick={() => apply(false)}>Save case & close</button></div>
-          <div className="setup-wizard-footer-primary">{stepIndex > 0 && <button type="button" onClick={() => setStep(STEPS[stepIndex - 1].id)}><IconChevronLeft size={15} /> Back</button>}{step !== "review" ? <button type="button" className="wizard-primary" disabled={!canContinue} onClick={() => setStep(STEPS[Math.min(STEPS.length - 1, stepIndex + 1)].id)}>Next <IconChevronRight size={15} /></button> : <button type="button" className="wizard-primary optimiser-start-action" disabled={!canRun} onClick={() => apply(true)}><IconPlayerPlay size={15} /> Run mathematical search</button>}</div>
+          <div className="setup-wizard-footer-primary">{stepIndex > 0 && <button type="button" onClick={() => setStep(STEPS[stepIndex - 1].id)}><IconChevronLeft size={15} /> Back</button>}{step !== "review" ? <button type="button" className="wizard-primary" disabled={!canContinue} onClick={() => setStep(STEPS[Math.min(STEPS.length - 1, stepIndex + 1)].id)}>Next <IconChevronRight size={15} /></button> : <button type="button" className="wizard-primary optimiser-start-action" disabled={!canRun} onClick={() => apply(true)}><IconPlayerPlay size={15} /> Run arrangement search</button>}</div>
         </footer>
       </div>
     </dialog>
