@@ -1,6 +1,7 @@
 import type {
   ArrangementDescriptor,
   ArrangementOptimiserSettings,
+  CargoSupport,
   HydraulicGrouping,
   ProjectModel,
   TrailerDefinition,
@@ -296,6 +297,58 @@ export function createArrangementDescriptor(
   };
 }
 
+/**
+ * Longitudinal COG of the cargo plus declared packing, using the same rear
+ * datum convention as the engineering engine. Loose packing is deliberately
+ * excluded because its rows redistribute the declared packing mass for the
+ * beam check rather than adding a second copy of that mass.
+ */
+export function payloadCogX(model: ProjectModel): number {
+  const cargoMass = Math.max(0, model.cargo.massT);
+  const packingMass = Math.max(0, model.packing.massT);
+  const total = cargoMass + packingMass;
+  const cargoX = model.cargo.extremeX + model.cargo.cog.x;
+  const packingX = model.cargo.extremeX + model.packing.cog.x;
+  return total > EPS
+    ? (cargoMass * cargoX + packingMass * packingX) / total
+    : model.cargo.extremeX + model.cargo.lengthM / 2;
+}
+
+/**
+ * Produces a transparent, user-editable four-support starting layout. Two
+ * supports are placed on each side of the declared payload COG instead of
+ * blindly dividing the cargo length. This prevents a strongly offset COG from
+ * leaving every proposed support on one side of the applied load.
+ */
+export function recommendedPackingSupports(
+  model: ProjectModel,
+  supportWidthM = 0.5,
+): CargoSupport[] {
+  const lengthM = Math.max(0, model.cargo.lengthM);
+  const widthM = Math.max(0.001, Math.min(supportWidthM, Math.max(0.001, lengthM / 5)));
+  const minimumX = model.cargo.extremeX + widthM / 2;
+  const maximumX = model.cargo.extremeX + lengthM - widthM / 2;
+  const centreX = (minimumX + maximumX) / 2;
+  const boundedCogX = Math.max(minimumX, Math.min(maximumX, payloadCogX(model)));
+  const leftSpan = Math.max(0, boundedCogX - minimumX);
+  const rightSpan = Math.max(0, maximumX - boundedCogX);
+  const proposed = maximumX > minimumX
+    ? [
+        minimumX + 0.3 * leftSpan,
+        minimumX + 0.72 * leftSpan,
+        boundedCogX + 0.35 * rightSpan,
+        boundedCogX + 0.85 * rightSpan,
+      ]
+    : [centreX, centreX, centreX, centreX];
+  return proposed.map((xM, index) => ({
+    id: `recommended-support-${index + 1}`,
+    xM,
+    widthM,
+    allowed: true,
+    active: true,
+  }));
+}
+
 export function applyArrangementEnvironmentalActions(model: ProjectModel): {
   model: ProjectModel;
   reduced: boolean;
@@ -478,6 +531,22 @@ export function collectArrangementIssues(
 ): ArrangementIssue[] {
   const issues: ArrangementIssue[] = [];
   const definition = selectedDefinition(model, settings);
+  const allowedSupportXs = model.supports
+    .filter((support) => support.allowed && Number.isFinite(support.xM))
+    .map((support) => support.xM);
+  if (allowedSupportXs.length >= 2) {
+    const loadX = payloadCogX(model);
+    const rearSupportX = Math.min(...allowedSupportXs);
+    const frontSupportX = Math.max(...allowedSupportXs);
+    if (loadX <= rearSupportX + EPS || loadX >= frontSupportX - EPS) {
+      issues.push({
+        id: "support-cog-bracketing",
+        severity: "warning",
+        title: "Packing supports do not bracket the payload COG",
+        detail: `The cargo-and-packing COG is at X ${loadX.toFixed(3)} m, while allowed support centres span X ${rearSupportX.toFixed(3)} to ${frontSupportX.toFixed(3)} m. Support settling is likely to leave only one active support. Confirm the physical packing positions or use the COG-spanning support proposal.`,
+      });
+    }
+  }
   if (!["MATHEMATICAL_BRANCH_BOUND", "ADAPTIVE_BOUNDED", "LEGACY_GRID"].includes(settings.searchMode)) {
     issues.push({
       id: "search-mode",

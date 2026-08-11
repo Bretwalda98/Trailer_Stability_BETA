@@ -8,11 +8,11 @@ import {
   IconCirclePlus,
   IconFileReport,
   IconGeometry,
-  IconHierarchy2,
   IconLayoutGrid,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
   IconRoute,
   IconSettings,
-  IconSparkles,
   IconSquarePlus,
   IconTruck,
 } from "@tabler/icons-react";
@@ -26,13 +26,11 @@ const WORKSPACES: Array<{
   label: string;
   icon: React.ComponentType<{ size?: number; stroke?: number }>;
 }> = [
-  { id: "model", label: "Model", icon: IconHierarchy2 },
-  { id: "geometry", label: "Geometry", icon: IconGeometry },
+  { id: "geometry", label: "Arrangement", icon: IconGeometry },
   { id: "hydraulics", label: "Hydraulics", icon: IconRoute },
   { id: "load-cases", label: "Load cases", icon: IconLayoutGrid },
   { id: "stability", label: "Stability", icon: IconChartLine },
   { id: "spine-beam", label: "Spine beam", icon: IconSettings },
-  { id: "optimise", label: "Optimise", icon: IconSparkles },
   { id: "report", label: "Report", icon: IconFileReport },
 ];
 
@@ -41,6 +39,8 @@ interface ModelTreeProps {
   vm: GeometryViewModel;
   workspace: WorkspaceId;
   selectedId: string;
+  collapsed: boolean;
+  onCollapsedChange(collapsed: boolean): void;
   onWorkspaceChange(workspace: WorkspaceId): void;
   onSelect(id: string): void;
   onModelChange(model: ProjectModel): void;
@@ -52,6 +52,8 @@ export function ModelTree({
   vm,
   workspace,
   selectedId,
+  collapsed,
+  onCollapsedChange,
   onWorkspaceChange,
   onSelect,
   onModelChange,
@@ -98,7 +100,33 @@ export function ModelTree({
   };
 
   return (
-    <aside className="model-tree" aria-label="Workspace and model navigation">
+    <aside className={`model-tree${collapsed ? " is-collapsed" : ""}`} aria-label="Workspace and model navigation">
+      <button
+        type="button"
+        className="model-tree-collapse"
+        aria-label={collapsed ? "Show model navigator" : "Hide model navigator"}
+        title={collapsed ? "Show model navigator" : "Hide model navigator"}
+        onClick={() => onCollapsedChange(!collapsed)}
+      >
+        {collapsed ? <IconLayoutSidebarLeftExpand size={16} /> : <IconLayoutSidebarLeftCollapse size={16} />}
+        {!collapsed && <span>Model navigator</span>}
+      </button>
+
+      {collapsed ? (
+        <nav className="workspace-shortcuts" aria-label="Analysis workspace">
+          {WORKSPACES.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              className={workspace === id ? "active" : ""}
+              aria-label={label}
+              title={label}
+              onClick={() => onWorkspaceChange(id)}
+            >
+              <Icon size={17} stroke={1.7} />
+            </button>
+          ))}
+        </nav>
+      ) : <>
       <div className={`workspace-navigation${workspaceOpen ? " open" : ""}`}>
         <button
           type="button"
@@ -209,6 +237,7 @@ export function ModelTree({
         <span>Force <em>kN</em></span>
         <span>Angle <em>°</em></span>
       </div>
+      </>}
     </aside>
   );
 }

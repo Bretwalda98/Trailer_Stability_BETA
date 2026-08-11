@@ -180,6 +180,11 @@ export function rankArrangementPasses(passes: PassResult[], model: ProjectModel)
         leftArrangement.trainCount - rightArrangement.trainCount ||
         leftArrangement.totalAxleLines - rightArrangement.totalAxleLines ||
         leftQuality.cargoOnlyPassPriority - rightQuality.cargoOnlyPassPriority ||
+        // Once the economic objectives and cargo-only preference are equal,
+        // use the operator's standard pitch before spending extra formation
+        // width merely to increase an already-passing stability margin.
+        Math.abs(leftArrangement.pitchM - preferredPitch) -
+          Math.abs(rightArrangement.pitchM - preferredPitch) ||
         rightQuality.supportReserve - leftQuality.supportReserve ||
         rightQuality.stabilityMargin - leftQuality.stabilityMargin ||
         leftQuality.peakUtilisation - rightQuality.peakUtilisation ||
@@ -187,8 +192,6 @@ export function rankArrangementPasses(passes: PassResult[], model: ProjectModel)
         rightQuality.hydraulicAltitude - leftQuality.hydraulicAltitude ||
         leftQuality.groupBalance - rightQuality.groupBalance ||
         leftArrangement.longitudinalSpanM - rightArrangement.longitudinalSpanM ||
-        Math.abs(leftArrangement.pitchM - preferredPitch) -
-          Math.abs(rightArrangement.pitchM - preferredPitch) ||
         (left.rating ?? Infinity) - (right.rating ?? Infinity) ||
         left.sequence - right.sequence
       );
@@ -682,6 +685,31 @@ export async function runArrangementOptimiser(
           for (const seed of independentPitchCandidates) {
             const outcome = await testPitch(seed);
             if (outcome.passed) passingSeeds.push(seed);
+          }
+          const preferredOutcome = await testPitch(preferred);
+          if (!preferredOutcome.passed && passingSeeds.length) {
+            let nearestPassingPitch = passingSeeds.reduce((best, value) =>
+              Math.abs(value - preferred) < Math.abs(best - preferred) ? value : best,
+            );
+            let failingPitch = preferred;
+            const tolerance = Math.max(1e-6, settings.spacingToleranceM);
+            let rounds = 0;
+            while (Math.abs(nearestPassingPitch - failingPitch) > tolerance && rounds < 32) {
+              const midpoint = (nearestPassingPitch + failingPitch) / 2;
+              const outcome = await testPitch(midpoint);
+              if (outcome.passed) nearestPassingPitch = midpoint;
+              else failingPitch = midpoint;
+              rounds += 1;
+            }
+            passingSeeds.push(nearestPassingPitch);
+            addEvent(
+              run,
+              started,
+              "Bound",
+              "Nearest passing pitch converged",
+              `The preferred ${preferred.toFixed(3)} m pitch did not pass. The closest passing boundary was converged to ${nearestPassingPitch.toFixed(3)} m within the configured ${tolerance.toFixed(3)} m tolerance after ${rounds} exact step${rounds === 1 ? "" : "s"}.`,
+              "PASS",
+            );
           }
           if (passingSeeds.length) {
             bucketHasPass = true;

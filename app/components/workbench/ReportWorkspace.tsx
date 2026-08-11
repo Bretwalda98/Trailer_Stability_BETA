@@ -55,15 +55,15 @@ export function ReportWorkspace({
         </section>
         <section>
           <header><b>Stability and capacity checks</b></header>
-          <table className="engineering-table">
+          <table className="engineering-table report-checks-table">
             <thead><tr><th>Check</th><th>Result</th><th>Direction</th><th>Status</th></tr></thead>
             <tbody>
               {vm.checks.map((check) => (
                 <tr key={check.id}>
-                  <td>{check.selection.title}</td>
-                  <td>{formatEngineering(check.value, check.unit)}</td>
-                  <td>{check.direction === "lower" ? "Lower is better" : "Higher is better"}</td>
-                  <td className={check.status === "NOK" ? "status-nok" : check.status === "OK" ? "status-ok" : ""}>{check.status}</td>
+                  <td data-label="Check">{check.selection.title}</td>
+                  <td data-label="Result">{formatEngineering(check.value, check.unit)}</td>
+                  <td data-label="Direction">{check.direction === "lower" ? "Lower is better" : "Higher is better"}</td>
+                  <td data-label="Status" className={check.status === "NOK" ? "status-nok" : check.status === "OK" ? "status-ok" : ""}>{check.status}</td>
                 </tr>
               ))}
             </tbody>

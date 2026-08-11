@@ -29,25 +29,26 @@ test("server-renders the standalone engineering workbench", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, developmentPreviewMeta);
-  assert.match(html, /<title>Trailer Stability \| Native Engineering Suite<\/title>/i);
+  assert.match(html, /<title>Trailer Stability \| SPMT Engineering Workbench<\/title>/i);
   assert.match(html, /Interactive engineering viewport/);
   assert.match(html, /Orthographic plan of the trailer transport arrangement/);
   assert.match(html, /Hydraulics/);
   assert.match(html, /Stability/);
   assert.match(html, /Spine beam/);
   assert.match(html, /Engineering details/);
-  assert.match(html, /Run optimisation/);
-  assert.match(html, /How would you like to start/);
-  assert.match(html, /Mathematical arrangement optimiser/);
-  assert.match(html, /Build an arrangement manually/);
-  assert.match(html, /Open saved file/);
+  assert.match(html, /Find arrangement/);
+  assert.match(html, /Start a case/);
+  assert.match(html, /New arrangement search/);
+  assert.match(html, /Open case/);
+  assert.doesNotMatch(html, /Run optimisation/);
+  assert.doesNotMatch(html, /Build an arrangement manually/);
   assert.match(html, /Results and selected item inspector/);
   assert.match(html, /manifest\.webmanifest/);
   assert.doesNotMatch(html, /Your site is taking shape|Building your site/);
 });
 
 test("keeps phone, offline and workbook-verification capabilities wired", async () => {
-  const [page, layout, manifest, workbench, optimiserDrawer, engineHook, worker, planView, endView, sideView, css, serviceWorker, setupWizard, optimiserWizard, optimiserWizardEngine, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine] = await Promise.all([
+  const [page, layout, manifest, workbench, optimiserDrawer, engineHook, worker, planView, endView, sideView, css, professionalCss, serviceWorker, setupWizard, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
@@ -59,10 +60,9 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
     readFile(new URL("../app/components/workbench/views/EndView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/workbench/views/SideView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/professional-workbench.css", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../app/components/workbench/SetupWizard.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/components/workbench/OptimiserWizard.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/engine/optimiser-wizard.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/components/workbench/ArrangementWizard.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/engine/arrangement.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/engine/arrangement-optimiser.ts", import.meta.url), "utf8"),
@@ -70,7 +70,8 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
     readFile(new URL("../app/engine/cargo-envelope.ts", import.meta.url), "utf8"),
   ]);
   assert.match(page, /<TrailerWorkbench \/>/);
-  assert.match(layout, /Trailer Stability \| Native Engineering Suite/);
+  assert.match(layout, /Trailer Stability \| SPMT Engineering Workbench/);
+  assert.match(layout, /professional-workbench\.css/);
   assert.match(manifest, /"display": "standalone"/);
   assert.match(workbench, /assetPath\("\/sw\.js"\)/);
   assert.match(workbench, /exportVerificationWorkbook/);
@@ -94,6 +95,8 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(css, /@media \(max-width:\s*780px\)/);
   assert.match(css, /@media \(max-width:\s*450px\)/);
   assert.match(css, /\.mobile-workspace-nav/);
+  assert.match(professionalCss, /\.workbench-grid\.navigation-collapsed/);
+  assert.match(professionalCss, /\.arrangement-wizard-shell\.preview-expanded/);
   assert.match(serviceWorker, /Trailer_Stability_Verification_Template_v0\.7\.xlsm/);
   assert.match(serviceWorker, /caches\.match/);
   assert.match(setupWizard, /Auto-calculate wind areas/);
@@ -101,16 +104,13 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(setupWizard, /2% of cargo length/);
   assert.match(setupWizard, /2% of cargo width/);
   assert.match(setupWizard, /Start with the cargo envelope/);
-  assert.match(workbench, /OptimiserWizard/);
-  assert.match(optimiserWizard, /GUIDED OPTIMISER SETUP/);
-  assert.match(optimiserWizard, /Apply & start optimisation/);
-  assert.match(optimiserWizard, /Run with current optimiser settings|LIVE SEARCH PLAN/);
-  assert.match(optimiserWizardEngine, /OPTIMISER_WIZARD_DRAFT_STORAGE_KEY/);
-  assert.match(optimiserWizardEngine, /estimateOptimiserPlan/);
+  assert.doesNotMatch(workbench, /OptimiserWizard/);
+  assert.doesNotMatch(workbench, /OptimisationWorkspace/);
   assert.match(workbench, /ArrangementWizard/);
-  assert.match(optimiserDrawer, /Live activity terminal/);
+  assert.match(optimiserDrawer, /Search activity/);
   assert.match(optimiserDrawer, /Copy complete log/);
-  assert.match(arrangementWizard, /MATHEMATICAL TRAILER ARRANGEMENT/);
+  assert.match(arrangementWizard, /ARRANGEMENT SEARCH/);
+  assert.match(arrangementWizard, /Run arrangement search/);
   assert.match(arrangementWizard, /Mathematical branch/);
   assert.match(arrangementWizard, /Trailer deck height/);
   assert.match(arrangementWizard, /PPU location on every train/);

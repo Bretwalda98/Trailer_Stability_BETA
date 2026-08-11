@@ -4,7 +4,7 @@ import { IconChartLine, IconGeometry, IconHierarchy2 } from "@tabler/icons-react
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createDefaultModel, hydrateProjectModel } from "../data/default-model";
 import { passToProject } from "../engine/optimiser";
-import { WIZARD_DRAFT_STORAGE_KEY, type SetupSourceType } from "../engine/setup";
+import type { SetupSourceType } from "../engine/setup";
 import type { PassResult, ProjectModel } from "../engine/types";
 import {
   downloadBytes,
@@ -24,9 +24,7 @@ import { EngineeringDetailsDrawer } from "./workbench/EngineeringDetailsDrawer";
 import { EngineeringViewport } from "./workbench/EngineeringViewport";
 import { HelpGuide } from "./workbench/HelpGuide";
 import { ModelTree } from "./workbench/ModelTree";
-import { OptimisationWorkspace } from "./workbench/OptimisationWorkspace";
 import { OptimiserDrawer } from "./workbench/OptimiserDrawer";
-import { OptimiserWizard } from "./workbench/OptimiserWizard";
 import { ReportWorkspace } from "./workbench/ReportWorkspace";
 import { ResultsInspector } from "./workbench/ResultsInspector";
 import { SetupWizard } from "./workbench/SetupWizard";
@@ -41,12 +39,11 @@ import {
 
 const LOCAL_PROJECT_KEY = "trailer-stability-project-v1";
 const MOBILE_WORKSPACES: Array<{ id: WorkspaceId; label: string }> = [
-  { id: "geometry", label: "Geometry" },
+  { id: "geometry", label: "Arrangement" },
   { id: "hydraulics", label: "Hydraulics" },
   { id: "load-cases", label: "Load cases" },
   { id: "stability", label: "Stability" },
   { id: "spine-beam", label: "Spine beam" },
-  { id: "optimise", label: "Optimise" },
   { id: "report", label: "Report" },
 ];
 type MobilePanel = "workspace" | "model" | "results";
@@ -86,7 +83,6 @@ export default function TrailerWorkbench() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ text: string; type: "ok" | "error" } | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [optimiserWizardOpen, setOptimiserWizardOpen] = useState(false);
   const [arrangementWizardOpen, setArrangementWizardOpen] = useState(false);
   const [arrangementWizardInitialSource, setArrangementWizardInitialSource] = useState<
     "CURRENT" | "BLANK"
@@ -98,9 +94,8 @@ export default function TrailerWorkbench() {
   const [hasLocalProject, setHasLocalProject] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [persistActiveProject, setPersistActiveProject] = useState(false);
-  const [optimiseAfterSetup, setOptimiseAfterSetup] = useState<
-    "CURRENT" | "ARRANGEMENT" | null
-  >(null);
+  const [optimiseAfterSetup, setOptimiseAfterSetup] = useState(false);
+  const [navigationCollapsed, setNavigationCollapsed] = useState(false);
   const hydratedRef = useRef(false);
 
   const engine = useEngineeringEngine(model);
@@ -315,28 +310,11 @@ export default function TrailerWorkbench() {
     return opened;
   };
 
-  const startNewSetup = () => {
-    localStorage.removeItem(WIZARD_DRAFT_STORAGE_KEY);
-    setWizardInitialSource("BLANK");
-    setStartupOpen(false);
-    setWizardOpen(true);
-  };
-
   const startNewFastArrangement = () => {
     localStorage.removeItem(ARRANGEMENT_WIZARD_DRAFT_KEY);
     setArrangementWizardInitialSource("BLANK");
     setStartupOpen(false);
     setArrangementWizardOpen(true);
-  };
-
-  const startOptimisation = () => {
-    setOptimiserStartModel(structuredClone(model));
-    setUndoModel(null);
-    setDetailsOpen(false);
-    setDetailsFullScreen(false);
-    setOptimiserOpen(true);
-    engine.resetRun();
-    engine.startOptimisation();
   };
 
   const startArrangementOptimisation = () => {
@@ -351,10 +329,8 @@ export default function TrailerWorkbench() {
 
   useEffect(() => {
     if (!optimiseAfterSetup || engine.authoritativeModel !== model || engine.calculating) return;
-    const mode = optimiseAfterSetup;
-    setOptimiseAfterSetup(null);
-    if (mode === "ARRANGEMENT") startArrangementOptimisation();
-    else startOptimisation();
+    setOptimiseAfterSetup(false);
+    startArrangementOptimisation();
   }, [engine.authoritativeModel, engine.calculating, model, optimiseAfterSetup]);
 
   const applyPass = (pass: PassResult) => {
@@ -388,9 +364,7 @@ export default function TrailerWorkbench() {
   };
 
   const centralWorkspace =
-    workspace === "optimise" ? (
-      <OptimisationWorkspace model={model} onModelChange={setModel} />
-    ) : workspace === "report" ? (
+    workspace === "report" ? (
       <ReportWorkspace model={model} vm={vm} />
     ) : (
       <EngineeringViewport
@@ -418,7 +392,6 @@ export default function TrailerWorkbench() {
           setWizardOpen(true);
         }}
         onHelp={() => setHelpOpen(true)}
-        onOptimiserSetup={() => setOptimiserWizardOpen(true)}
         onArrangementSetup={() => {
           setArrangementWizardInitialSource("CURRENT");
           setArrangementWizardOpen(true);
@@ -434,7 +407,6 @@ export default function TrailerWorkbench() {
           )
         }
         onImportProject={handleImportProject}
-        onRun={startOptimisation}
         onStop={engine.cancelOptimisation}
         onReset={reset}
       />
@@ -443,7 +415,6 @@ export default function TrailerWorkbench() {
         busy={busy}
         hasLocalProject={hasLocalProject}
         onFastArrangement={startNewFastArrangement}
-        onNewSetup={startNewSetup}
         onOpenFile={handleStartupFile}
         onContinue={() => setStartupOpen(false)}
       />
@@ -467,48 +438,16 @@ export default function TrailerWorkbench() {
             setView("plan");
             setWizardOpen(false);
             setWizardInitialSource(undefined);
-            setOptimiseAfterSetup(runOptimisation ? "CURRENT" : null);
+            if (runOptimisation) {
+              setArrangementWizardInitialSource("CURRENT");
+              setArrangementWizardOpen(true);
+            }
             setToast({
               text: runOptimisation
-                ? "Setup applied. The authoritative case is recalculating before optimisation starts."
+                ? "Case inputs applied. Review the arrangement-search limits before starting."
                 : "Setup applied to the active case.",
               type: "ok",
             });
-          }}
-        />
-      )}
-      {optimiserWizardOpen && (
-        <OptimiserWizard
-          activeModel={model}
-          result={engine.result}
-          calculating={engine.calculating}
-          onFindArrangement={() => {
-            setOptimiserWizardOpen(false);
-            setArrangementWizardInitialSource("CURRENT");
-            setArrangementWizardOpen(true);
-          }}
-          onClose={() => setOptimiserWizardOpen(false)}
-          onApply={(settings, runOptimisation) => {
-            setModel((current) => ({
-              ...current,
-              optimiser: settings,
-            }));
-            setPersistActiveProject(true);
-            setHasLocalProject(true);
-            setOptimiserWizardOpen(false);
-            if (runOptimisation) {
-              setOptimiseAfterSetup("CURRENT");
-              setToast({
-                text: "Optimiser settings applied. The authoritative case is recalculating before the run starts.",
-                type: "ok",
-              });
-            } else {
-              setWorkspace("optimise");
-              setToast({
-                text: "Optimiser settings applied to the active case.",
-                type: "ok",
-              });
-            }
           }}
         />
       )}
@@ -529,19 +468,20 @@ export default function TrailerWorkbench() {
             setArrangementWizardOpen(false);
             setArrangementWizardInitialSource("CURRENT");
             if (runOptimisation) {
-              setOptimiseAfterSetup("ARRANGEMENT");
+              setOptimiseAfterSetup(true);
               setToast({
-                text: "Arrangement settings applied. The authoritative case is recalculating before the search starts.",
+                text: "Search inputs applied. The authoritative case is recalculating before the arrangement search starts.",
                 type: "ok",
               });
             } else {
-              setWorkspace("optimise");
-              setToast({ text: "Automatic-arrangement settings saved.", type: "ok" });
+              setWorkspace("geometry");
+              setView("plan");
+              setToast({ text: "Arrangement-search inputs saved to the active case.", type: "ok" });
             }
           }}
         />
       )}
-      <div className={`workbench-grid mobile-panel-${mobilePanel}`}>
+      <div className={`workbench-grid mobile-panel-${mobilePanel}${navigationCollapsed ? " navigation-collapsed" : ""}`}>
         <div className="mobile-workspace-nav">
           <label>
             <span>Workspace</span>
@@ -592,6 +532,8 @@ export default function TrailerWorkbench() {
           vm={vm}
           workspace={workspace}
           selectedId={selectedId}
+          collapsed={navigationCollapsed}
+          onCollapsedChange={setNavigationCollapsed}
           onWorkspaceChange={changeWorkspace}
           onSelect={setSelectedId}
           onModelChange={setModel}

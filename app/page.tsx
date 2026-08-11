@@ -6,9 +6,9 @@ import TrailerWorkbench from "./components/TrailerWorkbench";
 export const dynamic = "force-static";
 
 export const metadata: Metadata = {
-  title: "Trailer Stability | Native Engineering Suite",
+  title: "Trailer Stability | SPMT Engineering Workbench",
   description:
-    "Standalone trailer stability, axle loading, support settling, spine-beam and optimisation application.",
+    "Standalone SPMT arrangement search, trailer stability, axle loading, support settling and spine-beam verification.",
   other: {
     "codex-preview": "development",
   },

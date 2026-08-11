@@ -17,6 +17,8 @@
   },
   "include": [
     "tests/engine-and-workbook.test.ts",
+    "tests/math-search-matrix.test.ts",
+    "tests/math-search-unsolved-recovery.test.ts",
     "tests/geometry-adapter.test.ts",
     "app/data/default-model.ts",
     "app/data/trailers.ts",

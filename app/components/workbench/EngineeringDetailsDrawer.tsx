@@ -203,19 +203,21 @@ export function EngineeringDetailsDrawer({
               <option value="WARN">Warnings</option>
               <option value="N/A">Not available</option>
             </select>
-            <span className="row-count">{filtered.length} / {rows.length}</span>
-            <button className="toolbar-action" onClick={copyRows}><IconCopy size={14} /> {copied ? "Copied" : "Copy CSV"}</button>
-            <button
-              className="toolbar-action"
-              onClick={() =>
-                downloadText(
-                  engineeringDetailsCsv(filtered),
-                  `Trailer_Stability_Engineering_Details_${new Date().toISOString().slice(0, 10)}.csv`,
-                )
-              }
-            >
-              <IconDownload size={14} /> Export
-            </button>
+            <div className="details-toolbar-meta">
+              <span className="row-count">{filtered.length} / {rows.length}</span>
+              <button className="toolbar-action" onClick={copyRows}><IconCopy size={14} /> {copied ? "Copied" : "Copy CSV"}</button>
+              <button
+                className="toolbar-action"
+                onClick={() =>
+                  downloadText(
+                    engineeringDetailsCsv(filtered),
+                    `Trailer_Stability_Engineering_Details_${new Date().toISOString().slice(0, 10)}.csv`,
+                  )
+                }
+              >
+                <IconDownload size={14} /> Export
+              </button>
+            </div>
           </div>
           <div className="details-table-scroll">
             <table className="engineering-table details-table">
@@ -236,9 +238,9 @@ export function EngineeringDetailsDrawer({
                       row.status ? ` row-${row.status.toLowerCase().replace("/", "-")}` : ""
                     }`}
                   >
-                    <td>{row.category}</td>
-                    <td>{row.label}</td>
-                    <td className="detail-value">
+                    <td data-label="Category">{row.category}</td>
+                    <td data-label="Engineering value">{row.label}</td>
+                    <td data-label="Value" className="detail-value">
                       <EditableValue
                         row={row}
                         onChange={(value) => {
@@ -247,8 +249,8 @@ export function EngineeringDetailsDrawer({
                         }}
                       />
                     </td>
-                    <td>{row.unit}</td>
-                    <td>{row.validation ?? row.status ?? ""}</td>
+                    <td data-label="Unit">{row.unit}</td>
+                    <td data-label="Validation">{row.validation ?? row.status ?? ""}</td>
                   </tr>
                 ))}
               </tbody>
