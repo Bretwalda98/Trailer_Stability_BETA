@@ -156,6 +156,9 @@ const GUIDE_SECTIONS = [
       "View shows the active drawing or calculation workspace.",
       "Model shows the complete object tree and add actions.",
       "Results shows checks, selected-object values and editable fields.",
+      "Setup and arrangement-search forms stack into one scrollable input pane with fixed navigation. Use Expand preview to inspect the live engineering view full screen, then Return to inputs.",
+      "Engineering-detail records, report checks and hydraulic circuit rows become labelled mobile records so values and controls do not rely on a clipped desktop table.",
+      "In landscape, the preview becomes shorter and the input pane receives more working height; all primary actions remain visible at the bottom.",
       "Engineering Details can be minimised, resized or opened full page on the phone.",
     ],
   },
@@ -225,6 +228,16 @@ export function HelpGuide({
             </button>
           ))}
         </nav>
+
+        <label className="help-topic-picker">
+          <span>Help topic</span>
+          <select
+            value={section.id}
+            onChange={(event) => setActiveSection(event.target.value as GuideSectionId)}
+          >
+            {GUIDE_SECTIONS.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+          </select>
+        </label>
 
         <article>
           <span>HOW TO USE</span>

@@ -2,6 +2,8 @@
 
 import {
   IconAlertTriangle,
+  IconArrowsMaximize,
+  IconArrowsMinimize,
   IconBox,
   IconCheck,
   IconChevronLeft,
@@ -369,6 +371,7 @@ export function SetupWizard({
   const [notice, setNotice] = useState<string | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [initialised, setInitialised] = useState(false);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
   const [preferences, setPreferences] = useState<ViewPreferences>({
     layers: { ...DEFAULT_LAYERS },
     visibleCogs: { ...DEFAULT_COG_VISIBILITY, packing: true },
@@ -1179,7 +1182,7 @@ export function SetupWizard({
           event.currentTarget.value = "";
         }}
       />
-      <div className="setup-wizard-shell">
+      <div className={`setup-wizard-shell${previewExpanded ? " preview-expanded" : ""}`}>
         <header className="setup-wizard-header">
           <div>
             <span>GUIDED CASE SETUP</span>
@@ -1249,9 +1252,21 @@ export function SetupWizard({
               <span>LIVE {view.toUpperCase()} PREVIEW</span>
               <b>{draftModel.cargo.name || "Untitled case"}</b>
             </div>
-            <div className={calculationCurrent ? "ready" : "working"}>
-              {!calculationCurrent && <IconLoader2 size={14} />}
-              <span>{calculationCurrent ? "Authoritative result" : "Updating · previous result retained"}</span>
+            <div className="wizard-preview-status-actions">
+              <div className={calculationCurrent ? "ready" : "working"}>
+                {!calculationCurrent && <IconLoader2 size={14} />}
+                <span>{calculationCurrent ? "Authoritative result" : "Updating · previous result retained"}</span>
+              </div>
+              <button
+                type="button"
+                className="mobile-preview-toggle"
+                onClick={() => setPreviewExpanded((current) => !current)}
+                aria-expanded={previewExpanded}
+                aria-label={previewExpanded ? "Return to inputs" : "Expand preview"}
+              >
+                {previewExpanded ? <IconArrowsMinimize size={16} /> : <IconArrowsMaximize size={16} />}
+                <span>{previewExpanded ? "Return to inputs" : "Expand preview"}</span>
+              </button>
             </div>
           </div>
           {hasPreviewGeometry ? (
