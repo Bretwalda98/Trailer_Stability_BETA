@@ -31,6 +31,8 @@ import {
   minimumTotalAxleLines,
   longitudinalOffsetCandidates,
   moduleCompositions,
+  payloadCogX,
+  recommendedPackingSupports,
   spacingCandidates,
   validAxleLineValues,
 } from "../app/engine/arrangement";
@@ -338,6 +340,33 @@ async function main(): Promise<void> {
   assert.ok(arrangedModel.trailers.every((trailer) => trailer.ppuLeft && trailer.ppuRight));
   assert.equal(collectArrangementIssues(model, model.arrangementOptimiser).length, 0);
 
+  const offsetSupportModel = createDefaultModel();
+  offsetSupportModel.cargo.lengthM = 16;
+  offsetSupportModel.cargo.massT = 300;
+  offsetSupportModel.cargo.cog.x = 15;
+  offsetSupportModel.packing.massT = 0;
+  offsetSupportModel.supports = [2.4, 4.8, 7.2, 9.6].map((xM, index) => ({
+    id: `offset-support-${index + 1}`,
+    xM,
+    widthM: 0.5,
+    allowed: true,
+    active: true,
+  }));
+  assert.equal(payloadCogX(offsetSupportModel), 15);
+  assert.ok(
+    collectArrangementIssues(offsetSupportModel, offsetSupportModel.arrangementOptimiser)
+      .some((item) => item.id === "support-cog-bracketing"),
+  );
+  const recommendedSupports = recommendedPackingSupports(offsetSupportModel);
+  assert.equal(recommendedSupports.length, 4);
+  assert.ok(Math.min(...recommendedSupports.map((item) => item.xM)) < payloadCogX(offsetSupportModel));
+  assert.ok(Math.max(...recommendedSupports.map((item) => item.xM)) > payloadCogX(offsetSupportModel));
+  offsetSupportModel.supports = recommendedSupports;
+  assert.ok(
+    !collectArrangementIssues(offsetSupportModel, offsetSupportModel.arrangementOptimiser)
+      .some((item) => item.id === "support-cog-bracketing"),
+  );
+
   const compactArrangementSearch = createDefaultModel();
   compactArrangementSearch.cargo.massT = 20;
   compactArrangementSearch.packing.massT = 0;
@@ -396,6 +425,15 @@ async function main(): Promise<void> {
   assert.ok(mathematicalBest?.arrangement);
   assert.equal(mathematicalBest.arrangement.trainCount, 2);
   assert.equal(mathematicalBest.arrangement.totalAxleLines, 8);
+  const compactFourPointSearch = structuredClone(compactArrangementSearch);
+  compactFourPointSearch.hydraulicSystemMode = "FOUR_POINT";
+  const fourPointArrangementRun = await runArrangementOptimiser(compactFourPointSearch);
+  const fourPointArrangementBest = fourPointArrangementRun.passes.find((pass) => pass.overallRank === 1);
+  assert.equal(fourPointArrangementRun.state, "COMPLETE");
+  assert.ok(fourPointArrangementRun.passes.length > 0);
+  assert.ok(fourPointArrangementBest);
+  assert.equal(fourPointArrangementBest.result.stabilityPolygon.length, 4);
+  assert.equal(fourPointArrangementBest.result.groups.length, 4);
   const legacyArrangementSearch = structuredClone(compactArrangementSearch);
   legacyArrangementSearch.arrangementOptimiser.searchMode = "LEGACY_GRID";
   const legacyArrangementRun = await runArrangementOptimiser(legacyArrangementSearch);
@@ -425,6 +463,41 @@ async function main(): Promise<void> {
   assert.equal(appliedArrangement.trailers.length, 2);
   assert.ok(appliedArrangement.trailers.every((trailer) => trailer.axleLines === 4));
   assert.ok(appliedArrangement.trailers.every((trailer) => trailer.placementReference === "ALL_INCLUSIVE_COG"));
+
+  const longSpineModel = createDefaultModel();
+  longSpineModel.cargo = {
+    ...longSpineModel.cargo,
+    lengthM: 25,
+    widthM: 16,
+    heightM: 16,
+    massT: 100,
+    cog: { x: 12.5, y: 8, z: 8 },
+  };
+  longSpineModel.packing.massT = 0;
+  longSpineModel.supports = recommendedPackingSupports(longSpineModel);
+  longSpineModel.arrangementOptimiser = {
+    ...longSpineModel.arrangementOptimiser,
+    trailerDefinitionId: "k2400-st",
+    ppuPosition: "REAR",
+  };
+  const longSpineDefinition = longSpineModel.catalogue.find((item) => item.id === "k2400-st")!;
+  const longSpineComposition = bestModuleComposition(14, longSpineModel.arrangementOptimiser, 2)!;
+  let longSpineArranged = applyArrangementDescriptor(
+    longSpineModel,
+    createArrangementDescriptor(
+      longSpineDefinition,
+      longSpineModel.arrangementOptimiser,
+      2,
+      longSpineComposition,
+      27.57,
+    ),
+  );
+  longSpineArranged = applySharedSplit(longSpineArranged, 5);
+  longSpineArranged = applySharedX(longSpineArranged, -8.81);
+  const longSpineResult = calculateProject(longSpineArranged);
+  assert.ok(!longSpineResult.warnings.some((warning) => warning.includes("stiffness matrix is singular")));
+  assert.ok(longSpineResult.supportIterations > 0);
+  assert.ok(longSpineResult.beam.points.length > 0);
   const preferredCandidate = structuredClone(arrangementRun.passes[0]);
   preferredCandidate.sequence = 2;
   preferredCandidate.result.status = "PASS";
@@ -528,7 +601,14 @@ async function main(): Promise<void> {
   const largeSearchDurationMs = performance.now() - largeSearchStarted;
   assert.equal(largeCargoRun.state, "COMPLETE");
   assert.ok(largeSearchDurationMs < 15_000);
-  assert.ok(largeCargoRun.passes.length < 1_000);
+  // Exact pitch-boundary convergence intentionally adds a small number of
+  // fully logged cases after the independent seeds; it must remain bounded.
+  assert.ok(largeCargoRun.passes.length < 1_500);
+  assert.ok(
+    largeCargoRun.events.some(
+      (item) => item.message === "Nearest passing pitch converged",
+    ),
+  );
   assert.ok(
     largeCargoRun.events.some(
       (item) => item.message === "Hydraulic Y-span bound rejected formation",

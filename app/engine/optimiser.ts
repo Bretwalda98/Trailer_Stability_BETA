@@ -379,6 +379,77 @@ function triangleFractions(point: { x: number; y: number }, polygon: Array<{ x: 
   return [first, second, 1 - first - second];
 }
 
+function polygonSignedArea(polygon: Array<{ x: number; y: number }>): number {
+  if (polygon.length < 3) return 0;
+  return polygon.reduce((sum, point, index) => {
+    const next = polygon[(index + 1) % polygon.length];
+    return sum + point.x * next.y - point.y * next.x;
+  }, 0) / 2;
+}
+
+/**
+ * Returns one non-negative-inside half-plane value per convex polygon edge.
+ * Unlike barycentric coordinates, this works for both three- and four-point
+ * hydraulic stability boundaries. The shared-X optimiser moves only X
+ * coordinates, so every returned edge expression is affine in shared X.
+ */
+function polygonHalfPlaneValues(
+  point: { x: number; y: number },
+  polygon: Array<{ x: number; y: number }>,
+): number[] {
+  const signedArea = polygonSignedArea(polygon);
+  if (polygon.length < 3 || Math.abs(signedArea) < 1e-12) return [];
+  const orientation = signedArea > 0 ? 1 : -1;
+  return polygon.map((start, index) => {
+    const end = polygon[(index + 1) % polygon.length];
+    return orientation * (
+      (end.x - start.x) * (point.y - start.y) -
+      (end.y - start.y) * (point.x - start.x)
+    );
+  });
+}
+
+function deriveContainmentXInterval(
+  result0: CalculationResult,
+  result1: CalculationResult,
+  points0: Array<{ x: number; y: number }>,
+  points1: Array<{ x: number; y: number }>,
+): StabilityXInterval | null {
+  const polygon0 = result0.stabilityPolygon;
+  const polygon1 = result1.stabilityPolygon;
+  if (
+    polygon0.length < 3 ||
+    polygon0.length !== polygon1.length ||
+    points0.length !== points1.length
+  ) return null;
+
+  const useTriangleFractions = polygon0.length === 3;
+  let minimumM = Number.NEGATIVE_INFINITY;
+  let maximumM = Number.POSITIVE_INFINITY;
+  for (let pointIndex = 0; pointIndex < points0.length; pointIndex += 1) {
+    const values0 = useTriangleFractions
+      ? triangleFractions(points0[pointIndex], polygon0)
+      : polygonHalfPlaneValues(points0[pointIndex], polygon0);
+    const values1 = useTriangleFractions
+      ? triangleFractions(points1[pointIndex], polygon1)
+      : polygonHalfPlaneValues(points1[pointIndex], polygon1);
+    if (values0.length !== polygon0.length || values1.length !== polygon1.length) return null;
+    for (let constraintIndex = 0; constraintIndex < values0.length; constraintIndex += 1) {
+      const intercept = values0[constraintIndex];
+      const slope = values1[constraintIndex] - intercept;
+      if (Math.abs(slope) < 1e-12) {
+        if (intercept < -1e-12) return null;
+        continue;
+      }
+      const boundary = -intercept / slope;
+      if (slope > 0) minimumM = Math.max(minimumM, boundary);
+      else maximumM = Math.min(maximumM, boundary);
+    }
+  }
+  if (!Number.isFinite(minimumM) || !Number.isFinite(maximumM) || minimumM > maximumM) return null;
+  return { minimumM, maximumM };
+}
+
 function boundedProbeValues(
   values: number[],
   preferred: number,
@@ -418,23 +489,15 @@ function automaticE89Cases(
   const probe1: PlannedCase = { c89, d138, e89: 1, phase: "COARSE_SCAN" };
   const result0 = calculateProject(caseModel(model, probe0));
   const result1 = calculateProject(caseModel(model, probe1));
-  const fractions0 = triangleFractions(result0.combinedCog, result0.stabilityPolygon);
-  const fractions1 = triangleFractions(result1.combinedCog, result1.stabilityPolygon);
-  if (fractions0.length !== 3 || fractions1.length !== 3) return [];
-  let minimum = Number.NEGATIVE_INFINITY;
-  let maximum = Number.POSITIVE_INFINITY;
-  for (let index = 0; index < 3; index += 1) {
-    const intercept = fractions0[index];
-    const slope = fractions1[index] - intercept;
-    if (Math.abs(slope) < 1e-12) {
-      if (intercept < 0) return [];
-      continue;
-    }
-    const boundary = -intercept / slope;
-    if (slope > 0) minimum = Math.max(minimum, boundary);
-    else maximum = Math.min(maximum, boundary);
-  }
-  if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum > maximum) return [];
+  const interval = deriveContainmentXInterval(
+    result0,
+    result1,
+    [result0.combinedCog],
+    [result1.combinedCog],
+  );
+  if (!interval) return [];
+  let minimum = interval.minimumM;
+  let maximum = interval.maximumM;
   minimum -= Math.max(0, model.optimiser.boundaryToleranceM);
   maximum += Math.max(0, model.optimiser.boundaryToleranceM);
   const completeValues = range(minimum, maximum, model.optimiser.e89Step);
@@ -513,30 +576,9 @@ export function deriveStabilityXInterval(
   result0: CalculationResult,
   result1: CalculationResult,
 ): StabilityXInterval | null {
-  if (result0.stabilityPolygon.length !== 3 || result1.stabilityPolygon.length !== 3) return null;
   const points0 = stabilityConstraintPoints(result0);
   const points1 = stabilityConstraintPoints(result1);
-  if (points0.length !== points1.length) return null;
-  let minimumM = Number.NEGATIVE_INFINITY;
-  let maximumM = Number.POSITIVE_INFINITY;
-  for (let pointIndex = 0; pointIndex < points0.length; pointIndex += 1) {
-    const fractions0 = triangleFractions(points0[pointIndex], result0.stabilityPolygon);
-    const fractions1 = triangleFractions(points1[pointIndex], result1.stabilityPolygon);
-    if (fractions0.length !== 3 || fractions1.length !== 3) return null;
-    for (let fractionIndex = 0; fractionIndex < 3; fractionIndex += 1) {
-      const intercept = fractions0[fractionIndex];
-      const slope = fractions1[fractionIndex] - intercept;
-      if (Math.abs(slope) < 1e-12) {
-        if (intercept < -1e-12) return null;
-        continue;
-      }
-      const boundary = -intercept / slope;
-      if (slope > 0) minimumM = Math.max(minimumM, boundary);
-      else maximumM = Math.min(maximumM, boundary);
-    }
-  }
-  if (!Number.isFinite(minimumM) || !Number.isFinite(maximumM) || minimumM > maximumM) return null;
-  return { minimumM, maximumM };
+  return deriveContainmentXInterval(result0, result1, points0, points1);
 }
 
 /**

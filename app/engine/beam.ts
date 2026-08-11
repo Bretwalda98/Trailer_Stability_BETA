@@ -94,21 +94,29 @@ function solveLinear(matrix: number[][], rhs: number[]): number[] {
   // station. LDL-transpose retains the same numerical system while only visiting its
   // non-zero band.
   let bandwidth = 0;
-  let maximumDiagonal = 0;
+  const scales = Array(n).fill(0);
   for (let row = 0; row < n; row += 1) {
-    maximumDiagonal = Math.max(maximumDiagonal, Math.abs(matrix[row][row]));
+    const diagonal = matrix[row][row];
+    if (!Number.isFinite(diagonal) || diagonal <= 0) throw new Error("Beam stiffness matrix is singular.");
+    // Symmetric diagonal equilibration keeps translational and rotational
+    // degrees of freedom on comparable numerical scales. Without it, a long
+    // SPMT spine containing short feature elements can be falsely classified
+    // as singular even though two or more valid supports restrain the beam.
+    scales[row] = Math.sqrt(diagonal);
     for (let column = 0; column < row; column += 1) {
       if (matrix[row][column] !== 0) bandwidth = Math.max(bandwidth, row - column);
     }
   }
   const lower = Array.from({ length: n }, () => Array(bandwidth + 1).fill(0));
   const diagonal = Array(n).fill(0);
-  const tolerance = Math.max(1e-14, maximumDiagonal * 1e-14);
+  const tolerance = 1e-14;
+  const scaledValue = (row: number, column: number): number =>
+    matrix[row][column] / (scales[row] * scales[column]);
 
   for (let row = 0; row < n; row += 1) {
     const firstColumn = Math.max(0, row - bandwidth);
     for (let column = firstColumn; column < row; column += 1) {
-      let value = matrix[row][column];
+      let value = scaledValue(row, column);
       const firstShared = Math.max(0, row - bandwidth, column - bandwidth);
       for (let shared = firstShared; shared < column; shared += 1) {
         value -=
@@ -119,7 +127,7 @@ function solveLinear(matrix: number[][], rhs: number[]): number[] {
       if (Math.abs(diagonal[column]) < tolerance) throw new Error("Beam stiffness matrix is singular.");
       lower[row][row - column] = value / diagonal[column];
     }
-    let pivot = matrix[row][row];
+    let pivot = scaledValue(row, row);
     for (let shared = firstColumn; shared < row; shared += 1) {
       const factor = lower[row][row - shared];
       pivot -= factor * factor * diagonal[shared];
@@ -131,7 +139,7 @@ function solveLinear(matrix: number[][], rhs: number[]): number[] {
 
   const forward = Array(n).fill(0);
   for (let row = 0; row < n; row += 1) {
-    let value = rhs[row];
+    let value = rhs[row] / scales[row];
     for (let column = Math.max(0, row - bandwidth); column < row; column += 1) {
       value -= lower[row][row - column] * forward[column];
     }
@@ -146,7 +154,7 @@ function solveLinear(matrix: number[][], rhs: number[]): number[] {
     }
     result[row] = value;
   }
-  return result;
+  return result.map((value, index) => value / scales[index]);
 }
 
 function multiply(matrix: number[][], vector: number[]): number[] {

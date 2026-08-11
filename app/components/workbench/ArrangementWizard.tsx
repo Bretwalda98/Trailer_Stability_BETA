@@ -23,6 +23,7 @@ import {
   collectArrangementIssues,
   longitudinalOffsetCandidates,
   minimumTotalAxleLines,
+  recommendedPackingSupports,
   spacingCandidates,
   validAxleLineValues,
 } from "../../engine/arrangement";
@@ -30,7 +31,6 @@ import { EZTRAILER_ROAD_SURFACES } from "../../engine/road-transport";
 import { createBlankSetupModel } from "../../engine/setup";
 import type {
   ArrangementOptimiserSettings,
-  CargoSupport,
   PackingInput,
   ProjectModel,
 } from "../../engine/types";
@@ -344,14 +344,9 @@ export function ArrangementWizard({
   });
 
   const createRecommendedSupports = () => {
-    const length = Math.max(0, draftModel.cargo.lengthM);
-    const start = draftModel.cargo.extremeX;
-    const supports = Array.from({ length: 4 }, (_, index): CargoSupport => ({
+    const supports = recommendedPackingSupports(draftModel).map((support) => ({
+      ...support,
       id: supportId(),
-      xM: start + (length * (index + 1)) / 5,
-      widthM: 0.5,
-      allowed: true,
-      active: true,
     }));
     setDraftModel((current) => ({ ...current, supports }));
   };
@@ -425,7 +420,7 @@ export function ArrangementWizard({
       </FormSection>
       <FormSection title="Cargo packing supports" description="Support reactions are settled after every arrangement change. At least the configured minimum must remain active.">
         <div className="arrangement-inline-actions">
-          <button type="button" onClick={createRecommendedSupports}><IconTargetArrow size={14} /> Create 4 evenly spaced supports</button>
+          <button type="button" onClick={createRecommendedSupports}><IconTargetArrow size={14} /> Create 4 COG-spanning supports</button>
           <button
             type="button"
             disabled={draftModel.supports.length >= 10}
@@ -451,7 +446,7 @@ export function ArrangementWizard({
               <button type="button" className="icon-button" aria-label={`Remove support ${index + 1}`} onClick={() => setDraftModel((current) => ({ ...current, supports: current.supports.filter((item) => item.id !== support.id) }))}><IconTrash size={14} /></button>
             </div>
           ))}
-          {!draftModel.supports.length && <p className="fast-support-empty">No packing supports entered. Add them manually or create four evenly spaced supports.</p>}
+          {!draftModel.supports.length && <p className="fast-support-empty">No packing supports entered. Add them manually or create a four-support proposal that brackets the cargo-and-packing COG.</p>}
         </div>
         <div className="wizard-field-grid two">
           <NumberField label="Minimum active supports" value={draftModel.optimiser.minimumActiveSupports} min={2} max={10} step={1} valid={Number.isInteger(draftModel.optimiser.minimumActiveSupports) && draftModel.optimiser.minimumActiveSupports >= 2 && draftModel.optimiser.minimumActiveSupports <= 10} onChange={(minimumActiveSupports) => setDraftModel((current) => ({ ...current, optimiser: { ...current.optimiser, minimumActiveSupports: Math.round(minimumActiveSupports) } }))} />
