@@ -23,7 +23,7 @@ const MAX_VISIBLE_TERMINAL_EVENTS = 240;
 
 type CandidateSortKey =
   | "rank" | "passRef" | "trains" | "axleLines" | "totalAxleLines" | "pitch"
-  | "width" | "modules" | "split" | "x" | "pins" | "supports"
+  | "width" | "modules" | "hydraulics" | "split" | "x" | "pins" | "supports"
   | "cargoOnly" | "dynamicUtil" | "dynamicAngle" | "deflection" | "rating";
 type SortDirection = "asc" | "desc";
 
@@ -88,6 +88,7 @@ export function OptimiserDrawer({
       case "pitch": return pass.arrangement?.pitchM ?? null;
       case "width": return pass.arrangement?.overallWidthM ?? null;
       case "modules": return pass.arrangement ? [pass.arrangement.modules6 && `${pass.arrangement.modules6}×6`, pass.arrangement.modules5 && `${pass.arrangement.modules5}×5`, pass.arrangement.modules4 && `${pass.arrangement.modules4}×4`].filter(Boolean).join(" + ") : null;
+      case "hydraulics": return pass.arrangement?.hydraulicSystemMode === "FOUR_POINT" ? 4 : pass.arrangement ? 3 : null;
       case "split": return pass.d138;
       case "x": return pass.e89;
       case "pins": return pass.pinnedAxleLines.length;
@@ -195,7 +196,7 @@ export function OptimiserDrawer({
                   <thead>
                     <tr>
                       {sortableHeaders("Rank", "rank")}{sortableHeaders("Pass ref", "passRef")}
-                      {arrangementRun && <>{sortableHeaders("Trains", "trains")}{sortableHeaders("AL/train", "axleLines")}{sortableHeaders("Total AL", "totalAxleLines")}{sortableHeaders("Pitch", "pitch")}{sortableHeaders("Width", "width")}{sortableHeaders("Modules/train", "modules")}</>}
+                      {arrangementRun && <>{sortableHeaders("Trains", "trains")}{sortableHeaders("AL/train", "axleLines")}{sortableHeaders("Total AL", "totalAxleLines")}{sortableHeaders("Hydraulics", "hydraulics")}{sortableHeaders("Pitch", "pitch")}{sortableHeaders("Width", "width")}{sortableHeaders("Modules/train", "modules")}</>}
                       {!arrangementRun && sortableHeaders("AL", "axleLines")}
                       {sortableHeaders("Split", "split")}{sortableHeaders("X (m)", "x")}{sortableHeaders("Pins", "pins")}{sortableHeaders("Supports", "supports")}{sortableHeaders("Cargo-only", "cargoOnly")}{sortableHeaders("Dyn. util.", "dynamicUtil")}{sortableHeaders("Dyn. angle", "dynamicAngle")}{sortableHeaders("Defl.", "deflection")}{sortableHeaders("Rating", "rating")}
                     </tr>
@@ -210,6 +211,7 @@ export function OptimiserDrawer({
                             <td>{pass.arrangement?.trainCount ?? "—"}</td>
                             <td>{pass.arrangement?.axleLinesPerTrain ?? pass.c89}</td>
                             <td>{pass.arrangement?.totalAxleLines ?? "—"}</td>
+                            <td>{pass.arrangement ? pass.arrangement.hydraulicSystemMode === "FOUR_POINT" ? "4-point" : "3-point" : "—"}</td>
                             <td>{pass.arrangement ? `${pass.arrangement.pitchM.toFixed(3)} m` : "—"}</td>
                             <td>{pass.arrangement ? `${pass.arrangement.overallWidthM.toFixed(3)} m` : "—"}</td>
                             <td>{pass.arrangement ? [pass.arrangement.modules6 && `${pass.arrangement.modules6}×6`, pass.arrangement.modules5 && `${pass.arrangement.modules5}×5`, pass.arrangement.modules4 && `${pass.arrangement.modules4}×4`].filter(Boolean).join(" + ") : "—"}</td>
@@ -226,7 +228,7 @@ export function OptimiserDrawer({
                         <td>{pass.rating?.toFixed(3) ?? "—"}</td>
                       </tr>
                     ))}
-                    {!ranked.length && <tr><td colSpan={arrangementRun ? 17 : 12}>No valid ranked passes yet.</td></tr>}
+                    {!ranked.length && <tr><td colSpan={arrangementRun ? 18 : 12}>No valid ranked passes yet.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -241,6 +243,7 @@ export function OptimiserDrawer({
                       <>
                         <div><dt>Parallel trains</dt><dd><b>{selected.arrangement.trainCount}</b></dd></div>
                         <div><dt>Constructible axle lines</dt><dd><b>{selected.arrangement.axleLinesPerTrain} AL/train · {selected.arrangement.totalAxleLines} total</b></dd></div>
+                        <div><dt>Hydraulic system</dt><dd><b>{selected.arrangement.hydraulicSystemMode === "FOUR_POINT" ? "Four-point polygon" : "Three-point triangle"}</b></dd></div>
                         <div><dt>Module build per train</dt><dd><b>{[selected.arrangement.modules6 && `${selected.arrangement.modules6}×6`, selected.arrangement.modules5 && `${selected.arrangement.modules5}×5`, selected.arrangement.modules4 && `${selected.arrangement.modules4}×4`].filter(Boolean).join(" + ")}</b></dd></div>
                         <div><dt>Equal centre spacing</dt><dd><b>{selected.arrangement.pitchM.toFixed(3)} m</b></dd></div>
                         <div><dt>Overall formation width</dt><dd><b>{selected.arrangement.overallWidthM.toFixed(3)} m</b></dd></div>

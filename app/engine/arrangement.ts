@@ -3,6 +3,7 @@ import type {
   ArrangementOptimiserSettings,
   CargoSupport,
   HydraulicGrouping,
+  HydraulicSystemMode,
   ProjectModel,
   TrailerDefinition,
   TrailerInput,
@@ -251,8 +252,8 @@ export function spacingCandidates(
   const preferredPitch = bounds.preferredPitchM;
   values.push(preferredPitch);
   // The standard 2.9 m pitch (or the configured equivalent) is tried first.
-  // Train count remains the hard outer priority, so a wider valid formation is
-  // still preferred to adding another train.
+  // Formation ranking is based on total axle lines before train count, so a
+  // multi-train solution is retained whenever it can use fewer total AL.
   return [...new Set(values.map((value) => Math.round(value * 1e6) / 1e6))].sort(
     (left, right) =>
       Math.abs(left - settings.preferredCentreSpacingM) -
@@ -268,6 +269,7 @@ export function createArrangementDescriptor(
   composition: ModuleComposition,
   pitchM: number,
   longitudinalOffsetsM: number[] = [],
+  hydraulicSystemMode?: HydraulicSystemMode,
 ): ArrangementDescriptor {
   const trains = integer(trainCount, 1, 12);
   const pitch = trains === 1 ? 0 : Math.max(0, pitchM);
@@ -291,6 +293,7 @@ export function createArrangementDescriptor(
     clearanceM: trains === 1 ? 0 : Math.max(0, pitch - definition.trailerWidthM),
     overallWidthM,
     ppuPosition: settings.ppuPosition,
+    hydraulicSystemMode,
     formationMode: maximumOffset - minimumOffset > EPS ? "STAGGERED" : "INLINE",
     longitudinalOffsetsM: offsets,
     longitudinalSpanM: maximumOffset - minimumOffset,
@@ -481,6 +484,7 @@ export function applyArrangementDescriptor(
   const loadCentreX = base.cargo.extremeX + base.cargo.lengthM / 2;
   const trailers: TrailerInput[] = [];
   const groupings: HydraulicGrouping[] = [];
+  const hydraulicSystemMode = descriptor.hydraulicSystemMode ?? base.hydraulicSystemMode;
   for (let index = 0; index < descriptor.trainCount; index += 1) {
     const transverseOffset = (index - (descriptor.trainCount - 1) / 2) * descriptor.pitchM;
     const longitudinalOffset = descriptor.longitudinalOffsetsM[index] ?? 0;
@@ -503,7 +507,7 @@ export function applyArrangementDescriptor(
         index,
         descriptor.trainCount,
         descriptor.axleLinesPerTrain,
-        base.hydraulicSystemMode === "FOUR_POINT",
+        hydraulicSystemMode === "FOUR_POINT",
       ),
     );
   }
@@ -511,6 +515,7 @@ export function applyArrangementDescriptor(
     ...base,
     trailers,
     groupings,
+    hydraulicSystemMode,
     analysedTrailer: 1,
     optimiser: {
       ...base.optimiser,
@@ -561,6 +566,14 @@ export function collectArrangementIssues(
       severity: "blocking",
       title: "Select a valid trailer model",
       detail: "The selected catalogue trailer is unavailable or incomplete.",
+    });
+  }
+  if (!(["BOTH", "THREE_POINT", "FOUR_POINT"] as const).includes(settings.hydraulicSearchMode)) {
+    issues.push({
+      id: "hydraulic-search-mode",
+      severity: "blocking",
+      title: "Hydraulic search mode is invalid",
+      detail: "Search both systems, three-point only, or four-point only.",
     });
   }
   if (!settings.allow4AxleModules && !settings.allow5AxleModules && !settings.allow6AxleModules) {

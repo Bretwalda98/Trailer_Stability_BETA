@@ -22,12 +22,31 @@ import { createEmptyRun, rankPasses, runOptimiser } from "./optimiser";
 import type {
   ActivityEvent,
   ArrangementDescriptor,
+  HydraulicSystemMode,
   OptimiserRun,
   PassResult,
   ProjectModel,
 } from "./types";
 
 const EPS = 1e-9;
+
+/**
+ * Keep automatic formation searching independent of the hydraulic system
+ * presently displayed in the case. BOTH is the safe default: it evaluates the
+ * valid 3-point triangle and 4-point polygon alternatives separately.
+ */
+export function arrangementHydraulicModes(model: ProjectModel): HydraulicSystemMode[] {
+  switch (model.arrangementOptimiser.hydraulicSearchMode) {
+    case "THREE_POINT": return ["THREE_POINT"];
+    case "FOUR_POINT": return ["FOUR_POINT"];
+    case "BOTH":
+    default: return ["THREE_POINT", "FOUR_POINT"];
+  }
+}
+
+function hydraulicModeLabel(mode: HydraulicSystemMode): string {
+  return mode === "FOUR_POINT" ? "4-point" : "3-point";
+}
 
 export interface HydraulicYPitchBound {
   feasible: boolean;
@@ -177,8 +196,11 @@ export function rankArrangementPasses(passes: PassResult[], model: ProjectModel)
       const leftQuality = arrangementQuality(left);
       const rightQuality = arrangementQuality(right);
       return (
-        leftArrangement.trainCount - rightArrangement.trainCount ||
         leftArrangement.totalAxleLines - rightArrangement.totalAxleLines ||
+        // Total axle lines are the primary economic constraint. A two-train
+        // 8-AL formation must beat a one-train 12-AL formation. Train count
+        // is only a tie-breaker when both formations use the same total AL.
+        leftArrangement.trainCount - rightArrangement.trainCount ||
         leftQuality.cargoOnlyPassPriority - rightQuality.cargoOnlyPassPriority ||
         // Once the economic objectives and cargo-only preference are equal,
         // use the operator's standard pitch before spending extra formation
@@ -329,9 +351,10 @@ function throwIfStopped(signal: AbortSignal | undefined): void {
 }
 
 /**
- * Searches a deliberately small arrangement space. Train count and axle lines
- * are lexicographic hard priorities; the existing optimiser then performs the
- * exact split, longitudinal and pin search for each equal-spacing formation.
+ * Searches a deliberately small arrangement space. Total axle lines are the
+ * primary economic objective; train count is only a tie-breaker. Every
+ * retained formation receives the exact split, longitudinal, pin and selected
+ * hydraulic-system search.
  */
 export async function runArrangementOptimiser(
   sourceModel: ProjectModel,
@@ -373,6 +396,7 @@ export async function runArrangementOptimiser(
   }
 
   const definition = model.catalogue.find((item) => item.id === settings.trailerDefinitionId)!;
+  const hydraulicModes = arrangementHydraulicModes(model);
   const plannedFormationUpperBound = Array.from(
     {
       length: Math.max(0, settings.maximumTrains - settings.minimumTrains + 1),
@@ -385,7 +409,7 @@ export async function runArrangementOptimiser(
     const pitchesPerBucket = settings.searchMode === "MATHEMATICAL_BRANCH_BOUND"
       ? mathematicalPitchEvaluationUpperBound(definition, settings, trainCount, model.cargo.widthM)
       : spacingCandidates(definition, settings, trainCount, model.cargo.widthM).length;
-    return axleBuckets * pitchesPerBucket * longitudinalOffsetCandidates(settings, trainCount).length;
+    return axleBuckets * pitchesPerBucket * longitudinalOffsetCandidates(settings, trainCount).length * hydraulicModes.length;
   }).reduce((sum, count) => sum + count, 0);
   run.progress.overallPlanned = Math.max(1, plannedFormationUpperBound + 1);
   run.progress.phasePlanned = Math.max(1, plannedFormationUpperBound);
@@ -397,7 +421,14 @@ export async function runArrangementOptimiser(
     started,
     "Planning",
     "Arrangement search planned",
-    `${settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? "Mathematical branch-and-bound" : settings.searchMode === "ADAPTIVE_BOUNDED" ? "Legacy bounded convergence" : "Legacy grid search"}; ${plannedFormationUpperBound} upper formation evaluations before capacity, buildability and lexicographic pruning.`,
+    `${settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? "Mathematical branch-and-bound" : settings.searchMode === "ADAPTIVE_BOUNDED" ? "Legacy bounded convergence" : "Legacy grid search"}; ${plannedFormationUpperBound} upper formation evaluations before capacity, buildability and total-axle-line pruning.`,
+  );
+  addEvent(
+    run,
+    started,
+    "Planning",
+    "Hydraulic systems scheduled",
+    `${hydraulicModes.map(hydraulicModeLabel).join(" and ")} configurations will be evaluated for every retained train, axle and spacing formation.`,
   );
   if (settings.allowReducedEnvironmentalActions) {
     addEvent(
@@ -412,8 +443,6 @@ export async function runArrangementOptimiser(
   await notify(true, true);
 
   let completedUnits = 0;
-  let winningTrainCount: number | null = null;
-  let winningAxleLines: number | null = null;
 
   const evaluateFormation = async (
     trainCount: number,
@@ -423,6 +452,7 @@ export async function runArrangementOptimiser(
     finalVerification = false,
     verificationTemplate?: PassResult,
     longitudinalOffsetsM: number[] = [],
+    hydraulicSystemMode: HydraulicSystemMode = model.hydraulicSystemMode,
   ): Promise<boolean> => {
     throwIfStopped(callbacks.signal);
     if (completedUnits + 1 >= run.progress.overallPlanned) {
@@ -435,6 +465,7 @@ export async function runArrangementOptimiser(
       composition,
       pitchM,
       longitudinalOffsetsM,
+      hydraulicSystemMode,
     );
     const arranged = applyArrangementDescriptor(model, descriptor);
     const mathematical = settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" && !finalVerification;
@@ -449,13 +480,13 @@ export async function runArrangementOptimiser(
       },
     };
     const unitStarted = performance.now();
-    run.progress.reference = arrangementSummary(descriptor);
+    run.progress.reference = `${arrangementSummary(descriptor)}; ${hydraulicModeLabel(hydraulicSystemMode)}`;
     addEvent(
       run,
       started,
       finalVerification ? "Final" : "Formation",
       finalVerification ? "Running complete winning-formation verification" : "Testing exact arrangement",
-      arrangementSummary(descriptor),
+      `${arrangementSummary(descriptor)}; ${hydraulicModeLabel(hydraulicSystemMode)} hydraulics`,
     );
     const inner = await runOptimiser(exactModel, {
       signal: callbacks.signal,
@@ -521,7 +552,7 @@ export async function runArrangementOptimiser(
         started,
         finalVerification ? "Final" : "Formation",
         finalVerification ? "Winning formation fully verified" : "Minimum-level pass found",
-        `${arrangementSummary(descriptor)} produced at least one exact valid pass.`,
+        `${arrangementSummary(descriptor)}; ${hydraulicModeLabel(hydraulicSystemMode)} hydraulics produced at least one exact valid pass.`,
         "PASS",
       );
     }
@@ -534,6 +565,7 @@ export async function runArrangementOptimiser(
     axleLines: number,
     composition: Parameters<typeof createArrangementDescriptor>[3],
     pitchM: number,
+    hydraulicSystemMode: HydraulicSystemMode,
   ): Promise<boolean> => {
     let passed = false;
     for (const offsets of longitudinalOffsetCandidates(settings, trainCount)) {
@@ -545,10 +577,11 @@ export async function runArrangementOptimiser(
         false,
         undefined,
         offsets,
+        hydraulicSystemMode,
       );
-      // Train count and total AL are the hard objectives. The templates are
-      // ordered in-line first, then by increasing stagger, so the first exact
-      // pass is also the least complex formation at this economic level.
+      // Templates are ordered in-line first, then by increasing stagger, so
+      // the first exact pass is least complex at this fixed total-AL,
+      // train-count and hydraulic-system level.
       if (passed) break;
     }
     return passed;
@@ -571,10 +604,33 @@ export async function runArrangementOptimiser(
         );
         continue;
       }
+      const smallestBuildableTotalAL = axleValues[0].axleLines * trainCount;
+      const currentBest = run.passes.find((pass) => pass.overallRank === 1);
+      const currentArrangement = currentBest?.arrangement;
+      if (
+        currentArrangement &&
+        (
+          smallestBuildableTotalAL > currentArrangement.totalAxleLines ||
+          (
+            smallestBuildableTotalAL === currentArrangement.totalAxleLines &&
+            trainCount >= currentArrangement.trainCount
+          )
+        )
+      ) {
+        addEvent(
+          run,
+          started,
+          "Bound",
+          "Train count dominated by a lower-AL result",
+          `${trainCount} train${trainCount === 1 ? "" : "s"} need at least ${smallestBuildableTotalAL} total AL. The current best valid formation uses ${currentArrangement.totalAxleLines} total AL across ${currentArrangement.trainCount} train${currentArrangement.trainCount === 1 ? "" : "s"}, so this branch cannot improve the primary total-AL objective.`,
+          "INFO",
+        );
+        continue;
+      }
       const evaluateAxleBucket = async ({
         axleLines,
         composition,
-      }: (typeof axleValues)[number]): Promise<boolean> => {
+      }: (typeof axleValues)[number], hydraulicSystemMode: HydraulicSystemMode): Promise<boolean> => {
         throwIfStopped(callbacks.signal);
         const pitchBounds = formationPitchBounds(
           definition,
@@ -602,6 +658,8 @@ export async function runArrangementOptimiser(
               trainCount,
               composition,
               pitchM,
+              [],
+              hydraulicSystemMode,
             );
             return calculateProject(applyArrangementDescriptor(model, descriptor));
           };
@@ -662,7 +720,7 @@ export async function runArrangementOptimiser(
             const previous = tested.get(key);
             if (previous !== undefined) return previous;
             const passCountBefore = run.passes.length;
-            const passed = await evaluateFormationTemplates(trainCount, axleLines, composition, rounded);
+            const passed = await evaluateFormationTemplates(trainCount, axleLines, composition, rounded, hydraulicSystemMode);
             const outcome = {
               passed,
               caseCount: run.passes.length - passCountBefore,
@@ -756,7 +814,7 @@ export async function runArrangementOptimiser(
               skippedPitches += 1;
               continue;
             }
-            if (await evaluateFormationTemplates(trainCount, axleLines, composition, pitchM)) {
+            if (await evaluateFormationTemplates(trainCount, axleLines, composition, pitchM, hydraulicSystemMode)) {
               bucketHasPass = true;
               passingDistance = Math.min(passingDistance, pitchDistance);
             }
@@ -784,7 +842,11 @@ export async function runArrangementOptimiser(
         const previous = bucketOutcomes.get(index);
         if (previous) return previous;
         const passStart = run.passes.length;
-        const passed = await evaluateAxleBucket(axleValues[index]);
+        let passed = false;
+        for (const hydraulicSystemMode of hydraulicModes) {
+          const modePassed = await evaluateAxleBucket(axleValues[index], hydraulicSystemMode);
+          passed ||= modePassed;
+        }
         const evaluated = run.passes.slice(passStart);
         const outcome = {
           passed,
@@ -800,14 +862,12 @@ export async function runArrangementOptimiser(
         return outcome;
       };
       const selectWinningAxleIndex = (index: number) => {
-        winningTrainCount = trainCount;
-        winningAxleLines = axleValues[index].axleLines;
         addEvent(
           run,
           started,
           "Bound",
           "Minimum axle-line boundary solved",
-          `${trainCount} train${trainCount === 1 ? "" : "s"} require ${axleValues[index].axleLines} AL/train within the tested 4/5/6-AL module compositions. Higher axle and train branches are lexicographically worse.`,
+          `${trainCount} train${trainCount === 1 ? "" : "s"} require ${axleValues[index].axleLines} AL/train within the tested 4/5/6-AL module compositions. Other permitted train counts remain under evaluation because they may use fewer total axle lines.`,
           "BEST",
         );
       };
@@ -854,7 +914,6 @@ export async function runArrangementOptimiser(
           }
         }
       }
-      if (winningTrainCount !== null) break;
     }
 
     rankArrangementPasses(run.passes, model);
@@ -862,12 +921,12 @@ export async function runArrangementOptimiser(
     if (
       settings.searchMode !== "MATHEMATICAL_BRANCH_BOUND" &&
       best?.arrangement &&
-      winningTrainCount !== null &&
-      winningAxleLines !== null &&
       Math.abs(best.arrangement.pitchM - settings.preferredCentreSpacingM) > settings.spacingToleranceM
     ) {
       run.progress.phase = "REFINEMENT";
       run.progress.reference = "Refining equal train spacing";
+      const winningTrainCount = best.arrangement.trainCount;
+      const winningAxleLines = best.arrangement.axleLinesPerTrain;
       const minimumPitch =
         winningTrainCount === 1
           ? 0
@@ -922,6 +981,7 @@ export async function runArrangementOptimiser(
             },
             pitchM,
             bestArrangement.longitudinalOffsetsM,
+            bestArrangement.hydraulicSystemMode,
           );
           let candidateModel = applyArrangementDescriptor(model, descriptor);
           candidateModel = applySharedSplit(candidateModel, best.d138);
@@ -974,6 +1034,7 @@ export async function runArrangementOptimiser(
           true,
           best,
           arrangement.longitudinalOffsetsM,
+          arrangement.hydraulicSystemMode,
         );
       }
     }
@@ -994,7 +1055,7 @@ export async function runArrangementOptimiser(
     run.progress.overallEtaMs = 0;
     run.progress.estimatedFinish = new Date().toISOString();
     run.progress.reference = best?.arrangement
-      ? arrangementSummary(best.arrangement)
+      ? `${arrangementSummary(best.arrangement)}; ${hydraulicModeLabel(best.arrangement.hydraulicSystemMode ?? model.hydraulicSystemMode)} hydraulics`
       : "No valid automatic arrangement";
     addEvent(
       run,
@@ -1002,7 +1063,7 @@ export async function runArrangementOptimiser(
       "Final",
       best ? "Minimum arrangement selected" : "No valid arrangement",
       best?.arrangement
-        ? `${best.id}; ${arrangementSummary(best.arrangement)}; rating ${(best.rating ?? 0).toFixed(4)}.`
+        ? `${best.id}; ${arrangementSummary(best.arrangement)}; ${hydraulicModeLabel(best.arrangement.hydraulicSystemMode ?? model.hydraulicSystemMode)} hydraulics; rating ${(best.rating ?? 0).toFixed(4)}.`
         : "No arrangement passed every active engineering and support check within the configured bounds.",
       best ? "BEST" : "WARN",
       best?.caseReference ?? "",

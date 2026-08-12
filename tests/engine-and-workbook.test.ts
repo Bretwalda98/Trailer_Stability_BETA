@@ -39,6 +39,7 @@ import {
 import { EZTRAILER_ROAD_SURFACES } from "../app/engine/road-transport";
 import {
   deriveHydraulicYPitchBound,
+  arrangementHydraulicModes,
   rankArrangementPasses,
   requiredHydraulicGroupYSpan,
   runArrangementOptimiser,
@@ -83,6 +84,7 @@ async function main(): Promise<void> {
   const root = process.cwd();
   const model = createDefaultModel();
   assert.equal(model.schemaVersion, 3);
+  assert.deepEqual(arrangementHydraulicModes(model), ["THREE_POINT", "FOUR_POINT"]);
   assert.equal(model.longitudinalOrientation, LONGITUDINAL_ORIENTATION_ID);
   assert.equal(model.hydraulicSystemMode, "THREE_POINT");
   assert.equal(EZTRAILER_ROAD_SURFACES.find((item) => item.id === "ASPHALT")?.dryFriction, 0.8);
@@ -420,13 +422,29 @@ async function main(): Promise<void> {
     ),
   );
   assert.ok(arrangementRun.events.some((item) => item.detail.includes("Mathematical branch-and-bound")));
+  assert.ok(arrangementRun.events.some((item) => item.message === "Hydraulic systems scheduled"));
+  assert.deepEqual(
+    [...new Set(arrangementRun.passes.map((pass) => pass.arrangement?.hydraulicSystemMode).filter(Boolean))].sort(),
+    ["FOUR_POINT", "THREE_POINT"],
+    "The default automatic arrangement search evaluates both hydraulic systems.",
+  );
   assert.ok(arrangementRun.events.some((item) => item.message === "Winning formation fully verified"));
   const mathematicalBest = arrangementRun.passes.find((pass) => pass.overallRank === 1);
   assert.ok(mathematicalBest?.arrangement);
   assert.equal(mathematicalBest.arrangement.trainCount, 2);
   assert.equal(mathematicalBest.arrangement.totalAxleLines, 8);
+  const appliedFourPointPass = arrangementRun.passes.find(
+    (pass) => pass.arrangement?.hydraulicSystemMode === "FOUR_POINT",
+  );
+  assert.ok(appliedFourPointPass);
+  assert.equal(
+    passToProject(compactArrangementSearch, appliedFourPointPass).hydraulicSystemMode,
+    "FOUR_POINT",
+    "Applying a four-point result must also apply its hydraulic mode.",
+  );
   const compactFourPointSearch = structuredClone(compactArrangementSearch);
   compactFourPointSearch.hydraulicSystemMode = "FOUR_POINT";
+  compactFourPointSearch.arrangementOptimiser.hydraulicSearchMode = "FOUR_POINT";
   const fourPointArrangementRun = await runArrangementOptimiser(compactFourPointSearch);
   const fourPointArrangementBest = fourPointArrangementRun.passes.find((pass) => pass.overallRank === 1);
   assert.equal(fourPointArrangementRun.state, "COMPLETE");
@@ -510,6 +528,33 @@ async function main(): Promise<void> {
   assert.equal(preferredCandidate.overallRank, 1);
   assert.equal(widerCandidate.overallRank, 2);
 
+  const fewerAxlesAcrossTrains = structuredClone(preferredCandidate);
+  fewerAxlesAcrossTrains.id = `${preferredCandidate.id}-TWO-TRAIN-8-AL`;
+  fewerAxlesAcrossTrains.sequence = 1;
+  fewerAxlesAcrossTrains.arrangement = {
+    ...fewerAxlesAcrossTrains.arrangement!,
+    trainCount: 2,
+    axleLinesPerTrain: 4,
+    totalAxleLines: 8,
+  };
+  const oneTrainMoreAxles = structuredClone(fewerAxlesAcrossTrains);
+  oneTrainMoreAxles.id = `${preferredCandidate.id}-ONE-TRAIN-12-AL`;
+  oneTrainMoreAxles.sequence = 2;
+  oneTrainMoreAxles.arrangement = {
+    ...oneTrainMoreAxles.arrangement!,
+    trainCount: 1,
+    axleLinesPerTrain: 12,
+    totalAxleLines: 12,
+    pitchM: 0,
+  };
+  rankArrangementPasses([oneTrainMoreAxles, fewerAxlesAcrossTrains], compactArrangementSearch);
+  assert.equal(
+    fewerAxlesAcrossTrains.overallRank,
+    1,
+    "A multi-train formation with fewer total axle lines must beat a one-train formation with more axle lines.",
+  );
+  assert.equal(oneTrainMoreAxles.overallRank, 2);
+
   const cargoOnlyCandidate = structuredClone(preferredCandidate);
   cargoOnlyCandidate.id = `${preferredCandidate.id}-CARGO-ONLY`;
   cargoOnlyCandidate.sequence = 2;
@@ -548,6 +593,11 @@ async function main(): Promise<void> {
   };
   largeCargoSearch.packing.massT = 0;
   largeCargoSearch.loosePacking = [];
+  // This is the retained 15 s mathematical-bound benchmark. The separate
+  // compact search above verifies the default BOTH hydraulic policy; fixing
+  // this benchmark to one explicit system keeps its historical runtime target
+  // comparable while still exercising the same bound path.
+  largeCargoSearch.arrangementOptimiser.hydraulicSearchMode = "THREE_POINT";
   largeCargoSearch.supports = largeCargoSearch.supports.map((support, index) => ({
     ...support,
     xM: 5 * (index + 1),

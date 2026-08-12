@@ -473,7 +473,7 @@ export function OptimiserWizard({
           </div>
           <button type="button" onClick={onFindArrangement}>
             <IconStack2 size={17} />
-            <span><b>Find minimum trailer arrangement</b><small>Choose 4-, 5- and 6-AL module stock, then search minimum trains and total axle lines around the all-inclusive COG.</small></span>
+            <span><b>Find minimum trailer arrangement</b><small>Choose 4-, 5- and 6-AL module stock, then search both hydraulic systems and the minimum total axle lines around the all-inclusive COG.</small></span>
           </button>
         </div>
       </FormSection>
