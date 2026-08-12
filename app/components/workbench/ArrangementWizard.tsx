@@ -270,7 +270,8 @@ export function ArrangementWizard({
         searches:
           values.length *
           pitches.length *
-          longitudinalOffsetCandidates(settings, trainCount).length,
+          longitudinalOffsetCandidates(settings, trainCount).length *
+          (settings.hydraulicSearchMode === "BOTH" ? 2 : 1),
       };
     });
   }, [definition, draftModel, settings]);
@@ -483,20 +484,20 @@ export function ArrangementWizard({
           <small>The PPU mass is included in the minimum axle-line capacity bound.</small>
         </label>
       </FormSection>
-      <FormSection title="Hydraulic suspension model" description="Choose the hydraulic stability system that every generated formation must use.">
+      <FormSection title="Hydraulic suspension search" description="The solver can test both supported hydraulic systems against the same trailer formation.">
         <label className="wizard-field is-valid">
-          <span>Hydraulic suspension</span>
+          <span>Hydraulic systems to search</span>
           <select
-            value={draftModel.hydraulicSystemMode}
-            onChange={(event) => setDraftModel((current) => ({
-              ...current,
-              hydraulicSystemMode: event.target.value as ProjectModel["hydraulicSystemMode"],
-            }))}
+            value={settings.hydraulicSearchMode}
+            onChange={(event) => updateSettings({
+              hydraulicSearchMode: event.target.value as ArrangementOptimiserSettings["hydraulicSearchMode"],
+            })}
           >
-            <option value="THREE_POINT">Three-point · stability triangle</option>
-            <option value="FOUR_POINT">Four-point · convex stability polygon</option>
+            <option value="BOTH">Both 3-point and 4-point (recommended)</option>
+            <option value="THREE_POINT">Three-point only (stability triangle)</option>
+            <option value="FOUR_POINT">Four-point only (convex stability polygon)</option>
           </select>
-          <small>Four-point reactions use exact force and X/Y moment equilibrium with load-per-bogie balancing, matching the recovered v0.8 engineering logic.</small>
+          <small>Both evaluates and records each viable triangle and four-corner polygon. Applying a pass also applies its hydraulic system.</small>
         </label>
       </FormSection>
       <FormSection title="Road transport analysis" description="Optional powered-traction and braking check using the recovered EZTrailer surface and bogie data.">
@@ -581,7 +582,7 @@ export function ArrangementWizard({
               : "Retains the previous complete coarse sampling sequence."}</small>
         </label>
       </FormSection>
-      <FormSection title="Economic bounds" description="Train count is the first hard priority, followed by total axle lines.">
+      <FormSection title="Economic bounds" description="Total axle lines are the first hard priority. Fewer trains are preferred only when two valid formations use the same total AL.">
         <div className="wizard-field-grid three">
           <NumberField label="Minimum trains" value={settings.minimumTrains} min={1} max={12} step={1} valid={Number.isInteger(settings.minimumTrains) && settings.minimumTrains >= 1 && settings.minimumTrains <= settings.maximumTrains} onChange={(value) => updateSettings({ minimumTrains: Math.round(value) })} />
           <NumberField label="Maximum trains" value={settings.maximumTrains} min={1} max={12} step={1} valid={Number.isInteger(settings.maximumTrains) && settings.maximumTrains >= settings.minimumTrains && settings.maximumTrains <= 12} onChange={(value) => updateSettings({ maximumTrains: Math.round(value) })} />
@@ -754,7 +755,7 @@ export function ArrangementWizard({
             {planRows.map((row) => <div key={row.trainCount}><span><b>{row.trainCount}</b><small>train{row.trainCount === 1 ? "" : "s"}</small></span><span><b>{row.first?.axleLines ?? "—"} AL/train</b><small>{row.first ? moduleText(row.first.composition.modules4, row.first.composition.modules5, row.first.composition.modules6) : "No stock combination"}</small></span><span><b>{row.first ? row.first.axleLines * row.trainCount : "—"} total AL</b><small>{row.pitches} Y seed{row.pitches === 1 ? "" : "s"} · {row.formationTemplates} X template{row.formationTemplates === 1 ? "" : "s"}</small></span></div>)}
             {!planRows.length && <p className="fast-support-empty">Select a trailer and enter valid search bounds to create the plan.</p>}
           </div>
-          <div className="arrangement-preview-facts"><span><small>Payload mass</small><b>{(draftModel.cargo.massT + draftModel.packing.massT + draftModel.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0)).toFixed(2)} t</b></span><span><small>Selected trailer</small><b>{definition?.name ?? "Not selected"}</b></span><span><small>Deck height</small><b>{draftModel.trailerDeckHeightM.toFixed(3)} m</b></span><span><small>PPU</small><b>{settings.ppuPosition === "NONE" ? "None" : settings.ppuPosition === "REAR" ? "Rear" : settings.ppuPosition === "FRONT" ? "Front" : "Both ends"}</b></span><span><small>Hydraulics</small><b>{draftModel.hydraulicSystemMode === "FOUR_POINT" ? "4-point" : "3-point"}</b></span><span><small>Formation</small><b>{settings.formationMode === "ALLOW_STAGGERED" ? "In-line + staggered" : "In-line only"}</b></span><span><small>Road check</small><b>{draftModel.roadTransport.enabled ? "Active" : "Off"}</b></span><span><small>Verification</small><b>{environmentalSelection.reduced ? "Third degree" : draftModel.engineeringDegree}</b></span></div>
+          <div className="arrangement-preview-facts"><span><small>Payload mass</small><b>{(draftModel.cargo.massT + draftModel.packing.massT + draftModel.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0)).toFixed(2)} t</b></span><span><small>Selected trailer</small><b>{definition?.name ?? "Not selected"}</b></span><span><small>Deck height</small><b>{draftModel.trailerDeckHeightM.toFixed(3)} m</b></span><span><small>PPU</small><b>{settings.ppuPosition === "NONE" ? "None" : settings.ppuPosition === "REAR" ? "Rear" : settings.ppuPosition === "FRONT" ? "Front" : "Both ends"}</b></span><span><small>Hydraulics</small><b>{settings.hydraulicSearchMode === "BOTH" ? "3-point + 4-point" : settings.hydraulicSearchMode === "FOUR_POINT" ? "4-point only" : "3-point only"}</b></span><span><small>Formation</small><b>{settings.formationMode === "ALLOW_STAGGERED" ? "In-line + staggered" : "In-line only"}</b></span><span><small>Road check</small><b>{draftModel.roadTransport.enabled ? "Active" : "Off"}</b></span><span><small>Verification</small><b>{environmentalSelection.reduced ? "Third degree" : draftModel.engineeringDegree}</b></span></div>
           <div className="setup-wizard-preview-findings">{blocking.length ? <span className="blocking"><IconX size={13} /> {blocking.length} blocking</span> : <span className="valid"><IconCheck size={13} /> Search valid</span>}</div>
         </section>
         <footer className="setup-wizard-footer">

@@ -198,6 +198,7 @@ export function createDefaultModel(): ProjectModel {
       spacingSamples: 3,
       spacingToleranceM: 0.05,
       ppuPosition: "NONE",
+      hydraulicSearchMode: "BOTH",
       formationMode: "ALLOW_STAGGERED",
       maximumLongitudinalStaggerM: 6,
       longitudinalStaggerSamples: 1,

@@ -242,6 +242,7 @@ export interface OptimiserSettings {
 }
 
 export type ArrangementPpuPosition = "NONE" | "REAR" | "FRONT" | "BOTH";
+export type ArrangementHydraulicSearchMode = "BOTH" | "THREE_POINT" | "FOUR_POINT";
 export type ArrangementSearchMode =
   | "MATHEMATICAL_BRANCH_BOUND"
   | "ADAPTIVE_BOUNDED"
@@ -269,6 +270,12 @@ export interface ArrangementOptimiserSettings {
   spacingSamples: number;
   spacingToleranceM: number;
   ppuPosition: ArrangementPpuPosition;
+  /**
+   * The automatic arrangement solver may verify both supported hydraulic
+   * systems from the same formation.  Keeping this on BOTH prevents an
+   * inherited project setting from silently excluding a viable arrangement.
+   */
+  hydraulicSearchMode: ArrangementHydraulicSearchMode;
   formationMode: ArrangementFormationMode;
   maximumLongitudinalStaggerM: number;
   longitudinalStaggerSamples: number;
@@ -292,6 +299,8 @@ export interface ArrangementDescriptor {
   clearanceM: number;
   overallWidthM: number;
   ppuPosition: ArrangementPpuPosition;
+  /** The hydraulic system used for this exact evaluated formation. */
+  hydraulicSystemMode?: HydraulicSystemMode;
   formationMode: "INLINE" | "STAGGERED";
   longitudinalOffsetsM: number[];
   longitudinalSpanM: number;
