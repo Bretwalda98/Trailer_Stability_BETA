@@ -13720,13 +13720,17 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
   (setq path (sartd:v100-path-join folder sartd:*library-default-name*))
   (if (sartd:v100-file-exists-p path) (findfile path) nil))
 
-(defun sartd:v100-store-library-path (path / full folder)
+(defun sartd:v100-store-library-path (path / full folder root)
   (setq full (if (sartd:v100-file-exists-p path) (findfile path) path))
   (if (and full (/= full ""))
     (progn
       (setenv sartd:*library-env* full)
       (setq folder (vl-filename-directory full))
       (if folder (setenv sartd:*blocks-folder-env* folder))
+      (if folder
+        (progn
+          (setq root (vl-filename-directory folder))
+          (if root (setenv "SARTD_LSP_FOLDER" root))))
       full)
     nil))
 
@@ -13916,6 +13920,136 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
 
 (princ "\nSARTDWEB ready. Enter the code shown by Export to AutoCAD.")
 (princ)
+
+; =================================================================================================
+; v1.17 INTERACTIVE JSON SELECTION HELPERS
+; - SARTDJSON always asks for the numbered case-data JSON. It never honours the automated-test flag.
+; - SARTDJSONDATA deliberately revalidates the last selected case without opening a dialog.
+; - The separate key/contract JSON is identified explicitly and cannot be mistaken for case data.
+; Final command overrides are installed after the v1.16 compatibility section at the end of file.
+; =================================================================================================
+
+(defun sartd:v117-json-key-envelope-p (root)
+  (and (sartd:json-object-p root)
+       (= (sartd:json-string (sartd:json-get root "format")) sartd:*json-format*)
+       (= (sartd:json-string (sartd:json-get root "keyId")) sartd:*json-key-id*)
+       (sartd:json-get root "sections")
+       (not (sartd:json-object-p (sartd:json-get root "data")))))
+
+(defun sartd:v117-json-key-filename-p (path / base)
+  (setq base (if path (strcase (vl-filename-base path)) ""))
+  (or (wcmatch base "*AUTOCAD*KEY*")
+      (wcmatch base "*CAD*KEY*")))
+
+(defun sartd:v117-downloads-folder (/ user path)
+  (setq user (getenv "USERPROFILE"))
+  (if user
+    (progn
+      (setq path (strcat user "\\Downloads\\"))
+      (if (vl-file-directory-p path) path ""))
+    ""))
+
+(defun sartd:v117-json-dialog-default (/ last)
+  (setq last (getenv "SARTD_JSON_LAST"))
+  (if (and last (/= last "") (findfile last)
+           (not (sartd:v117-json-key-filename-p last))
+           (not (wcmatch (strcase last) "*TEST-FIXTURES*")))
+    last
+    (sartd:v117-downloads-folder)))
+
+(defun sartd:v117-json-prompt-source-path (/ default path done)
+  (setq default (sartd:v117-json-dialog-default) path nil done nil)
+  (while (not done)
+    (setq path
+      (getfiled
+        "Select numbered Trailer Stability case JSON (not the key file)"
+        default
+        "json"
+        0))
+    (cond
+      ((not path)
+        (setq done T))
+      ((sartd:v117-json-key-filename-p path)
+        (sartd:pr
+          "That is the AutoCAD key/contract file. Keep it with the package, then select the numbered case-data JSON, for example trailer-stability-autocad-581669.json.")
+        (setq default path path nil))
+      (T
+        (setq done T))))
+  path)
+
+(defun sartd:v117-json-last-source-path (/ path)
+  (setq path (getenv "SARTD_JSON_LAST"))
+  (cond
+    ((or (not path) (= path ""))
+      (sartd:pr "No previous case-data JSON is stored. Run SARTDJSON and select the numbered case file first.")
+      nil)
+    ((sartd:v117-json-key-filename-p path)
+      (sartd:pr "The remembered JSON is the key/contract file, not case data. Run SARTDJSON and select the numbered case file.")
+      nil)
+    ((not (findfile path))
+      (sartd:pr (strcat "The previous case-data JSON no longer exists: " path ". Run SARTDJSON to select it again."))
+      nil)
+    (T path)))
+
+(defun sartd:json-load-validated (path / root verdict)
+  (setq sartd:*json-source* path sartd:*json-log* (strcat path ".lisp.log"))
+  (setq root (sartd:json-read-text path))
+  (cond
+    ((not root)
+      (sartd:json-log (if sartd:*json-error* sartd:*json-error* "JSON parse failed."))
+      nil)
+    ((sartd:v117-json-key-envelope-p root)
+      (sartd:json-log
+        "This is the AutoCAD key/contract JSON, not a drawing case. Select the numbered trailer-stability-autocad-######.json case-data file instead.")
+      nil)
+    ((sartd:v116-saved-project-json-p root)
+      (sartd:json-log
+        "This is a saved project JSON, not the coded AutoCAD drawing export. In Trailer Stability use AutoCAD > Export drawing data, then select the numbered TRAILER-STABILITY-CAD-DATA JSON file.")
+      nil)
+    (T
+      (setq verdict (sartd:json-validate root))
+      (if (not (car verdict))
+        (progn (foreach e (cadr verdict) (sartd:json-log e)) nil)
+        (progn
+          (setenv "SARTD_JSON_LAST" path)
+          (setq sartd:*json-root* root sartd:*json-data* (sartd:json-adapt root))
+          (sartd:json-log
+            (strcat "Validated numbered case export: "
+                    (itoa (length (sartd:g 'trailers sartd:*json-data*))) " trailer(s), "
+                    (itoa (length (sartd:g 'hydraulic-grouping sartd:*json-data*))) " hydraulic side definition(s), "
+                    (itoa (length (sartd:g 'json-polygon sartd:*json-data*))) " stability-boundary point(s)."))
+          sartd:*json-data*)))))
+
+(defun c:SARTDJSONDATA (/ path data)
+  (vl-load-com)
+  (setq path (sartd:v117-json-last-source-path))
+  (if path
+    (progn
+      (setq data (sartd:json-load-validated path))
+      (if data
+        (progn (sartd:json-summary data) (sartd:json-log "SARTDJSONDATA complete."))
+        (sartd:json-log "SARTDJSONDATA stopped before drawing."))))
+  (princ))
+
+(defun c:SARTDJSON (/ path data result)
+  (vl-load-com)
+  ; Interactive command behavior is unconditional. Automated validation uses SARTDJSONDATA.
+  (setq path (sartd:v117-json-prompt-source-path))
+  (if (and path (/= path ""))
+    (progn
+      (setq data (sartd:json-load-validated path))
+      (if data
+        (progn
+          (sartd:json-summary data)
+          (setq result (vl-catch-all-apply 'sartd:json-run-drawing (list data)))
+          (if (vl-catch-all-error-p result)
+            (sartd:json-log (strcat "SARTDJSON failed safely: " (vl-catch-all-error-message result)))
+            (if result
+              (sartd:json-log "SARTDJSON complete.")
+              (sartd:json-log "SARTDJSON stopped; no drawing was committed."))))
+        (sartd:json-log "SARTDJSON stopped before drawing.")))
+    (sartd:pr "No numbered case-data JSON was selected; SARTDJSON stopped."))
+  (princ))
 
 ; =================================================================================================
 ; JSON WEB EXPORT PATH (v1.2)
@@ -14420,4 +14554,952 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
   (princ))
 
 (princ "\nSARTDJSON and SARTDJSONDATA ready. JSON path uses no Excel/COM workbook transfer.")
+(princ)
+
+; =================================================================================================
+; v1.16 IMPORT RELIABILITY HOTFIX
+; -------------------------------------------------------------------------------------------------
+; - Captures the loaded LSP folder while the file is loading so the bundled Autocad Blocks folder
+;   can be found reliably after APPLOAD.
+; - Requires a validated block library before any drawing is deleted or generated and provides an
+;   explicit SARTDBLOCKS command for changing the configured folder.
+; - Resolves the intended calculation workbook instead of trusting an unrelated Excel ActiveWorkbook.
+; - Finds calculation/export sheets by normalised names and accepted CAD/DWG aliases, including in
+;   protected/locked workbooks, and prints the actual workbook and available sheets on failure.
+; - Corrects the coded JSON adapter for cargo datum offsets, combined COG, deck height, hydraulic
+;   side/group definitions and trailer-specific pinned axle lines.
+; =================================================================================================
+
+(setq sartd:*version* "1.16")
+(setq sartd:*v116-load-root*
+  (cond
+    ((and (boundp '*load-truename*) *load-truename*)
+      (vl-filename-directory (sartd:str *load-truename*)))
+    ((and (boundp '*load-pathname*) *load-pathname*)
+      (vl-filename-directory (sartd:str *load-pathname*)))
+    (T nil)))
+
+(defun sartd:v100-loaded-file-folder (/ p)
+  (cond
+    ((and sartd:*v116-load-root* (vl-file-directory-p sartd:*v116-load-root*))
+      sartd:*v116-load-root*)
+    ((and (boundp '*load-truename*) *load-truename*)
+      (vl-filename-directory (sartd:str *load-truename*)))
+    ((and (boundp '*load-pathname*) *load-pathname*)
+      (vl-filename-directory (sartd:str *load-pathname*)))
+    ((setq p (findfile sartd:*release-file*))
+      (vl-filename-directory p))
+    (T nil)))
+
+(defun sartd:v116-alnum-name (value / s out i ch code)
+  ; Upper-case comparison key that ignores spaces, punctuation, underscores and non-breaking spaces.
+  (setq s (strcase (sartd:str value)) out "" i 1)
+  (while (<= i (strlen s))
+    (setq ch (substr s i 1) code (ascii ch))
+    (if (or (and (>= code 48) (<= code 57))
+            (and (>= code 65) (<= code 90)))
+      (setq out (strcat out ch)))
+    (setq i (1+ i)))
+  out)
+
+(defun sartd:v116-sheet-name-match-p (actual requested / a r)
+  (setq a (sartd:v116-alnum-name actual) r (sartd:v116-alnum-name requested))
+  (cond
+    ((= a r) T)
+    ((member r '("LOADANDSTABILITYCALCULATION" "LOADSTABILITYCALCULATION"))
+      (member a '("LOADANDSTABILITYCALCULATION" "LOADSTABILITYCALCULATION"
+                  "LOADANDSTABILITYCALCULATIONS" "LOADSTABILITYCALCULATIONS")))
+    ((member r '("EXPORTTODWG" "EXPORTTOCAD" "EXPORTTOAUTOCAD"))
+      (member a '("EXPORTTODWG" "EXPORTTOCAD" "EXPORTTOAUTOCAD" "DWGEXPORT"
+                  "CADEXPORT" "AUTOCADEXPORT" "AUTOCADOUTPUT" "CADOUTPUT")))
+    (T nil)))
+
+(defun sartd:v116-find-sheet (wb name / sheets exact sh actual found count index)
+  (setq found nil)
+  (if wb
+    (progn
+      (setq sheets (vl-catch-all-apply 'vlax-get-property (list wb 'Worksheets)))
+      (if (not (vl-catch-all-error-p sheets))
+        (progn
+          ; Fast exact lookup first. This also works for hidden and veryHidden worksheets.
+          (setq exact (vl-catch-all-apply 'vlax-get-property (list sheets 'Item name)))
+          ; Excel/ActiveX can return NIL (rather than an error object) when Item(name) is absent.
+          ; Only accept an actual worksheet object; otherwise enumerate the sheet aliases below.
+          (if (and exact
+                   (not (vl-catch-all-error-p exact))
+                   (= (type exact) 'VLA-OBJECT))
+            (setq found exact)
+            (progn
+              ; Do not retain a VLAX-FOR iterator as the return object. Excel releases that
+              ; transient iterator at the end of enumeration in some AutoCAD/Excel versions.
+              ; Retrieve the matching worksheet by numeric Item index so the returned COM object
+              ; remains live for all subsequent Range reads.
+              (setq count (vl-catch-all-apply 'vlax-get-property (list sheets 'Count))
+                    index 1)
+              (if (vl-catch-all-error-p count) (setq count 0))
+              (while (and (not found) (<= index count))
+                (setq sh (vl-catch-all-apply 'vlax-get-property (list sheets 'Item index)))
+                (if (and sh (not (vl-catch-all-error-p sh)))
+                  (progn
+                    (setq actual (vl-catch-all-apply 'vlax-get-property (list sh 'Name)))
+                    (if (and (not (vl-catch-all-error-p actual))
+                             (sartd:v116-sheet-name-match-p actual name))
+                      (setq found sh))))
+                (setq index (1+ index))))))))
+  found))
+
+(defun sartd:v116-workbook-path (wb / p)
+  (if wb
+    (progn
+      (setq p (vl-catch-all-apply 'vlax-get-property (list wb 'FullName)))
+      (if (vl-catch-all-error-p p) nil p))
+    nil))
+
+(defun sartd:v116-sheet-names (wb / sheets sh name out)
+  (setq out nil)
+  (if wb
+    (progn
+      (setq sheets (vl-catch-all-apply 'vlax-get-property (list wb 'Worksheets)))
+      (if (not (vl-catch-all-error-p sheets))
+        (vlax-for sh sheets
+          (setq name (vl-catch-all-apply 'vlax-get-property (list sh 'Name)))
+          (if (not (vl-catch-all-error-p name))
+            (setq out (append out (list name))))))))
+  out)
+
+(defun sartd:v116-join (items separator / out item)
+  (setq out "")
+  (foreach item items
+    (setq out (strcat out (if (= out "") "" separator) (sartd:str item))))
+  out)
+
+(defun sartd:sheet (wb name / sh path names)
+  (setq sh (sartd:v116-find-sheet wb name))
+  (if sh
+    sh
+    (progn
+      (setq path (sartd:v116-workbook-path wb))
+      (setq names (sartd:v116-sheet-names wb))
+      (sartd:pr
+        (strcat
+          "Required worksheet was not found: " name
+          ". Workbook inspected: " (if path path "<unavailable>")
+          ". Available worksheets: " (if names (sartd:v116-join names " | ") "<none returned by Excel>")))
+      nil)))
+
+(defun sartd:v116-calculation-workbook-p (wb)
+  (if (sartd:v116-find-sheet wb sartd:*sheet-main*) T nil))
+
+(defun sartd:v116-find-open-calculation-workbook (/ xl wbs active wb candidates path)
+  ; Prefer a valid active workbook. If Excel's ROT points at another workbook/instance, scan every
+  ; workbook visible to that Excel instance and accept one unambiguous calculation workbook.
+  (setq candidates nil)
+  (setq xl (vl-catch-all-apply 'vlax-get-object (list "Excel.Application")))
+  (if (not (vl-catch-all-error-p xl))
+    (progn
+      (setq active (vl-catch-all-apply 'vlax-get-property (list xl 'ActiveWorkbook)))
+      (if (and (not (vl-catch-all-error-p active)) (sartd:v116-calculation-workbook-p active))
+        active
+        (progn
+          (setq wbs (vl-catch-all-apply 'vlax-get-property (list xl 'Workbooks)))
+          (if (not (vl-catch-all-error-p wbs))
+            (vlax-for wb wbs
+              (if (sartd:v116-calculation-workbook-p wb)
+                (setq candidates (append candidates (list wb))))))
+          (cond
+            ((= (length candidates) 1)
+              (setq wb (car candidates))
+              (sartd:pr
+                (strcat "Excel ActiveWorkbook was not the calculation workbook. Using the only valid open workbook: "
+                        (sartd:str (sartd:v116-workbook-path wb))))
+              wb)
+            ((> (length candidates) 1)
+              (sartd:pr "More than one open calculation workbook was found. Use Browse to select the intended file.")
+              (foreach wb candidates
+                (setq path (sartd:v116-workbook-path wb))
+                (if path (sartd:pr (strcat "  candidate: " path))))
+              nil)
+            (T
+              (sartd:pr "No open Excel workbook with a Load and Stability Calculation worksheet was found.")
+              nil)))))
+    (progn
+      (sartd:pr "Excel is not currently exposing an open workbook. Use Browse to select the calculation file.")
+      nil)))
+
+(defun sartd:v116-validate-workbook (wb / path)
+  (if (not wb)
+    nil
+    (if (sartd:v116-calculation-workbook-p wb)
+      (progn
+        (setq path (sartd:v116-workbook-path wb))
+        (if path (setenv "SARTD_LAST_XLS" path))
+        wb)
+      (progn
+        ; Use sartd:sheet here so the error contains the selected path and every actual sheet name.
+        (sartd:sheet wb sartd:*sheet-main*)
+        nil))))
+
+(defun sartd:get-excel-app (/ xl)
+  ; Some AutoCAD/Excel instance combinations return NIL rather than an ActiveX error object. Guard
+  ; both outcomes so the user receives a useful source message instead of "bad VLA-OBJECT nil".
+  (setq xl (vl-catch-all-apply 'vlax-get-object (list "Excel.Application")))
+  (if (or (vl-catch-all-error-p xl) (not xl))
+    (setq xl (vl-catch-all-apply 'vlax-create-object (list "Excel.Application"))))
+  (if (or (vl-catch-all-error-p xl) (not xl))
+    (progn
+      (sartd:pr "AutoCAD could not connect to Microsoft Excel. Open the calculation workbook in desktop Excel, then use Active; or use Browse.")
+      nil)
+    (progn
+      (vl-catch-all-apply 'vlax-put-property (list xl 'Visible :vlax-true))
+      xl)))
+
+(setq sartd:*v116-dedicated-excel* nil
+      sartd:*v116-dedicated-workbook* nil
+      sartd:*v116-dedicated-path* nil)
+
+(defun sartd:v116-object-live-p (obj / probe)
+  (if (and obj (= (type obj) 'VLA-OBJECT))
+    (progn
+      (setq probe (vl-catch-all-apply 'vlax-get-property (list obj 'Name)))
+      (not (vl-catch-all-error-p probe)))
+    nil))
+
+(defun sartd:v116-cached-workbook (path / livePath)
+  (if (and path sartd:*v116-dedicated-workbook*
+           (sartd:v116-object-live-p sartd:*v116-dedicated-workbook*))
+    (progn
+      (setq livePath (sartd:v116-workbook-path sartd:*v116-dedicated-workbook*))
+      (if (and livePath (= (strcase livePath) (strcase path)))
+        sartd:*v116-dedicated-workbook*
+        nil))
+    nil))
+
+(defun sartd:workbook-by-path (path / cached xl wbs wb out fn)
+  ; AutoCAD can only obtain one Excel ROT entry. Check the dedicated path-based instance first,
+  ; then scan the Excel instance returned by the ROT.
+  (setq cached (sartd:v116-cached-workbook path))
+  (if cached
+    cached
+    (progn
+      (setq out nil)
+      (if (and path (/= path ""))
+        (progn
+          (setq xl (vl-catch-all-apply 'vlax-get-object (list "Excel.Application")))
+          (if (and (not (vl-catch-all-error-p xl)) xl)
+            (progn
+              (setq wbs (vl-catch-all-apply 'vlax-get-property (list xl 'Workbooks)))
+              (if (not (vl-catch-all-error-p wbs))
+                (vlax-for wb wbs
+                  (if (not out)
+                    (progn
+                      (setq fn (sartd:v116-workbook-path wb))
+                      (if (and fn (= (strcase fn) (strcase path)))
+                        (setq out wb))))))))))
+      out)))
+
+(defun sartd:v116-open-dedicated-workbook (path / xl wbs wb repaired)
+  ; A workbook may already be open in an Excel process which is not the one exposed through the
+  ; Running Object Table. A fresh Excel application can still open the selected path read-only.
+  ; Retain both COM objects so subsequent refreshes reuse the same verified workbook.
+  (setq xl (vl-catch-all-apply 'vlax-create-object (list "Excel.Application")))
+  (if (or (vl-catch-all-error-p xl) (not xl))
+    nil
+    (progn
+      (vl-catch-all-apply 'vlax-put-property (list xl 'Visible :vlax-true))
+      (vl-catch-all-apply 'vlax-put-property (list xl 'DisplayAlerts :vlax-false))
+      (setq wbs (vl-catch-all-apply 'vlax-get-property (list xl 'Workbooks)))
+      (if (vl-catch-all-error-p wbs)
+        (setq wb nil)
+        (setq wb (vl-catch-all-apply 'vlax-invoke-method
+                   (list wbs 'Open path 0 :vlax-true))))
+      ; Files downloaded from the web or copied from a controlled document store can carry a
+      ; Mark-of-the-Web/file-validation flag. Excel then rejects the ordinary COM Open call even
+      ; though desktop Excel can show the workbook. Retry read-only with xlRepairFile (1). This
+      ; preserves formula results and lets the drafter read locked calculation workbooks without
+      ; editing or saving them.
+      (if (or (vl-catch-all-error-p wb) (not wb))
+        (progn
+          (setq repaired T)
+          (sartd:pr "Standard Excel open was blocked; retrying read-only with Excel file-repair mode.")
+          (setq wb (vl-catch-all-apply 'vlax-invoke-method
+                     (list wbs 'Open path 0 :vlax-true 5 "" "" :vlax-true 2 ""
+                           :vlax-false :vlax-false 0 :vlax-false :vlax-true 1)))))
+      (if (or (vl-catch-all-error-p wb) (not wb) (not (sartd:v116-object-live-p wb)))
+        (progn
+          (vl-catch-all-apply 'vlax-invoke-method (list xl 'Quit))
+          (setq wb nil))
+        (progn
+          (setq sartd:*v116-dedicated-excel* xl
+                sartd:*v116-dedicated-workbook* wb
+                sartd:*v116-dedicated-path* path)
+          (sartd:pr
+            (strcat
+              "Opened a verified read-only calculation source by full path"
+              (if repaired " using Excel repair mode" "") ": " path))))
+      wb)))
+
+(defun sartd:open-workbook (path / wb)
+  (setq wb (sartd:workbook-by-path path))
+  (if (not (and wb
+                (sartd:v116-object-live-p wb)
+                (sartd:v116-calculation-workbook-p wb)))
+    (progn
+      (sartd:pr "Attaching to the selected calculation file by full path in a dedicated read-only Excel instance.")
+      (setq wb (sartd:v116-open-dedicated-workbook path))))
+  (if (not wb)
+    (sartd:pr
+      (strcat "Excel could not open the selected calculation file: " path
+              ". Keep the workbook open and saved, then use Active for its live values or Browse to select its exact full path.")))
+  wb)
+
+(defun sartd:v116-workbook-for-path (path / wb)
+  ; Do not use AutoLISP OR to choose between COM objects: OR returns T, not the successful object.
+  (setq wb (sartd:workbook-by-path path))
+  (if (not (and wb (sartd:v116-object-live-p wb)))
+    (setq wb (sartd:open-workbook path)))
+  wb)
+
+(defun sartd:choose-workbook (refresh / default opt path wb)
+  (setq default (if refresh "Last" "Active"))
+  (if (and (boundp 'sartd:*auto-excel-source*) sartd:*auto-excel-source*)
+    (setq opt sartd:*auto-excel-source*)
+    (progn
+      (initget "Active Browse Last")
+      (setq opt (getkword (strcat "\nCalculation source [Active/Browse/Last] <" default ">: ")))
+      (if (null opt) (setq opt default))))
+  (cond
+    ((= opt "Active")
+      (setq wb (sartd:v116-find-open-calculation-workbook)))
+    ((= opt "Browse")
+      (setq path (getfiled "Select trailer calculation workbook" (sartd:envstr "SARTD_LAST_XLS") "xls;xlsx;xlsm" 0))
+      (if path
+        (setq wb (sartd:v116-workbook-for-path path))))
+    ((= opt "Last")
+      (setq path (getenv "SARTD_LAST_XLS"))
+      (if (and path (/= path "") (findfile path))
+        (setq wb (sartd:v116-workbook-for-path path))
+        (sartd:pr "No valid last calculation workbook is stored. Use Browse or Active."))))
+  (sartd:v116-validate-workbook wb))
+
+(defun sartd:v59-select-excel-source (/ default opt path wb)
+  ; Lock every workflow to an inspected full path. Returning Last prevents a later stage from
+  ; silently switching to a different ActiveWorkbook or Excel instance.
+  (if (and (boundp 'sartd:*web-workbook-path*) sartd:*web-workbook-path*
+           (sartd:v59-file-exists-p sartd:*web-workbook-path*))
+    (progn
+      (setenv "SARTD_LAST_XLS" sartd:*web-workbook-path*)
+      (setq sartd:*v59-excel-source-label*
+        (strcat "Transfer " (if sartd:*web-transfer-code* sartd:*web-transfer-code* "")
+                ": " sartd:*web-workbook-path*))
+      "Last")
+    (progn
+      (setq default (if (sartd:v59-file-exists-p (getenv "SARTD_LAST_XLS")) "Last" "Active"))
+      (initget "Active Browse Last")
+      (setq opt (getkword (strcat "\nCalculation source [Active/Browse/Last] <" default ">: ")))
+      (if (null opt) (setq opt default))
+      (cond
+        ((= opt "Active")
+          (setq wb (sartd:v116-find-open-calculation-workbook))
+          (if wb
+            (progn
+              (setq path (sartd:v116-workbook-path wb))
+              (setenv "SARTD_LAST_XLS" path)
+              (setq sartd:*v59-excel-source-label* (strcat "Validated open workbook: " path))
+              "Last")
+            nil))
+        ((= opt "Browse")
+          (setq path (getfiled "Select trailer calculation workbook" (getenv "SARTD_LAST_XLS") "xls;xlsx;xlsm" 0))
+          (if (and path (/= path ""))
+            (progn
+              (setenv "SARTD_LAST_XLS" path)
+              (setq sartd:*v59-excel-source-label* (strcat "Selected workbook: " path))
+              "Last")
+            (progn (sartd:pr "Workbook selection cancelled.") nil)))
+        ((= opt "Last")
+          (setq path (getenv "SARTD_LAST_XLS"))
+          (if (and path (/= path "") (findfile path))
+            (progn
+              (setq sartd:*v59-excel-source-label* (strcat "Last validated workbook: " path))
+              "Last")
+            (progn (sartd:pr "No valid last workbook is stored. Use Browse or Active.") nil)))
+        (T nil)))))
+
+(defun sartd:v116-configured-library-path (/ path folder)
+  (cond
+    ((and (setq path (getenv sartd:*library-env*))
+          (/= path "") (sartd:v100-file-exists-p path))
+      (sartd:v100-store-library-path path))
+    ((and (setq folder (getenv sartd:*blocks-folder-env*))
+          (/= folder "") (setq path (sartd:v100-library-in-folder folder)))
+      (sartd:v100-store-library-path path))
+    (T nil)))
+
+(defun sartd:v116-prompt-block-library (/ path)
+  ; Selecting the actual library DWG is clearer and more reliable than a Windows folder browser.
+  ; The selected DWG's parent folder is stored automatically for subsequent runs.
+  (princ
+    (strcat
+      "\nAutoCAD block setup is required. Select " sartd:*library-default-name*
+      " from the Autocad Blocks folder."))
+  (setq path
+    (getfiled
+      "Select AutoCAD block library DWG"
+      (sartd:v100-dialog-default-library)
+      "dwg"
+      0))
+  (if (and path (/= path "") (sartd:v100-file-exists-p path))
+    (sartd:v100-store-library-path path)
+    (progn
+      (sartd:pr "No valid AutoCAD block-library DWG was selected.")
+      nil)))
+
+(defun sartd:v116-ensure-block-library (/ missing path bundled prompted)
+  (setq missing (append (sartd:missing-core-blocks) (sartd:missing-annotation-blocks)))
+  (if (not missing)
+    T
+    (progn
+      ; Import a remembered library first. If it is stale, incomplete or the wrong DWG, immediately
+      ; ask for the exact block-library file rather than continuing with a partial drawing.
+      (setq path (sartd:v116-configured-library-path))
+      (if (not path)
+        (progn
+          (sartd:pr "The AutoCAD block library has not been configured for this installation.")
+          (setq prompted T)
+          (setq path (sartd:v116-prompt-block-library))))
+      (if path (sartd:import-dwg-defs path))
+      (setq missing (append (sartd:missing-core-blocks) (sartd:missing-annotation-blocks)))
+      (if (and missing (not prompted))
+        (progn
+          (sartd:pr "The remembered block library did not provide every required block. Select the correct library DWG.")
+          (setq prompted T)
+          (setq path (sartd:v116-prompt-block-library))
+          (if path (sartd:import-dwg-defs path))
+          (setq missing (append (sartd:missing-core-blocks) (sartd:missing-annotation-blocks)))))
+      (if (and missing (not path))
+        (progn
+          (setq bundled (sartd:v100-bundled-blocks-folder))
+          (if bundled (setq path (sartd:v100-library-in-folder bundled)))
+          (if path
+            (progn
+              (sartd:v100-store-library-path path)
+              (sartd:pr (strcat "Using bundled AutoCAD block library: " path))
+              (sartd:import-dwg-defs path)))))
+      (setq missing (append (sartd:missing-core-blocks) (sartd:missing-annotation-blocks)))
+      (if missing
+        (progn
+          (sartd:pr "Drawing stopped: required block definitions are still missing.")
+          (foreach path missing (sartd:pr (strcat "  missing block: " path)))
+          (sartd:pr "Run SARTDBLOCKS and select SARENS_TRAILERDRAFTSMAN_BLOCK_LIBRARY.dwg from the Autocad Blocks folder.")
+          nil)
+        (progn
+          (sartd:pr "AutoCAD block library validated.")
+          T)))))
+
+(defun sartd:ensure-library-defs () (sartd:v116-ensure-block-library))
+(defun sartd:ensure-core-blocks () (sartd:v116-ensure-block-library))
+
+(defun c:SARTDBLOCKS (/ path)
+  (vl-load-com)
+  (setq path (sartd:v116-prompt-block-library))
+  (if path
+    (progn
+      (sartd:pr (strcat "Configured AutoCAD block library: " path))
+      (sartd:v116-ensure-block-library))
+    (sartd:pr "Block-library selection cancelled; the previous valid configuration was retained."))
+  (princ))
+
+(defun sartd:v116-json-group-number (corners key fallback / n)
+  (setq n (if (sartd:json-object-p corners)
+            (sartd:json-number-value (sartd:json-get corners key)) nil))
+  (if (numberp n) (fix n) fallback))
+
+(defun sartd:v116-json-hydraulic-definitions (hy trailer-count / defs groupings grouping idx split corners groups first last rl rr fl fr)
+  ; Convert the web grouping records into the exact two-side definition shape used by the existing
+  ; hydraulic block renderer. TOP is the left/+Y circuit; BOTTOM is the right/-Y circuit.
+  (setq defs nil idx 1)
+  (setq groupings (if (sartd:json-object-p hy) (sartd:json-items (sartd:json-get hy "g")) nil))
+  (foreach grouping groupings
+    (if (<= idx trailer-count)
+      (progn
+        (setq split (fix (sartd:json-number-or (sartd:json-get grouping "splitAfterAxleLine")
+                                               (sartd:json-number-or (sartd:json-get hy "sp") 0))))
+        (setq corners (sartd:json-get grouping "cornerGroups"))
+        (setq groups (sartd:json-items (sartd:json-get grouping "groups")))
+        (setq first (if groups (fix (sartd:json-number-or (car groups) 1)) 1))
+        (setq last (if groups (fix (sartd:json-number-or (car (reverse groups)) first)) first))
+        (setq rl (sartd:v116-json-group-number corners "rearLeft" first))
+        (setq rr (sartd:v116-json-group-number corners "rearRight" first))
+        (setq fl (sartd:v116-json-group-number corners "frontLeft" last))
+        (setq fr (sartd:v116-json-group-number corners "frontRight" last))
+        (setq defs
+          (append defs
+            (list
+              (list (cons 'trailer-index idx) (cons 'side-name "TOP") (cons 'side-factor 1.0)
+                    (cons 'group-before rl) (cons 'group-after fl) (cons 'split-after split))
+              (list (cons 'trailer-index idx) (cons 'side-name "BOTTOM") (cons 'side-factor 0.0)
+                    (cons 'group-before rr) (cons 'group-after fr) (cons 'split-after split)))))))
+    (setq idx (1+ idx)))
+  defs)
+
+(defun sartd:v116-json-pinned-axles (hy trailer-count / out groupings grouping idx pins p n fallback)
+  (setq out nil idx 1)
+  (setq groupings (if (sartd:json-object-p hy) (sartd:json-items (sartd:json-get hy "g")) nil))
+  (foreach grouping groupings
+    (if (<= idx trailer-count)
+      (progn
+        (setq pins nil)
+        (foreach p (sartd:json-items (sartd:json-get grouping "pinnedAxleLines"))
+          (setq n (sartd:json-number-value p))
+          (if (and (numberp n) (> n 0)) (setq pins (append pins (list (fix n))))))
+        (if pins (setq out (append out (list (cons idx pins)))))))
+    (setq idx (1+ idx)))
+  ; Compatibility with the compact first-trailer pin list in early coded exports.
+  (if (and (not out) (sartd:json-object-p hy))
+    (progn
+      (setq fallback nil)
+      (foreach p (sartd:json-items (sartd:json-get hy "pi"))
+        (setq n (sartd:json-number-value p))
+        (if (and (numberp n) (> n 0)) (setq fallback (append fallback (list (fix n))))))
+      (if fallback (setq out (list (cons 1 fallback))))))
+  out)
+
+(defun sartd:json-adapt-trailer (tr resolved index / name ax x y len wid pl pr ppul ppur spacing deck)
+  (setq name (sartd:json-string (sartd:json-get tr "n")))
+  (setq ax (fix (sartd:json-number-or (sartd:json-get tr "al") 1)))
+  (setq spacing (sartd:j-mm tr "ap" 1400.0))
+  (setq x (sartd:j-mm (if resolved resolved tr) "startXM" (sartd:j-mm tr "x" 0.0)))
+  (setq y (sartd:j-mm (if resolved resolved tr) "centreYM" (sartd:j-mm tr "y" 0.0)))
+  (setq len (sartd:j-mm (if resolved resolved tr) "lengthM" (* (max 1 ax) spacing)))
+  (setq wid (sartd:j-mm (if resolved resolved tr) "widthM" (sartd:j-mm tr "w" 2430.0)))
+  (setq pl (sartd:j-mm (if resolved resolved tr) "ppuLeftLengthM" (sartd:j-mm tr "pl" 0.0)))
+  (setq pr (sartd:j-mm (if resolved resolved tr) "ppuRightLengthM" (sartd:j-mm tr "fl" 0.0)))
+  (setq deck (sartd:j-mm tr "dh" 1250.0))
+  (setq ppul (sartd:json-bool-value (sartd:json-get tr "rb") nil))
+  (setq ppur (sartd:json-bool-value (sartd:json-get tr "ff") nil))
+  (list (cons 'row (+ 89 index)) (cons 'type (if name name "TRAILER")) (cons 'model name)
+        (cons 'axles ax) (cons 'x x) (cons 'y y) (cons 'spacing spacing)
+        (cons 'length len) (cons 'width wid) (cons 'deck-height deck)
+        (cons 'ppu-left ppul) (cons 'ppu-right ppur)
+        (cons 'ppu-left-length pl) (cons 'ppu-right-length pr)
+        (cons 'ppu-state (cond ((and ppul ppur) "BOTH") (ppul "LEFT") (ppur "RIGHT") (T "NONE")))
+        (cons 'ppu-left-weight 0.0) (cons 'ppu-right-weight 0.0) (cons 'self-weight 0.0)
+        (cons 'trailer-index (1+ index))))
+
+(defun sartd:json-adapt (root / data cg pk hy trvals firstCompact rvvals trailers i tr res supports sx sw r lc cc poly deck ex ey hdefs pins totalAx capacity)
+  (setq data (sartd:json-get root "data"))
+  (setq cg (sartd:json-get data "cg") pk (sartd:json-get data "pk") hy (sartd:json-get data "hy"))
+  (setq trvals (sartd:json-items (sartd:json-get data "tr")))
+  (setq firstCompact (if trvals (car trvals) nil))
+  (setq r (sartd:json-get data "r") rvvals (sartd:json-items (sartd:json-get r "rv")))
+  (setq trailers nil i 0)
+  (foreach tr trvals
+    (setq res (if (and rvvals (< i (length rvvals))) (nth i rvvals) nil))
+    (setq trailers (append trailers (list (sartd:json-adapt-trailer tr res i))))
+    (setq i (1+ i)))
+  (setq supports (sartd:json-items (sartd:json-get data "su")) sx nil sw nil)
+  (foreach tr supports
+    (setq sx (append sx (list (sartd:j-mm tr "x" 0.0))))
+    (setq sw (append sw (list (sartd:j-mm tr "w" 400.0)))))
+  (setq lc (sartd:json-get r "lc") cc (sartd:json-get r "cc"))
+  (setq poly (sartd:json-items (sartd:json-get r "pg")))
+  (setq deck (if firstCompact (sartd:j-mm firstCompact "dh" 1250.0) 1250.0))
+  (setq ex (sartd:j-mm cg "ex" 0.0) ey (sartd:j-mm cg "ey" 0.0))
+  (setq hdefs (sartd:v116-json-hydraulic-definitions hy (length trailers)))
+  (setq pins (sartd:v116-json-pinned-axles hy (length trailers)))
+  (setq totalAx (if trailers (apply '+ (mapcar '(lambda (x) (cdr (assoc 'axles x))) trailers)) 0))
+  (setq capacity (if firstCompact (sartd:json-number-or (sartd:json-get firstCompact "ah") 48.0) 48.0))
+  (list
+    (cons 'json-root root) (cons 'json-result r) (cons 'json-source sartd:*json-source*)
+    (cons 'htrailer deck) (cons 'deck-height deck)
+    (cons 'load-extreme-x ex) (cons 'load-extreme-y ey)
+    (cons 'load-length (sartd:j-mm cg "l" 1.0)) (cons 'load-width (sartd:j-mm cg "w" 1.0))
+    (cons 'load-height (sartd:j-mm cg "h" 1.0)) (cons 'cargo-name (sartd:json-string (sartd:json-get cg "n")))
+    (cons 'cargo-weight (sartd:j-mass cg "m" 0.0))
+    (cons 'cargo-cog-x (+ ex (sartd:j-mm cg "x" 0.0)))
+    (cons 'cargo-cog-y (+ ey (sartd:j-mm cg "y" 0.0)))
+    (cons 'cargo-cog-z (sartd:j-mm cg "z" 0.0))
+    (cons 'cog-env-x (sartd:j-mm cg "exn" 0.0)) (cons 'cog-env-y (sartd:j-mm cg "eyn" 0.0))
+    (cons 'packing-weight (sartd:j-mass pk "m" 0.0)) (cons 'packing-height (sartd:j-mm pk "h" 0.0))
+    (cons 'packing-cog-x (+ ex (sartd:j-mm pk "x" 0.0)))
+    (cons 'packing-cog-y (+ ey (sartd:j-mm pk "y" 0.0)))
+    (cons 'packing-cog-z (sartd:j-mm pk "z" 0.0))
+    (cons 'support-x sx) (cons 'support-weight sw)
+    (cons 'combined-weight (sartd:json-number-or (sartd:json-get r "tm") 0.0))
+    (cons 'combined-cog-x (sartd:j-mm cc "x" (+ ex (sartd:j-mm cg "x" 0.0))))
+    (cons 'combined-cog-y (sartd:j-mm cc "y" (+ ey (sartd:j-mm cg "y" 0.0))))
+    (cons 'combined-cog-z (sartd:j-mm cc "z" (+ deck (sartd:j-mm cg "z" 0.0))))
+    (cons 'trailers trailers) (cons 'trailer-count (length trailers)) (cons 'total-axles totalAx)
+    (cons 'total-powerpacks 0)
+    (cons 'trailer-y-min (if trailers (apply 'min (mapcar '(lambda (x) (cdr (assoc 'y x))) trailers)) 0.0))
+    (cons 'trailer-y-max (if trailers (apply 'max (mapcar '(lambda (x) (cdr (assoc 'y x))) trailers)) 0.0))
+    (cons 'hydraulic-grouping hdefs) (cons 'pinned-axles pins)
+    (cons 'hydraulic-mode (if (sartd:json-object-p hy) (sartd:json-string (sartd:json-get hy "md")) nil))
+    (cons 'hydraulic-split (if (sartd:json-object-p hy) (sartd:json-number-or (sartd:json-get hy "sp") nil) nil))
+    (cons 'json-hydraulics hy) (cons 'json-polygon poly)
+    (cons 'json-axle-points (sartd:json-items (sartd:json-get r "ax")))
+    (cons 'json-case-points (sartd:json-get r "cp"))
+    (cons 'json-supports supports) (cons 'json-status (sartd:json-string (sartd:json-get r "st")))
+    (cons 'export-cogx (/ (sartd:j-mm cc "x" 0.0) 1000.0))
+    (cons 'export-cogy (/ (sartd:j-mm cc "y" 0.0) 1000.0))
+    (cons 'gross-axle-line-capacity capacity)
+    (cons 'longitudinal-up (sartd:json-number-or (sartd:json-get (sartd:json-get data "en") "rls") 0.0))
+    (cons 'transversal (sartd:json-number-or (sartd:json-get (sartd:json-get data "en") "rts") 0.0))
+    (cons 'vwind (sartd:json-number-or (sartd:json-get (sartd:json-get data "en") "ws") 0.0))
+    (cons 'accel-long (sartd:json-number-or (sartd:json-get (sartd:json-get data "en") "la") 0.0))))
+
+(defun sartd:v116-saved-project-json-p (root)
+  (and (sartd:json-object-p root)
+       (numberp (sartd:json-number-value (sartd:json-get root "schemaVersion")))
+       (sartd:json-object-p (sartd:json-get root "cargo"))))
+
+(defun sartd:json-load-validated (path / root verdict)
+  (setq sartd:*json-source* path sartd:*json-log* (strcat path ".lisp.log"))
+  (setq root (sartd:json-read-text path))
+  (cond
+    ((not root)
+      (sartd:json-log (if sartd:*json-error* sartd:*json-error* "JSON parse failed."))
+      nil)
+    ((sartd:v116-saved-project-json-p root)
+      (sartd:json-log
+        "This is a saved project JSON, not the coded AutoCAD drawing export. In Trailer Stability use AutoCAD > Export drawing data, then select the downloaded TRAILER-STABILITY-CAD-DATA JSON file.")
+      nil)
+    (T
+      (setq verdict (sartd:json-validate root))
+      (if (not (car verdict))
+        (progn (foreach e (cadr verdict) (sartd:json-log e)) nil)
+        (progn
+          (setenv "SARTD_JSON_LAST" path)
+          (setq sartd:*json-root* root sartd:*json-data* (sartd:json-adapt root))
+          (sartd:json-log
+            (strcat "Validated coded export: "
+                    (itoa (length (sartd:g 'trailers sartd:*json-data*))) " trailer(s), "
+                    (itoa (length (sartd:g 'hydraulic-grouping sartd:*json-data*))) " hydraulic side definition(s), "
+                    (itoa (length (sartd:g 'pinned-axles sartd:*json-data*))) " trailer pin set(s)."))
+          sartd:*json-data*)))))
+
+(defun sartd:json-run-drawing (data / base ok space)
+  ; Do not delete an existing drawing until the block library, current document and JSON adapter have
+  ; all been validated. This is deliberately stricter than the old best-effort renderer.
+  (if (not (sartd:v116-ensure-block-library))
+    nil
+    (progn
+      (setq space (vl-catch-all-apply 'sartd:modelspace nil))
+      (if (or (vl-catch-all-error-p space) (not space))
+        (progn (sartd:json-log "No writable AutoCAD ModelSpace is available.") nil)
+        (progn
+          (sartd:setup-layers)
+          (setq base (list 0.0 0.0 0.0))
+          (sartd:delete-generated)
+          (setq sartd:*space-override* space)
+          (setq ok (vl-catch-all-apply 'sartd:draw-arrangement (list data base)))
+          (setq sartd:*space-override* nil)
+          (if (vl-catch-all-error-p ok)
+            (progn
+              (sartd:json-log (strcat "Arrangement renderer failed safely: " (vl-catch-all-error-message ok)))
+              nil)
+            (progn
+              (sartd:json-log "Model arrangement rendered from coded JSON data.")
+              (sartd:json-draw-result-overlays data base base base)
+              T)))))))
+
+(defun c:SARTDJSON (/ path data result)
+  (vl-load-com)
+  (if (sartd:v116-ensure-block-library)
+    (progn
+      (setq path (sartd:json-source-path))
+      (if (and path (/= path ""))
+        (progn
+          (setq data (sartd:json-load-validated path))
+          (if data
+            (progn
+              (sartd:json-summary data)
+              (setq result (vl-catch-all-apply 'sartd:json-run-drawing (list data)))
+              (if (vl-catch-all-error-p result)
+                (sartd:json-log (strcat "SARTDJSON failed safely: " (vl-catch-all-error-message result)))
+                (if result (sartd:json-log "SARTDJSON complete.")
+                  (sartd:json-log "SARTDJSON stopped; no drawing was committed."))))
+            (sartd:json-log "SARTDJSON stopped before drawing.")))
+        (sartd:pr "No JSON file selected; SARTDJSON stopped.")))
+    (sartd:pr "SARTDJSON stopped because the AutoCAD block library is not ready."))
+  (princ))
+
+(defun c:SARTDRUN ()
+  (if (sartd:v116-ensure-block-library)
+    (progn
+      (sartd:v50-clear-scale-cache)
+      (sartd:v69-run-workflow))
+    (sartd:pr "SARTDRUN stopped because the AutoCAD block library is not ready."))
+  (princ))
+
+(defun c:SARTDWEB (/ code path oldpath oldcode result)
+  (vl-load-com)
+  (if (sartd:v116-ensure-block-library)
+    (progn
+      (setq code (getstring T "\nEnter website transfer code: "))
+      (if code (setq code (vl-string-trim " \t\r\n" code)) (setq code ""))
+      (cond
+        ((= code "") (sartd:pr "No transfer code entered. SARTDWEB stopped."))
+        ((not (setq path (sartd:v100-find-transfer-workbook code)))
+          (sartd:pr (strcat "No matching SARENS_AUTOCAD_" code ".xlsm was found in the exchange folder.")))
+        (T
+          (setq oldpath sartd:*web-workbook-path* oldcode sartd:*web-transfer-code*)
+          (setq sartd:*web-workbook-path* path sartd:*web-transfer-code* code)
+          (setenv "SARTD_LAST_XLS" path)
+          (sartd:pr (strcat "Transfer workbook located: " path))
+          (setq result (vl-catch-all-apply 'sartd:v69-run-workflow nil))
+          (if (vl-catch-all-error-p result)
+            (sartd:pr (strcat "SARTDWEB failed: " (vl-catch-all-error-message result)))
+            (if result (sartd:pr "SARTDWEB complete.") (sartd:pr "SARTDWEB stopped before completion.")))
+          (setq sartd:*web-workbook-path* oldpath sartd:*web-transfer-code* oldcode))))
+    (sartd:pr "SARTDWEB stopped because the AutoCAD block library is not ready."))
+  (princ))
+
+(princ
+  (strcat
+    "\nSARENS_TRAILERDRAFTSMAN v" sartd:*version* " import reliability hotfix loaded."
+    " Commands: SARTDRUN, SARTDWEB, SARTDJSON, SARTDJSONDATA and SARTDBLOCKS."
+    " A first unresolved drawing run asks for the exact AutoCAD block-library DWG and stops safely if it is invalid."))
+(princ)
+
+; =================================================================================================
+; v1.17 ACTIVE EXCEL + INTERACTIVE JSON FINAL OVERRIDES
+; =================================================================================================
+
+(setq sartd:*version* "1.17")
+(setenv "SARTD_JSON_AUTOMATED" "0")
+(setq sartd:*v117-active-original-path* nil)
+
+(defun sartd:v117-companion-path (filename / root path library folder)
+  (setq path (findfile filename))
+  (if (not path)
+    (progn
+      (setq root (sartd:v100-loaded-file-folder))
+      (if root (setq path (findfile (strcat root "\\" filename))))))
+  (if (not path)
+    (progn
+      (setq root (getenv "SARTD_LSP_FOLDER"))
+      (if (and root (/= root ""))
+        (setq path (findfile (strcat root "\\" filename))))))
+  (if (not path)
+    (progn
+      (setq library (getenv sartd:*library-env*))
+      (if (and library (/= library ""))
+        (progn
+          (setq folder (vl-filename-directory library)
+                root (if folder (vl-filename-directory folder) nil))
+          (if root
+            (progn
+              (setenv "SARTD_LSP_FOLDER" root)
+              (setq path (findfile (strcat root "\\" filename)))))))))
+  (if (not path)
+    (progn
+      (setq folder (getenv sartd:*blocks-folder-env*))
+      (if (and folder (/= folder ""))
+        (progn
+          (setq root (vl-filename-directory folder))
+          (if root
+            (progn
+              (setenv "SARTD_LSP_FOLDER" root)
+              (setq path (findfile (strcat root "\\" filename)))))))))
+  path)
+
+(defun sartd:v117-run-hidden-powershell (script arguments / shell command result)
+  (setq result nil)
+  (if (and script (findfile script))
+    (progn
+      (setq command
+        (strcat
+          "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \""
+          script "\" " arguments))
+      (setq shell (vl-catch-all-apply 'vlax-create-object (list "WScript.Shell")))
+      (if (and shell (not (vl-catch-all-error-p shell)))
+        (progn
+          ; Window style 0 keeps the helper hidden; True waits until its output file is complete.
+          (setq result
+            (vl-catch-all-apply 'vlax-invoke-method
+              (list shell 'Run command 0 :vlax-true)))
+          (vl-catch-all-apply 'vlax-release-object (list shell))))))
+  (if (vl-catch-all-error-p result) nil result))
+
+(defun sartd:v117-read-lines (path / handle line lines)
+  (setq lines nil)
+  (if (and path (findfile path) (setq handle (open path "r")))
+    (progn
+      (while (setq line (read-line handle))
+        (if (/= line "") (setq lines (append lines (list line)))))
+      (close handle)))
+  lines)
+
+(defun sartd:v117-split-active-record (line / position original snapshot)
+  (setq position (vl-string-search (chr 9) line))
+  (if position
+    (progn
+      (setq original (substr line 1 position)
+            snapshot (substr line (+ position 2)))
+      (list original snapshot))
+    (list line "")))
+
+(defun sartd:v117-discover-visible-excel (/ helper output arguments result lines records line)
+  (setq helper (sartd:v117-companion-path "SARTD_Excel_Active.ps1")
+        output (vl-filename-mktemp "SARTD_ACTIVE_EXCEL_" nil ".txt")
+        records nil)
+  (if (and helper output)
+    (progn
+      (setq arguments (strcat "-OutputPath \"" output "\""))
+      (setq result (sartd:v117-run-hidden-powershell helper arguments))
+      (if (and (numberp result) (= result 0))
+        (progn
+          (setq lines (sartd:v117-read-lines output))
+          (foreach line lines
+            (setq records (append records (list (sartd:v117-split-active-record line)))))))
+      (if (findfile output) (vl-file-delete output))))
+  records)
+
+(defun sartd:v117-select-active-record (records / count index record choice valid)
+  (setq count (length records) record nil)
+  (cond
+    ((= count 1) (car records))
+    ((> count 1)
+      (sartd:pr "More than one visible calculation workbook is open:")
+      (setq index 1)
+      (foreach record records
+        (sartd:pr (strcat "  " (itoa index) ": " (car record)))
+        (setq index (1+ index)))
+      (setq valid nil)
+      (while (not valid)
+        (initget 1)
+        (setq choice (getint (strcat "\nSelect active calculation workbook [1-" (itoa count) "]: ")))
+        (if (and choice (>= choice 1) (<= choice count))
+          (setq record (nth (1- choice) records) valid T)
+          (sartd:pr "Enter one of the listed workbook numbers.")))
+      record)
+    (T nil)))
+
+(defun sartd:v117-open-active-record (record / original snapshot target wb)
+  (if record
+    (progn
+      (setq original (car record)
+            snapshot (cadr record)
+            target (if (and snapshot (/= snapshot "") (findfile snapshot)) snapshot original))
+      (setq wb (sartd:v116-workbook-for-path target))
+      (if (and wb (sartd:v116-calculation-workbook-p wb))
+        (progn
+          (setq sartd:*v117-active-original-path* original)
+          (setenv "SARTD_LAST_XLS" original)
+          (setq sartd:*v59-excel-source-label* (strcat "Live open workbook: " original))
+          (if (/= target original)
+            (sartd:pr
+              (strcat "Reading a current in-memory snapshot of the visible Excel workbook: " original))
+            (sartd:pr (strcat "Reading visible Excel workbook: " original)))
+          wb)
+        nil))
+    nil))
+
+(defun sartd:v117-rot-active-fallback (/ xl wb)
+  ; Fallback for older Excel installations where the accessibility window bridge is unavailable.
+  (setq xl (vl-catch-all-apply 'vlax-get-object (list "Excel.Application")))
+  (if (and xl (not (vl-catch-all-error-p xl)))
+    (progn
+      (setq wb (vl-catch-all-apply 'vlax-get-property (list xl 'ActiveWorkbook)))
+      (if (and wb (not (vl-catch-all-error-p wb)) (sartd:v116-calculation-workbook-p wb))
+        wb
+        nil))
+    nil))
+
+(defun sartd:v117-find-active-calculation-workbook (/ records record wb)
+  (setq sartd:*v117-active-original-path* nil)
+  (setq records (sartd:v117-discover-visible-excel))
+  (if records
+    (progn
+      (setq record (sartd:v117-select-active-record records))
+      (setq wb (sartd:v117-open-active-record record)))
+    (setq wb (sartd:v117-rot-active-fallback)))
+  (if (not wb)
+    (sartd:pr
+      "No visible open calculation workbook could be read. Keep the workbook open in desktop Excel, then retry Active; Browse remains available for an exact saved path."))
+  wb)
+
+; Every existing Active-source workflow now uses the visible-Excel discovery path above.
+(defun sartd:v116-find-open-calculation-workbook ()
+  (sartd:v117-find-active-calculation-workbook))
+
+(defun sartd:v117-json-prepare-path (path / helper output arguments result)
+  (setq helper (sartd:v117-companion-path "SARTD_JSON_Prepare.ps1")
+        output (vl-filename-mktemp "SARTD_JSON_DRAWING_" nil ".json"))
+  (if (and helper output)
+    (progn
+      (setq arguments
+        (strcat "-InputPath \"" path "\" -OutputPath \"" output "\""))
+      (setq result (sartd:v117-run-hidden-powershell helper arguments))
+      (if (and (numberp result) (= result 0) (findfile output)) output path))
+    path))
+
+(defun sartd:json-load-validated (path / prepared root verdict)
+  (setq sartd:*json-source* path sartd:*json-log* (strcat path ".lisp.log"))
+  (setq prepared (sartd:v117-json-prepare-path path))
+  (setq root (sartd:json-read-text prepared))
+  (if (and prepared (/= (strcase prepared) (strcase path)) (findfile prepared))
+    (vl-file-delete prepared))
+  (cond
+    ((not root)
+      (sartd:json-log (if sartd:*json-error* sartd:*json-error* "JSON parse failed."))
+      nil)
+    ((sartd:v117-json-key-envelope-p root)
+      (sartd:json-log
+        "This is the AutoCAD key/contract JSON, not a drawing case. Select the numbered trailer-stability-autocad-######.json case-data file instead.")
+      nil)
+    ((sartd:v116-saved-project-json-p root)
+      (sartd:json-log
+        "This is a saved project JSON, not the coded AutoCAD drawing export. In Trailer Stability use AutoCAD > Export drawing data, then select the numbered TRAILER-STABILITY-CAD-DATA JSON file.")
+      nil)
+    (T
+      (setq verdict (sartd:json-validate root))
+      (if (not (car verdict))
+        (progn (foreach e (cadr verdict) (sartd:json-log e)) nil)
+        (progn
+          (setenv "SARTD_JSON_LAST" path)
+          (setq sartd:*json-root* root sartd:*json-data* (sartd:json-adapt root))
+          (sartd:json-log
+            (strcat "Validated numbered case export: "
+                    (itoa (length (sartd:g 'trailers sartd:*json-data*))) " trailer(s), "
+                    (itoa (length (sartd:g 'hydraulic-grouping sartd:*json-data*))) " hydraulic side definition(s), "
+                    (itoa (length (sartd:g 'json-polygon sartd:*json-data*))) " stability-boundary point(s)."))
+          sartd:*json-data*)))))
+
+(defun c:SARTDJSONDATA (/ path data)
+  (vl-load-com)
+  (setq path (sartd:v117-json-last-source-path))
+  (if path
+    (progn
+      (setq data (sartd:json-load-validated path))
+      (if data
+        (progn (sartd:json-summary data) (sartd:json-log "SARTDJSONDATA complete."))
+        (sartd:json-log "SARTDJSONDATA stopped before drawing."))))
+  (princ))
+
+(defun c:SARTDJSON (/ path data result)
+  (vl-load-com)
+  ; This interactive command always opens the picker. Automated checks use SARTDJSONDATA instead.
+  (setq path (sartd:v117-json-prompt-source-path))
+  (if (and path (/= path ""))
+    (progn
+      (setq data (sartd:json-load-validated path))
+      (if data
+        (progn
+          (sartd:json-summary data)
+          (setq result (vl-catch-all-apply 'sartd:json-run-drawing (list data)))
+          (if (vl-catch-all-error-p result)
+            (sartd:json-log (strcat "SARTDJSON failed safely: " (vl-catch-all-error-message result)))
+            (if result
+              (sartd:json-log "SARTDJSON complete.")
+              (sartd:json-log "SARTDJSON stopped; no drawing was committed."))))
+        (sartd:json-log "SARTDJSON stopped before drawing.")))
+    (sartd:pr "No numbered case-data JSON was selected; SARTDJSON stopped."))
+  (princ))
+
+(princ
+  (strcat
+    "\nSARENS_TRAILERDRAFTSMAN v" sartd:*version* " final overrides loaded."
+    " Active discovers visible Excel workbooks and captures current in-memory values."
+    " SARTDJSON always prompts for the numbered case-data JSON; SARTDJSONDATA reuses the last validated case."))
 (princ)

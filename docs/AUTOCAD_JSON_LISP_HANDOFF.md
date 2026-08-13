@@ -24,7 +24,7 @@ Relevant files:
 - Downloadable field key: `public/autocad-export-key-v1.json`
 - Engineering explanations embedded in the export: `app/engine/engineering-reference.ts`
 - Current AutoLISP source: `tools/autocad/SARENS_TRAILERDRAFTSMAN/SARENS_TRAILERDRAFTSMAN_v1.1.lsp`
-- Existing distributable package: `public/autocad/SARENS_TRAILERDRAFTSMAN_v1.1_FULL_PACKAGE.zip`
+- Current distributable package: `public/autocad/SARENS_TRAILERDRAFTSMAN_v1.17_FULL_PACKAGE.zip`
 - AutoCAD source-package files: `tools/autocad/SARENS_TRAILERDRAFTSMAN/`
 
 The current LISP still contains the old workbook/code transfer path, including `SARTDWEB`, Excel COM functions and legacy comments. Do not use that path for JSON. The JSON implementation is a parser plus an adapter that produces the internal data shape expected by the existing drawing workflow. Do not blindly delete old drawing routines: the JSON command should reuse them where desktop AutoCAD supports the existing VLA/block operations.
@@ -34,6 +34,9 @@ The current LISP still contains the old workbook/code transfer path, including `
 - `data.r.rv` is emitted by the web exporter and documented in the key. It contains the authoritative post-placement start/centre positions, lengths, widths and rear/front PPU lengths.
 - `SARTDJSONDATA` validates the export envelope and writes a `.lisp.log` beside the input file without drawing.
 - `SARTDJSON` validates first, then runs the existing drawing workflow through the JSON adapter and catches drawing errors safely.
+- `SARTDJSON` always opens the case-file picker; `SARTDJSONDATA` deliberately reuses only the last validated case.
+- The browser downloads one numbered case file. The versioned decoding key is bundled with the AutoCAD reader instead of being downloaded for every case.
+- `Active` discovers compatible workbooks across visible Excel processes and takes a temporary copy containing the current unsaved in-memory values.
 - Core Console load and JSON validation tests cover valid three-/four-point exports, invalid JSON, missing file, wrong key, wrong version, missing cargo/trailers and invalid three-/four-point geometry.
 - A desktop AutoCAD smoke test is still required for the final packaged drawing result because the existing renderer uses VLA document/block operations that Core Console does not expose in the same way.
 
@@ -42,7 +45,7 @@ The current LISP still contains the old workbook/code transfer path, including `
 The intended workflow is:
 
 1. The user clicks **AutoCAD** in the web application.
-2. The browser downloads an export file named like `trailer-stability-autocad-XXXXXX.json` and a companion key file named `trailer-stability-autocad-key-v1.json`.
+2. The browser downloads one export file named like `trailer-stability-autocad-XXXXXX.json`. The companion key is already bundled with the AutoCAD reader package.
 3. The user starts AutoCAD, opens or creates a drawing, loads the LISP package, and runs a JSON command.
 4. The LISP asks for the JSON file with a normal file picker. It must not require Excel, a workbook, a browser bridge or a transfer code.
 5. The LISP validates the envelope, decodes the compact fields, maps them into the existing drawing data model, draws the arrangement and imports the available result/engineering tables.
@@ -51,10 +54,10 @@ The intended workflow is:
 Recommended command names:
 
 - `SARTDJSON` — choose a JSON file and run the complete drawing workflow.
-- `SARTDJSONDATA` — choose a JSON file and only decode/print a compact data summary for debugging.
+- `SARTDJSONDATA` — validate the last successfully selected numbered case and print a compact data summary for debugging without opening the picker or drawing.
 - Keep `SARTDWEB` only as an explicitly labelled legacy workbook-transfer command if backward compatibility is useful. It must not be used by the JSON workflow.
 
-The command can also look for the most recent `trailer-stability-autocad-*.json` in Downloads as a convenience, but the file picker must remain available.
+`SARTDJSON` must always open the file picker so a remembered test or failed case can never be reused silently.
 
 ## JSON envelope and coded key
 

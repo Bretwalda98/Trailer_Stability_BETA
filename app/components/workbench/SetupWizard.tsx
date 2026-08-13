@@ -1093,7 +1093,7 @@ export function SetupWizard({
         <IconFileImport size={17} />
         <div>
           <b>AutoCAD interchange</b>
-          <p>The AutoCAD action exports resolved absolute trailer positions, axle lines, hydraulics, supports, catalogue values, result metrics and the calculation reference as coded JSON with a separate decoding key.</p>
+          <p>The AutoCAD action downloads one numbered case-data JSON containing resolved absolute trailer positions, axle lines, hydraulics, supports, catalogue values, result metrics and the calculation reference. Run SARTDJSON in AutoCAD and select that numbered file; the decoding key is already supplied with the AutoCAD reader package.</p>
         </div>
       </aside>
     </>
