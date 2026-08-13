@@ -1,0 +1,5 @@
+(load "C:/Users/Harry/Documents/Codex/2026-07-16/the/github-publish/Trailer_Stability_BETA/tools/autocad/SARENS_TRAILERDRAFTSMAN/SARENS_TRAILERDRAFTSMAN_v1.1.lsp")
+(setq sartd:*json-source* (strcat (getenv "SARTD_JSON_TEST_FILE") ".missing"))
+(setq sartd:*json-log* (strcat sartd:*json-source* ".lisp.log"))
+(sartd:json-load-validated sartd:*json-source*)
+(princ)

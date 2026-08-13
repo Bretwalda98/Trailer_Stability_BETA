@@ -1,4 +1,4 @@
-# SARENS_TRAILERDRAFTSMAN v1.15
+# SARENS_TRAILERDRAFTSMAN v1.17
 
 SARENS_TRAILERDRAFTSMAN is an AutoCAD AutoLISP tool for producing trailer arrangement drawings from a Trailer Stability coded JSON export. It imports the standard block library, draws the model views, creates/fits the PaperSpace sheet, scales the viewport output, and updates the title block.
 
@@ -6,7 +6,9 @@ The primary web integration is JSON-only: `SARTDJSON` and `SARTDJSONDATA` read t
 
 ## Release contents
 
-- `SARENS_TRAILERDRAFTSMAN_v1.1.lsp` — the AutoLISP program, release 1.15.
+- `SARENS_TRAILERDRAFTSMAN_v1.1.lsp` — the AutoLISP program, release 1.17.
+- `SARTD_Excel_Active.ps1` — discovers visible Excel workbooks and captures current in-memory values without saving the original.
+- `SARTD_JSON_Prepare.ps1` — prepares a temporary drawing-only copy of a full case export for faster AutoLISP parsing.
 - `Autocad Blocks\SARENS_TRAILERDRAFTSMAN_BLOCK_LIBRARY.dwg` — the unified block and PaperSpace layout library.
 - `Autocad Blocks\Autocad Blocks.zip` — packaged copy of the block library folder.
 - `autocad-export-key-v1.json` — the coded field key for the JSON export.
@@ -32,12 +34,12 @@ Keep the `.lsp` file and the `Autocad Blocks` folder together in the same parent
 When loaded successfully, AutoCAD prints a message ending with:
 
 ```text
-SARENS_TRAILERDRAFTSMAN v1.1 full release loaded. Commands: SARTDRUN, SARTDWEB, SARTDJSON and SARTDJSONDATA.
+SARENS_TRAILERDRAFTSMAN v1.17 final overrides loaded. Active discovers visible Excel workbooks and captures current in-memory values. SARTDJSON always prompts for the numbered case-data JSON; SARTDJSONDATA reuses the last validated case.
 ```
 
 ## JSON workflow (primary)
 
-1. In the Trailer Stability web application, use **AutoCAD** to download the coded JSON export and the companion `autocad-export-key-v1.json` key.
+1. In the Trailer Stability web application, use **AutoCAD** to download one numbered case-data file such as `trailer-stability-autocad-581669.json`. The decoding key is already included with this reader package and is not downloaded for every case.
 2. Open or create the target drawing in AutoCAD.
 3. Load the LSP if it is not already loaded.
 4. Run:
@@ -46,7 +48,7 @@ SARENS_TRAILERDRAFTSMAN v1.1 full release loaded. Commands: SARTDRUN, SARTDWEB, 
 SARTDJSON
 ```
 
-5. Select the downloaded `trailer-stability-autocad-*.json` file.
+5. The file picker always opens. Select the numbered `trailer-stability-autocad-*.json` case file, not `trailer-stability-autocad-key-v1.json`.
 6. The command validates the format, version, coded key, cargo geometry, resolved trailer geometry and three-/four-point stability boundary before it changes the drawing.
 7. If the JSON is rejected, read the AutoCAD command line and the log beside the input file:
 
@@ -54,7 +56,7 @@ SARTDJSON
 <selected-json-file>.lisp.log
 ```
 
-For a read-only summary and validation check, run:
+To repeat the validation summary for the last numbered case without opening the picker or drawing, run:
 
 ```text
 SARTDJSONDATA
@@ -85,11 +87,13 @@ SARTDRUN
 
 5. Choose the legacy source:
 
-- `Active` — use the currently active Excel workbook.
-- `Browse` — choose a workbook file.
+- `Active` — discover compatible workbooks in every visible Excel window. If exactly one is open it is selected automatically; if several are open, their full paths are listed and AutoCAD asks which one to use. Current unsaved in-memory values are captured in a temporary copy without saving or changing the original workbook.
+- `Browse` — choose the exact saved workbook file by full path.
 - `Last` — reuse the last workbook selected by this tool.
 
-6. Follow the AutoCAD command-line prompts. On the first run, you may be asked for the `Autocad Blocks` folder.
+6. Follow the AutoCAD command-line prompts. On the first run, AutoCAD asks you to select `SARENS_TRAILERDRAFTSMAN_BLOCK_LIBRARY.dwg` from the `Autocad Blocks` folder.
+
+Browse/Last open the selected calculation file read-only in a dedicated Excel instance when the file cannot be reached through Excel's active-process connection. Excel may remain open. If file validation blocks the ordinary COM open (common with downloaded files), v1.17 retries read-only using Excel's repair-open mode. The workbook is accepted only after `Load and Stability Calculation` is found. `Export to DWG`, `Export to CAD`, `Export to AutoCAD`, `DWG Export` and equivalent punctuation/spacing variants are accepted for the export worksheet.
 
 `SARTDRUN` remains the legacy Active/Browse/Last workflow. `SARTDWEB` is the legacy transfer-code command. Neither command is used by `SARTDJSON`.
 
@@ -105,7 +109,7 @@ The program checks for the block library in this order:
 2. Saved `SARTD_BLOCKS_FOLDER` folder.
 3. Bundled `Autocad Blocks` folder beside the loaded LSP.
 4. AutoCAD's normal support file search paths.
-5. A prompt asking you to select the `Autocad Blocks` folder.
+5. A prompt asking you to select `SARENS_TRAILERDRAFTSMAN_BLOCK_LIBRARY.dwg` directly.
 
 That folder must contain:
 
@@ -113,7 +117,7 @@ That folder must contain:
 SARENS_TRAILERDRAFTSMAN_BLOCK_LIBRARY.dwg
 ```
 
-After a successful selection, the program remembers the folder and DWG path for future runs. If the folder picker is unavailable, or the selected folder does not contain the library DWG, the program falls back to asking you to select the DWG file directly.
+After a successful selection, the program remembers both the folder and DWG path for future runs. Run `SARTDBLOCKS` at any time to replace or repair that saved location.
 
 ## Legacy website transfer workflow
 
@@ -127,7 +131,7 @@ After downloading that legacy file, run `SARTDWEB` and enter the six-digit code.
 
 ## Troubleshooting
 
-- If blocks are missing, rerun `SARTDJSON` or `SARTDRUN` and select the correct `Autocad Blocks` folder when prompted.
+- If blocks are missing, run `SARTDBLOCKS` and select the exact `SARENS_TRAILERDRAFTSMAN_BLOCK_LIBRARY.dwg` file from the correct `Autocad Blocks` folder.
 - If the wrong block path was saved, run these at the AutoCAD command line and then rerun the command:
 
 ```lisp
@@ -135,8 +139,10 @@ After downloading that legacy file, run `SARTDWEB` and enter the six-digit code.
 (setenv "SARTD_LIBRARY_DWG" "")
 ```
 
-- If a JSON export is rejected, open its `.lisp.log` file and check the format, version, key id and required geometry fields. Re-download the JSON and companion key if the export is incomplete.
-- If the legacy source cannot be read, make sure the workbook is open, not protected in a way that blocks reading, and contains the expected sheets.
+- If `SARTDJSON` does not show a picker, confirm the load message ends with `v1.17 final overrides loaded`; an older LSP is still loaded otherwise.
+- If the key file is selected accidentally, v1.17 explains the difference and asks again for the numbered case file.
+- If a JSON export is rejected, open its `.lisp.log` file and check the format, version, key id and required geometry fields. Download the numbered case again if the export is incomplete.
+- If `Active` cannot read the visible workbook, ensure `SARTD_Excel_Active.ps1` remains beside the LSP. `Browse` can still select the intended saved file by full path.
 - If AutoCAD refuses to load the LISP, add the program folder to AutoCAD Trusted Locations.
 
 ## JSON test fixtures

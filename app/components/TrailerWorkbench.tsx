@@ -7,7 +7,7 @@ import { passToProject } from "../engine/optimiser";
 import type { SetupSourceType } from "../engine/setup";
 import type { PassResult, ProjectModel } from "../engine/types";
 import { downloadText } from "../engine/download";
-import { AUTOCAD_EXPORT_KEY, buildAutocadExport } from "../engine/autocad-export";
+import { buildAutocadExport } from "../engine/autocad-export";
 import { buildGeometryViewModel } from "../geometry/buildGeometryViewModel";
 import { useEngineeringEngine } from "../hooks/useEngineeringEngine";
 import { assetPath } from "../site-path";
@@ -203,11 +203,9 @@ export default function TrailerWorkbench() {
     try {
       const payload = buildAutocadExport(model, engine.result, new Date().toISOString());
       const payloadFilename = `trailer-stability-autocad-${code}.json`;
-      const keyFilename = "trailer-stability-autocad-key-v1.json";
       downloadText(JSON.stringify(payload, null, 2), payloadFilename, "application/json");
-      downloadText(JSON.stringify(AUTOCAD_EXPORT_KEY, null, 2), keyFilename, "application/json");
       setToast({
-        text: `AutoCAD JSON exported as ${payloadFilename}. The companion key ${keyFilename} explains every coded field.`,
+        text: `AutoCAD case exported as ${payloadFilename}. In AutoCAD run SARTDJSON and select this numbered case file.`,
         type: "ok",
       });
     } catch (error) {

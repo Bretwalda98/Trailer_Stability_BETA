@@ -75,7 +75,8 @@ test("keeps phone, offline and coded AutoCAD exchange capabilities wired", async
   assert.match(manifest, /"display": "standalone"/);
   assert.match(workbench, /assetPath\("\/sw\.js"\)/);
   assert.match(workbench, /buildAutocadExport/);
-  assert.match(workbench, /AUTOCAD_EXPORT_KEY/);
+  assert.doesNotMatch(workbench, /downloadText\(JSON\.stringify\(AUTOCAD_EXPORT_KEY/);
+  assert.match(workbench, /select this numbered case file/);
   assert.doesNotMatch(workbench, /onExportWorkbook/);
   assert.match(workbench, /aria-label="Mobile workspace"/);
   assert.match(workbench, /StartupChooser/);

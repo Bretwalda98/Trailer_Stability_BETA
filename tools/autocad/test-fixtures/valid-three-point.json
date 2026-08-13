@@ -8,7 +8,19 @@
     "cg": { "n": "Fixture Cargo", "l": 12.0, "w": 4.0, "h": 4.0, "ex": 0.0, "ey": 0.0, "m": 100.0, "x": 6.0, "y": 0.0, "z": 2.0, "exn": 0.24, "eyn": 0.08, "sa": 48.0, "sc": 1.2, "sh": 2.0, "fa": 16.0, "fc": 1.2, "fh": 2.0 },
     "pk": { "en": false, "m": 0.0, "h": 0.0, "x": 6.0, "y": 0.0, "z": 0.0 },
     "tr": [ { "id": "T1", "n": "K2400 ST", "al": 4, "sf": false, "x": 0.0, "y": 0.0, "xr": 0.0, "yr": 0.0, "pr": "ABSOLUTE", "ox": 0.0, "oy": 0.0, "rb": true, "ff": true, "w": 2.43, "ap": 1.4, "ah": 40.0, "dh": 1.0, "tw": 0.62, "wd": 1.05, "pl": 2.0, "fl": 2.0 } ],
-    "hy": { "md": "THREE_POINT", "g": [], "sp": 2, "pi": [] },
+    "hy": {
+      "md": "THREE_POINT",
+      "g": [
+        {
+          "splitAfterAxleLine": 2,
+          "groups": [1, 1, 2, 2],
+          "cornerGroups": { "rearLeft": 1, "rearRight": 1, "frontLeft": 2, "frontRight": 3 },
+          "pinnedAxleLines": [2]
+        }
+      ],
+      "sp": 2,
+      "pi": [2]
+    },
     "su": [],
     "en": { "rls": 0.0, "rts": 0.0, "rlsr": 0.0, "rtsr": 0.0, "cf": 1.0, "ws": 15.0, "la": 0.2, "ta": 0.2 },
     "sp": { "at": "T1", "lc": "basic", "ms": 0.25 },
