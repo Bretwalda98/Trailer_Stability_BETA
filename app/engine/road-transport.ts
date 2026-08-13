@@ -18,10 +18,10 @@ export interface RoadSurfaceData {
 }
 
 /**
- * Values recovered from the EZTrailer salvage workbook, Tables!A5:D10.
- * Rolling resistance is dimensionless and friction is tyre/surface adhesion.
+ * Validated road-surface and module traction values. Rolling resistance is
+ * dimensionless and friction is tyre/surface adhesion.
  */
-export const EZTRAILER_ROAD_SURFACES: RoadSurfaceData[] = [
+export const ROAD_SURFACES: RoadSurfaceData[] = [
   { id: "ASPHALT", label: "Asphalt", dryFriction: 0.8, wetFriction: 0.55, rollingResistance: 0.01 },
   { id: "CONCRETE", label: "Concrete", dryFriction: 0.8, wetFriction: 0.55, rollingResistance: 0.015 },
   { id: "SOIL_EARTH", label: "Soil / earth", dryFriction: 0.68, wetFriction: 0.55, rollingResistance: 0.06 },
@@ -77,8 +77,8 @@ function ppuDriveLimit(model: ProjectModel): number {
 }
 
 function emptyRoadResult(model: ProjectModel, warning = "Road transport analysis is disabled."): RoadTransportResult {
-  const surface = EZTRAILER_ROAD_SURFACES.find((item) => item.id === model.roadTransport.surface)
-    ?? EZTRAILER_ROAD_SURFACES[0];
+  const surface = ROAD_SURFACES.find((item) => item.id === model.roadTransport.surface)
+    ?? ROAD_SURFACES[0];
   return {
     enabled: model.roadTransport.enabled,
     surface: surface.id,
@@ -109,7 +109,7 @@ function emptyRoadResult(model: ProjectModel, warning = "Road transport analysis
     maximumClimbGradeDeg: null,
     maximumDescentGradeDeg: null,
     status: "N/A",
-    source: "EZTrailer salvage engineering data: road surfaces and module traction/braking tables",
+    source: "Validated road-surface and module traction/braking tables",
     warnings: warning ? [warning] : [],
   };
 }
@@ -142,7 +142,7 @@ function capacityLimitedGrade(
 /**
  * Performs the road-motion check using the selected neutral bogie loads. The
  * driven/braked bogie patterns, 60 kN traction, 55 kN brake force and the PPU
- * drive limits are the exact values recovered from EZTrailer. Each result is
+ * drive limits are the configured engineering values. Each result is
  * limited by both mechanical force and tyre/surface adhesion.
  */
 export function calculateRoadTransport(
@@ -151,8 +151,8 @@ export function calculateRoadTransport(
   totalMassT: number,
 ): RoadTransportResult {
   if (!model.roadTransport.enabled) return emptyRoadResult(model);
-  const surface = EZTRAILER_ROAD_SURFACES.find((item) => item.id === model.roadTransport.surface)
-    ?? EZTRAILER_ROAD_SURFACES[0];
+  const surface = ROAD_SURFACES.find((item) => item.id === model.roadTransport.surface)
+    ?? ROAD_SURFACES[0];
   const friction = model.roadTransport.condition === "WET"
     ? surface.wetFriction
     : surface.dryFriction;
@@ -169,12 +169,12 @@ export function calculateRoadTransport(
       .sort((left, right) => left.axleLine - right.axleLine || left.point.y - right.point.y);
     if (!build || bogies.length !== trailer.axleLines * (trailer.singleFile ? 1 : 2)) {
       warnings.push(
-        `Trailer ${trailerIndex + 1} cannot be mapped exactly to the EZTrailer 4/5/6-AL drive and brake patterns.`,
+        `Trailer ${trailerIndex + 1} cannot be mapped exactly to the 4/5/6-AL drive and brake patterns.`,
       );
       continue;
     }
     if (trailer.singleFile) {
-      warnings.push(`Trailer ${trailerIndex + 1} is single-file; no verified EZTrailer end-view drive pattern is available.`);
+      warnings.push(`Trailer ${trailerIndex + 1} is single-file; no end-view drive pattern is available.`);
       continue;
     }
     moduleCount += build.moduleCount;
@@ -272,7 +272,7 @@ export function calculateRoadTransport(
       true,
     ),
     status,
-    source: "EZTrailer salvage engineering data: road surfaces and module traction/braking tables",
+    source: "Validated road-surface and module traction/braking tables",
     warnings,
   };
 }

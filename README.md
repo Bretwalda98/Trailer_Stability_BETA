@@ -1,9 +1,8 @@
 # Trailer Stability Native Web v0.7
 
-A complete responsive trailer stability calculator and optimiser derived from
-`Trailer_Stability_Calculator_Optimiser_v0.7.xlsm`. The engineering engine runs
-locally in a phone or desktop browser; Excel is only needed for optional
-locked-workbook verification.
+A complete responsive trailer stability calculator and optimiser. The
+engineering engine runs locally in a phone or desktop browser and keeps case
+data on the user's device unless an export is explicitly requested.
 
 ## Included
 
@@ -11,8 +10,8 @@ locked-workbook verification.
   support-spreading and continuous spine-beam calculations.
 - Recalculation after every C89, D138, E89, support or pinned-axle change.
 - Absolute, load-COG-relative and all-inclusive-COG-relative trailer placement.
-- Shared axle-line, split-line, X-location and pin controls matching the
-  workbook's linked-cell behavior.
+- Shared axle-line, split-line, X-location and pin controls with consistent
+  propagation across the active formation.
 - Up to 12 trailer rows, eight pinned axle lines and ten optional supports.
 - Dynamic trailer catalogue with the PEKZ G4 records and editable custom rows.
 - First/Second/Third engineering verification limits, route/residual slopes,
@@ -23,9 +22,10 @@ locked-workbook verification.
 - Stability envelopes, plan, elevation, axle-line loading, beam-load, shear,
   bending and deflection charts.
 - Permanent full-case, axle, beam-mesh and activity CSV logs plus project JSON.
-- Macro-enabled workbook import and verification export. Export edits OOXML
-  cells directly so VBA, charts, drawings, formulas and `tblTrailerData` remain
-  in the package.
+- Versioned project JSON and coded AutoCAD JSON interchange. The AutoCAD
+  action downloads a separate key file that maps every field code, unit and
+  coordinate convention, so AutoLISP and other tools can read the payload
+  without depending on the web UI.
 - Installable PWA service worker for offline use after the first HTTPS/localhost
   load.
 
@@ -76,8 +76,8 @@ The repository deploys a static, browser-only build when changes are merged to
 https://bretwalda98.github.io/Trailer_Stability_BETA/
 ```
 
-The calculator, optimisation worker, local project storage, logs and workbook
-import/export remain in the browser. GitHub Pages does not host the optional
+The calculator, optimisation worker, local project storage, logs and JSON
+exchange remain in the browser. GitHub Pages does not host the optional
 Node/Cloudflare server shell used by the local desktop build.
 
 ## Verification
@@ -88,21 +88,19 @@ pnpm test
 
 The automated checks cover analytical beam cases, shared-control propagation,
 COG-relative solving, engineering limits, support settling, loose packing,
-selectable beam cases, optimiser execution, the 15-row trailer catalogue,
-responsive server rendering and macro-enabled workbook round-tripping. The
-round-trip test checks that every original OOXML package part and the exact VBA
-project binary are retained.
+selectable beam cases, optimiser execution, the trailer catalogue, responsive
+server rendering and the coded AutoCAD interchange contract.
 
 The supplied v0.7 profile completed 1,135 fully calculated/logged cases in
 7.82 seconds in the final local benchmark (6.89 ms average per case), meeting
 the nine-second target. See `VERIFICATION_REPORT.md`.
 
-For engineering sign-off, export a verification workbook and compare the
-reported native result with a full recalculation in the locked Excel workbook.
-The app keeps this verification route visible by design.
+The Help and user guide includes the active calculation reference. The same
+equations, constants, inputs and result fields are embedded in each AutoCAD
+JSON payload under the `eng` section.
 
 ## Data handling
 
-Project autosave uses browser local storage. Workbook and CSV/JSON files are
-processed locally and downloaded directly by the browser; the app does not need
-to upload engineering data to a server.
+Project autosave uses browser local storage. JSON and CSV files are processed
+locally and downloaded directly by the browser; the app does not need to upload
+engineering data to a server.

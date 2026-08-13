@@ -48,7 +48,7 @@ export function StartupChooser({
     setNotice(null);
     const opened = await onOpenFile(file);
     if (!opened) {
-      setNotice("That file could not be opened. Check that it is a valid saved project or verification export.");
+      setNotice("That file could not be opened. Check that it is a valid saved project JSON file.");
     }
   };
 
@@ -79,7 +79,7 @@ export function StartupChooser({
             {busy ? <IconLoader2 className="spin" size={22} /> : <IconFolderOpen size={22} />}
             <span>
               <b>{busy ? "Opening file…" : "Open case"}</b>
-              <small>Open project JSON or a verification workbook from this device.</small>
+              <small>Open a saved project JSON file from this device.</small>
             </span>
           </button>
         </div>
@@ -104,7 +104,7 @@ export function StartupChooser({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".json,.xlsm,.xlsx"
+          accept=".json"
           hidden
           onChange={(event) => {
             const file = event.target.files?.[0];

@@ -516,7 +516,7 @@ export function OptimiserWizard({
             }
           >
             <option value="NATIVE_VERIFIED">Native verified</option>
-            <option value="WORKBOOK_PARITY">Verification parity</option>
+            <option value="WORKBOOK_PARITY">Legacy sequencing</option>
           </SelectField>
           <SelectField
             label="Optimiser strategy"

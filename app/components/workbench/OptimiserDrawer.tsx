@@ -16,7 +16,7 @@ import {
   exportPassesCsv,
 } from "../../engine/optimiser";
 import type { OptimiserRun, PassResult, ProjectModel } from "../../engine/types";
-import { downloadText } from "../../engine/workbook";
+import { downloadText } from "../../engine/download";
 import { formatDuration } from "../../geometry/format";
 
 const MAX_VISIBLE_TERMINAL_EVENTS = 240;

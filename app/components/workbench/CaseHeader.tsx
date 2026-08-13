@@ -6,13 +6,11 @@ import {
   IconEdit,
   IconExternalLink,
   IconFileImport,
-  IconFolderOpen,
   IconHelpCircle,
   IconPlayerPlay,
   IconPlayerStop,
   IconRefresh,
   IconTargetArrow,
-  IconUpload,
 } from "@tabler/icons-react";
 import { useRef, useState } from "react";
 import type { OptimiserRun, ProjectModel } from "../../engine/types";
@@ -23,9 +21,7 @@ interface CaseHeaderProps {
   calculating: boolean;
   saved: boolean;
   busy: boolean;
-  onImport(file: File): void;
   onSetup(): void;
-  onExportWorkbook(): void;
   onExportAutoCAD(): void;
   onExportProject(): void;
   onImportProject(file: File): void;
@@ -41,9 +37,7 @@ export function CaseHeader({
   calculating,
   saved,
   busy,
-  onImport,
   onSetup,
-  onExportWorkbook,
   onExportAutoCAD,
   onExportProject,
   onImportProject,
@@ -52,7 +46,6 @@ export function CaseHeader({
   onStop,
   onReset,
 }: CaseHeaderProps) {
-  const workbookInput = useRef<HTMLInputElement>(null);
   const projectInput = useRef<HTMLInputElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const running = run.state === "RUNNING" || run.state === "PLANNING";
@@ -76,17 +69,6 @@ export function CaseHeader({
       </div>
       <div className="header-actions">
         <input
-          ref={workbookInput}
-          hidden
-          type="file"
-          accept=".xlsm,.xlsx"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) onImport(file);
-            event.currentTarget.value = "";
-          }}
-        />
-        <input
           ref={projectInput}
           hidden
           type="file"
@@ -100,11 +82,8 @@ export function CaseHeader({
         <button className="setup-action" aria-label="Edit case inputs" disabled={busy} onClick={onSetup}>
           <IconEdit size={15} /> <span>Edit inputs</span>
         </button>
-        <button className="mobile-optional" aria-label="Open case or verification file" disabled={busy} onClick={() => workbookInput.current?.click()}>
-          <IconFolderOpen size={15} /> <span>Open</span>
-        </button>
-        <button className="mobile-optional" aria-label="Export verification data" disabled={busy} onClick={onExportWorkbook}>
-          <IconDownload size={15} /> <span>Export</span>
+        <button className="mobile-optional" aria-label="Open project JSON" disabled={busy} onClick={() => projectInput.current?.click()}>
+          <IconFileImport size={15} /> <span>Open</span>
         </button>
         <button className="mobile-optional autocad-export-action" aria-label="Export to AutoCAD" disabled={busy} onClick={onExportAutoCAD}>
           <IconExternalLink size={15} /> <span>AutoCAD</span>
@@ -134,8 +113,6 @@ export function CaseHeader({
             <div className="header-menu-popover">
               {!running && <button onClick={() => { onArrangementSetup(); setMenuOpen(false); }}><IconTargetArrow size={14} /> Find a trailer arrangement</button>}
               <button onClick={() => { onSetup(); setMenuOpen(false); }}><IconEdit size={14} /> Edit case inputs</button>
-              <button onClick={() => { workbookInput.current?.click(); setMenuOpen(false); }}><IconUpload size={14} /> Open verification workbook</button>
-              <button onClick={() => { onExportWorkbook(); setMenuOpen(false); }}><IconDownload size={14} /> Export verification workbook</button>
               <button onClick={() => { onExportAutoCAD(); setMenuOpen(false); }}><IconExternalLink size={14} /> Send data to AutoCAD</button>
               <button onClick={() => { onExportProject(); setMenuOpen(false); }}><IconDownload size={14} /> Export project JSON</button>
               <button onClick={() => { projectInput.current?.click(); setMenuOpen(false); }}><IconFileImport size={14} /> Import project JSON</button>

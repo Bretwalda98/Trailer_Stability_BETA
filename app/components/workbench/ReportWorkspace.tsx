@@ -2,7 +2,7 @@
 
 import { IconAlertTriangle, IconCheck, IconDownload, IconFileReport } from "@tabler/icons-react";
 import type { ProjectModel } from "../../engine/types";
-import { downloadText } from "../../engine/workbook";
+import { downloadText } from "../../engine/download";
 import { engineeringDetailsCsv, buildEngineeringDetailRows } from "../../geometry/details";
 import { formatEngineering, statusLabel } from "../../geometry/format";
 import type { GeometryViewModel } from "../../geometry/types";

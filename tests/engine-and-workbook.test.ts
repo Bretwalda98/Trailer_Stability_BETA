@@ -36,7 +36,7 @@ import {
   spacingCandidates,
   validAxleLineValues,
 } from "../app/engine/arrangement";
-import { EZTRAILER_ROAD_SURFACES } from "../app/engine/road-transport";
+import { ROAD_SURFACES } from "../app/engine/road-transport";
 import {
   deriveHydraulicYPitchBound,
   arrangementHydraulicModes,
@@ -67,6 +67,7 @@ import {
 } from "../app/engine/setup";
 import { derivedCargoWindInputs } from "../app/engine/wind";
 import { exportVerificationWorkbook, importWorkbook } from "../app/engine/workbook";
+import { AUTOCAD_EXPORT_KEY, buildAutocadExport } from "../app/engine/autocad-export";
 
 function arrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -87,9 +88,9 @@ async function main(): Promise<void> {
   assert.deepEqual(arrangementHydraulicModes(model), ["THREE_POINT", "FOUR_POINT"]);
   assert.equal(model.longitudinalOrientation, LONGITUDINAL_ORIENTATION_ID);
   assert.equal(model.hydraulicSystemMode, "THREE_POINT");
-  assert.equal(EZTRAILER_ROAD_SURFACES.find((item) => item.id === "ASPHALT")?.dryFriction, 0.8);
-  assert.equal(EZTRAILER_ROAD_SURFACES.find((item) => item.id === "STEEL")?.wetFriction, 0.1);
-  assert.equal(EZTRAILER_ROAD_SURFACES.find((item) => item.id === "SAND")?.rollingResistance, 0.3);
+  assert.equal(ROAD_SURFACES.find((item) => item.id === "ASPHALT")?.dryFriction, 0.8);
+  assert.equal(ROAD_SURFACES.find((item) => item.id === "STEEL")?.wetFriction, 0.1);
+  assert.equal(ROAD_SURFACES.find((item) => item.id === "SAND")?.rollingResistance, 0.3);
 
   const reducedActionModel = structuredClone(model);
   reducedActionModel.arrangementOptimiser.allowReducedEnvironmentalActions = true;
@@ -110,7 +111,7 @@ async function main(): Promise<void> {
   assert.equal(roadResult.moduleCount, 4);
   assert.ok(roadResult.tractionMechanicalLimitKN > 0);
   assert.ok(roadResult.brakingMechanicalLimitKN > 0);
-  assert.match(roadResult.source, /EZTrailer salvage/);
+  assert.match(roadResult.source, /validated road-surface/i);
 
   const fourPointModel = structuredClone(model);
   fourPointModel.hydraulicSystemMode = "FOUR_POINT";
@@ -135,6 +136,14 @@ async function main(): Promise<void> {
   assert.equal(fourPointResult.stabilityReferences.cargoOnlyPass, false);
   assert.equal(fourPointResult.stabilityReferences.combinedCogPassOnly, true);
   assert.ok(fourPointResult.warnings.some((warning) => warning.startsWith("COMBINED COG PASS ONLY:")));
+
+  const cadExport = buildAutocadExport(model, calculateProject(model), "2026-08-13T00:00:00.000Z");
+  assert.equal(cadExport.format, "TRAILER-STABILITY-CAD-DATA");
+  assert.equal(cadExport.keyId, AUTOCAD_EXPORT_KEY.keyId);
+  assert.equal(cadExport.data.c && typeof cadExport.data.c, "object");
+  assert.equal((cadExport.data.en as { ws: number }).ws, model.environment.windSpeedMps);
+  assert.equal((cadExport.data.r as { st: string }).st, calculateProject(model).status);
+  assert.ok((cadExport.data.eng as { methods: unknown[] }).methods.length >= 10);
 
   const staggerTemplates = longitudinalOffsetCandidates(
     { ...model.arrangementOptimiser, formationMode: "ALLOW_STAGGERED", maximumLongitudinalStaggerM: 4, longitudinalStaggerSamples: 1 },
