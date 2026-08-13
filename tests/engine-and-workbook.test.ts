@@ -143,6 +143,9 @@ async function main(): Promise<void> {
   assert.equal(cadExport.data.c && typeof cadExport.data.c, "object");
   assert.equal((cadExport.data.en as { ws: number }).ws, model.environment.windSpeedMps);
   assert.equal((cadExport.data.r as { st: string }).st, calculateProject(model).status);
+  const cadResolvedTrailers = (cadExport.data.r as { rv: Array<{ startXM: number; centreYM: number; lengthM: number; widthM: number }> }).rv;
+  assert.equal(cadResolvedTrailers.length, model.trailers.length);
+  assert.ok(cadResolvedTrailers.every((trailer) => trailer.lengthM > 0 && trailer.widthM > 0 && Number.isFinite(trailer.startXM) && Number.isFinite(trailer.centreYM)));
   assert.ok((cadExport.data.eng as { methods: unknown[] }).methods.length >= 10);
 
   const staggerTemplates = longitudinalOffsetCandidates(

@@ -1,0 +1,5 @@
+(load "C:/Users/Harry/Documents/Codex/2026-07-16/the/github-publish/Trailer_Stability_BETA/tools/autocad/SARENS_TRAILERDRAFTSMAN/SARENS_TRAILERDRAFTSMAN_v1.1.lsp")
+(setenv "SARTD_JSON_LAST" (getenv "SARTD_JSON_TEST_FILE"))
+(setenv "SARTD_JSON_AUTOMATED" "1")
+(c:SARTDJSONDATA)
+(princ)
