@@ -11,7 +11,7 @@ import {
   IconTable,
 } from "@tabler/icons-react";
 import { type CSSProperties, useMemo, useState } from "react";
-import { downloadText } from "../../engine/workbook";
+import { downloadText } from "../../engine/download";
 import type { ProjectModel, SpineLoadCase } from "../../engine/types";
 import {
   buildEngineeringDetailRows,

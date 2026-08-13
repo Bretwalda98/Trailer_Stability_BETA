@@ -47,7 +47,7 @@ test("server-renders the standalone engineering workbench", async () => {
   assert.doesNotMatch(html, /Your site is taking shape|Building your site/);
 });
 
-test("keeps phone, offline and workbook-verification capabilities wired", async () => {
+test("keeps phone, offline and coded AutoCAD exchange capabilities wired", async () => {
   const [page, layout, manifest, workbench, optimiserDrawer, engineHook, worker, planView, endView, sideView, css, professionalCss, serviceWorker, setupWizard, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -74,8 +74,9 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(layout, /professional-workbench\.css/);
   assert.match(manifest, /"display": "standalone"/);
   assert.match(workbench, /assetPath\("\/sw\.js"\)/);
-  assert.match(workbench, /exportVerificationWorkbook/);
-  assert.match(workbench, /importWorkbook/);
+  assert.match(workbench, /buildAutocadExport/);
+  assert.match(workbench, /AUTOCAD_EXPORT_KEY/);
+  assert.doesNotMatch(workbench, /onExportWorkbook/);
   assert.match(workbench, /aria-label="Mobile workspace"/);
   assert.match(workbench, /StartupChooser/);
   assert.match(engineHook, /deterministicInitialCalculation/);
@@ -97,7 +98,8 @@ test("keeps phone, offline and workbook-verification capabilities wired", async 
   assert.match(css, /\.mobile-workspace-nav/);
   assert.match(professionalCss, /\.workbench-grid\.navigation-collapsed/);
   assert.match(professionalCss, /\.arrangement-wizard-shell\.preview-expanded/);
-  assert.match(serviceWorker, /Trailer_Stability_Verification_Template_v0\.7\.xlsm/);
+  assert.match(serviceWorker, /autocad-export-key-v1\.json/);
+  assert.doesNotMatch(serviceWorker, /Verification_Template|xlsm|xlsx/);
   assert.match(serviceWorker, /caches\.match/);
   assert.match(setupWizard, /Auto-calculate wind areas/);
   assert.match(setupWizard, /Auto-calculate COG envelope/);

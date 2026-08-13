@@ -6,12 +6,8 @@ import { createDefaultModel, hydrateProjectModel } from "../data/default-model";
 import { passToProject } from "../engine/optimiser";
 import type { SetupSourceType } from "../engine/setup";
 import type { PassResult, ProjectModel } from "../engine/types";
-import {
-  downloadBytes,
-  downloadText,
-  exportVerificationWorkbook,
-  importWorkbook,
-} from "../engine/workbook";
+import { downloadText } from "../engine/download";
+import { AUTOCAD_EXPORT_KEY, buildAutocadExport } from "../engine/autocad-export";
 import { buildGeometryViewModel } from "../geometry/buildGeometryViewModel";
 import { useEngineeringEngine } from "../hooks/useEngineeringEngine";
 import { assetPath } from "../site-path";
@@ -76,7 +72,6 @@ export default function TrailerWorkbench() {
   const [optimiserOpen, setOptimiserOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("workspace");
   const [helpOpen, setHelpOpen] = useState(false);
-  const [sourceBytes, setSourceBytes] = useState<ArrayBuffer | null>(null);
   const [optimiserStartModel, setOptimiserStartModel] = useState<ProjectModel | null>(null);
   const [undoModel, setUndoModel] = useState<ProjectModel | null>(null);
   const [saved, setSaved] = useState(true);
@@ -202,78 +197,17 @@ export default function TrailerWorkbench() {
     else setWorkspace("geometry");
   };
 
-  const handleImport = async (file: File): Promise<boolean> => {
-    setBusy(true);
-    try {
-      const imported = await importWorkbook(file, model);
-      setModel(imported.model);
-      setPersistActiveProject(true);
-      setHasLocalProject(true);
-      setSourceBytes(imported.sourceBytes);
-      setSelectedId("project-case");
-      setWorkspace("geometry");
-      setView("plan");
-      setToast({
-        text: `Verification data imported · ${imported.model.trailers.length} trailers · ${imported.model.catalogue.length} catalogue records.`,
-        type: "ok",
-      });
-      return true;
-    } catch (error) {
-      setToast({ text: error instanceof Error ? error.message : String(error), type: "error" });
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleExportWorkbook = async () => {
-    setBusy(true);
-    try {
-      const bytes = await exportVerificationWorkbook(model, sourceBytes ?? undefined);
-      downloadBytes(
-        bytes,
-        `Trailer_Stability_Verification_${new Date().toISOString().slice(0, 10)}.xlsm`,
-        "application/vnd.ms-excel.sheet.macroEnabled.12",
-      );
-      setToast({ text: "Verification data exported with a full recalculation requested on open.", type: "ok" });
-    } catch (error) {
-      setToast({ text: error instanceof Error ? error.message : String(error), type: "error" });
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const handleExportAutoCAD = async () => {
     setBusy(true);
     const code = createAutoCADTransferCode();
-    const filename = `SARENS_AUTOCAD_${code}.xlsm`;
     try {
-      const bytes = await exportVerificationWorkbook(model, sourceBytes ?? undefined);
-      downloadBytes(
-        bytes,
-        filename,
-        "application/vnd.ms-excel.sheet.macroEnabled.12",
-      );
-      let bridgeAccepted = false;
-      try {
-        await new Promise((resolve) => window.setTimeout(resolve, 250));
-        const controller = new AbortController();
-        const timeout = window.setTimeout(() => controller.abort(), 1500);
-        const response = await fetch("http://127.0.0.1:17840/run", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code }),
-          signal: controller.signal,
-        });
-        window.clearTimeout(timeout);
-        bridgeAccepted = response.ok;
-      } catch {
-        bridgeAccepted = false;
-      }
+      const payload = buildAutocadExport(model, engine.result, new Date().toISOString());
+      const payloadFilename = `trailer-stability-autocad-${code}.json`;
+      const keyFilename = "trailer-stability-autocad-key-v1.json";
+      downloadText(JSON.stringify(payload, null, 2), payloadFilename, "application/json");
+      downloadText(JSON.stringify(AUTOCAD_EXPORT_KEY, null, 2), keyFilename, "application/json");
       setToast({
-        text: bridgeAccepted
-          ? `AutoCAD transfer ${code} accepted by the local bridge. AutoCAD will run SARTDWEB.`
-          : `Downloaded ${filename}. Run SARTDWEB in AutoCAD and enter code ${code}.`,
+        text: `AutoCAD JSON exported as ${payloadFilename}. The companion key ${keyFilename} explains every coded field.`,
         type: "ok",
       });
     } catch (error) {
@@ -291,7 +225,6 @@ export default function TrailerWorkbench() {
       setModel(hydrated);
       setPersistActiveProject(true);
       setHasLocalProject(true);
-      setSourceBytes(null);
       setToast({ text: "Standalone project imported.", type: "ok" });
       return true;
     } catch (error) {
@@ -303,9 +236,7 @@ export default function TrailerWorkbench() {
   };
 
   const handleStartupFile = async (file: File): Promise<boolean> => {
-    const opened = file.name.toLowerCase().endsWith(".json")
-      ? await handleImportProject(file)
-      : await handleImport(file);
+    const opened = await handleImportProject(file);
     if (opened) setStartupOpen(false);
     return opened;
   };
@@ -354,7 +285,6 @@ export default function TrailerWorkbench() {
     if (!window.confirm("Reset the current case to the bundled v0.7 example?")) return;
     setModel(createDefaultModel());
     setPersistActiveProject(true);
-    setSourceBytes(null);
     setOptimiserStartModel(null);
     setUndoModel(null);
     engine.resetRun();
@@ -396,8 +326,6 @@ export default function TrailerWorkbench() {
           setArrangementWizardInitialSource("CURRENT");
           setArrangementWizardOpen(true);
         }}
-        onImport={handleImport}
-        onExportWorkbook={handleExportWorkbook}
         onExportAutoCAD={handleExportAutoCAD}
         onExportProject={() =>
           downloadText(
@@ -422,17 +350,15 @@ export default function TrailerWorkbench() {
       {wizardOpen && (
         <SetupWizard
           activeModel={model}
-          activeSourceBytes={sourceBytes}
           initialSourceType={wizardInitialSource}
           onClose={() => {
             setWizardOpen(false);
             setWizardInitialSource(undefined);
           }}
-          onApply={(nextModel, nextSourceBytes, runOptimisation) => {
+          onApply={(nextModel, runOptimisation) => {
             setModel(nextModel);
             setPersistActiveProject(true);
             setHasLocalProject(true);
-            setSourceBytes(nextSourceBytes);
             setSelectedId("project-case");
             setWorkspace("geometry");
             setView("plan");
@@ -464,7 +390,6 @@ export default function TrailerWorkbench() {
             setModel(nextModel);
             setPersistActiveProject(true);
             setHasLocalProject(true);
-            if (arrangementWizardInitialSource === "BLANK") setSourceBytes(null);
             setArrangementWizardOpen(false);
             setArrangementWizardInitialSource("CURRENT");
             if (runOptimisation) {
@@ -577,10 +502,10 @@ export default function TrailerWorkbench() {
         />
       </div>
       <footer className="application-statusbar">
-        <span>Load case · {preferences.loadCase}</span>
-        <span>Engineering verification degree · {model.engineeringDegree}</span>
-        <span>Weight / COG reference · {model.weightCogReference}</span>
-        <span>Load datum / reference point · {model.referencePoint}</span>
+        <span>Load case Â· {preferences.loadCase}</span>
+        <span>Engineering verification degree Â· {model.engineeringDegree}</span>
+        <span>Weight / COG reference Â· {model.weightCogReference}</span>
+        <span>Load datum / reference point Â· {model.referencePoint}</span>
       </footer>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.text}</div>}
     </main>

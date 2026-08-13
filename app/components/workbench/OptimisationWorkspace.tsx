@@ -110,7 +110,7 @@ export function OptimisationWorkspace({
           <Field query={query} label="Calculation mode" description="Native worker-backed or verification-parity sequencing">
             <select value={settings.calculationMode} onChange={(event) => update({ calculationMode: event.target.value as OptimiserSettings["calculationMode"] })}>
               <option value="NATIVE_VERIFIED">Native verified</option>
-              <option value="WORKBOOK_PARITY">Verification parity</option>
+              <option value="WORKBOOK_PARITY">Legacy sequencing</option>
             </select>
           </Field>
           <Field query={query} label="Axle lines start"><input type="number" value={settings.c89Start} onChange={(event) => update({ c89Start: Number(event.target.value) })} /></Field>

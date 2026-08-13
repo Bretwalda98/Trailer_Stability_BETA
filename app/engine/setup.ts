@@ -18,7 +18,7 @@ export type SetupStepId =
   | "supports"
   | "review";
 
-export type SetupSourceType = "CURRENT" | "BLANK" | "XLSM" | "JSON";
+export type SetupSourceType = "CURRENT" | "BLANK" | "JSON";
 
 export interface SetupIssue {
   id: string;
@@ -56,7 +56,7 @@ export const SETUP_STEPS: Array<{
 ];
 
 const STEP_IDS = new Set<SetupStepId>(SETUP_STEPS.map((step) => step.id));
-const SOURCE_TYPES = new Set<SetupSourceType>(["CURRENT", "BLANK", "XLSM", "JSON"]);
+const SOURCE_TYPES = new Set<SetupSourceType>(["CURRENT", "BLANK", "JSON"]);
 
 function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -90,7 +90,6 @@ export function createBlankSetupModel(): ProjectModel {
   const model = createDefaultModel();
   return {
     ...model,
-    sourceWorkbook: "New standalone case",
     cargo: {
       ...model.cargo,
       name: "",
@@ -190,7 +189,7 @@ export function setSharedPlacementReference(
 }
 
 /**
- * Applies the workbook-compatible shared longitudinal value. Absolute mode
+ * Applies the shared longitudinal value. Absolute mode
  * edits E89 directly; relative modes edit the shared X offset.
  */
 export function applySharedLongitudinalPlacement(

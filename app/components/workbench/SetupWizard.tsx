@@ -18,7 +18,6 @@ import {
   IconTargetArrow,
   IconTrash,
   IconTruck,
-  IconUpload,
   IconX,
 } from "@tabler/icons-react";
 import {
@@ -65,8 +64,7 @@ import type {
   ProjectModel,
   TrailerInput,
 } from "../../engine/types";
-import { importWorkbook } from "../../engine/workbook";
-import { EZTRAILER_ROAD_SURFACES } from "../../engine/road-transport";
+import { ROAD_SURFACES } from "../../engine/road-transport";
 import { applyAutomaticCargoWindInputs, derivedCargoWindInputs } from "../../engine/wind";
 import { buildGeometryViewModel } from "../../geometry/buildGeometryViewModel";
 import { useEngineeringEngine } from "../../hooks/useEngineeringEngine";
@@ -82,9 +80,8 @@ type CornerKey = keyof NonNullable<HydraulicGrouping["cornerGroups"]>;
 
 interface SetupWizardProps {
   activeModel: ProjectModel;
-  activeSourceBytes: ArrayBuffer | null;
   initialSourceType?: Extract<SetupSourceType, "CURRENT" | "BLANK">;
-  onApply(model: ProjectModel, sourceBytes: ArrayBuffer | null, runOptimisation: boolean): void;
+  onApply(model: ProjectModel, runOptimisation: boolean): void;
   onClose(): void;
 }
 
@@ -345,22 +342,17 @@ function createTrailer(model: ProjectModel): { trailer: TrailerInput; grouping: 
 
 export function SetupWizard({
   activeModel,
-  activeSourceBytes,
   initialSourceType,
   onApply,
   onClose,
 }: SetupWizardProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const workbookInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const [draftModel, setDraftModel] = useState<ProjectModel>(() =>
     initialSourceType === "BLANK" ? createBlankSetupModel() : cloneModel(activeModel),
   );
   const [sourceType, setSourceType] = useState<SetupSourceType>(
     initialSourceType ?? "CURRENT",
-  );
-  const [draftSourceBytes, setDraftSourceBytes] = useState<ArrayBuffer | null>(
-    initialSourceType === "BLANK" ? null : activeSourceBytes,
   );
   const [step, setStep] = useState<SetupStepId>("case");
   const [view, setView] = useState<ViewId>("plan");
@@ -489,7 +481,7 @@ export function SetupWizard({
   const finish = (runOptimisation: boolean) => {
     if (!calculationCurrent || engine.error || !canFinishSetup(issues)) return;
     localStorage.removeItem(WIZARD_DRAFT_STORAGE_KEY);
-    onApply(hydrateProjectModel(draftModel), draftSourceBytes, runOptimisation);
+    onApply(hydrateProjectModel(draftModel), runOptimisation);
   };
 
   const changeStep = (next: SetupStepId) => {
@@ -514,37 +506,19 @@ export function SetupWizard({
   const selectSource = (next: "CURRENT" | "BLANK") => {
     if (next === "CURRENT") {
       setDraftModel(cloneModel(activeModel));
-      setDraftSourceBytes(activeSourceBytes);
       setSourceType("CURRENT");
     } else {
       setDraftModel(createBlankSetupModel());
-      setDraftSourceBytes(null);
       setSourceType("BLANK");
     }
     setSelectedTrailerIndex(0);
     setNotice(null);
   };
 
-  const importXlsm = async (file: File) => {
-    setBusy(true);
-    try {
-      const imported = await importWorkbook(file, draftModel);
-      setDraftModel(imported.model);
-      setDraftSourceBytes(imported.sourceBytes);
-      setSourceType("XLSM");
-      setNotice(`${file.name} imported with ${imported.model.trailers.length} trailer(s).`);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const importJson = async (file: File) => {
     setBusy(true);
     try {
       setDraftModel(hydrateProjectModel(JSON.parse(await file.text())));
-      setDraftSourceBytes(null);
       setSourceType("JSON");
       setNotice(`${file.name} imported as a version-2 standalone project.`);
     } catch (error) {
@@ -652,15 +626,6 @@ export function SetupWizard({
           </button>
           <button
             type="button"
-            className={sourceType === "XLSM" ? "selected" : ""}
-            disabled={busy}
-            onClick={() => workbookInputRef.current?.click()}
-          >
-            <IconUpload size={18} />
-            <span><b>Import verification data</b><small>Read case inputs and the embedded trailer catalogue.</small></span>
-          </button>
-          <button
-            type="button"
             className={sourceType === "JSON" ? "selected" : ""}
             disabled={busy}
             onClick={() => jsonInputRef.current?.click()}
@@ -760,7 +725,7 @@ export function SetupWizard({
           <NumberField label="Packing COG Z" value={draftModel.packing.cog.z} unit="m" highlight={() => setSelectedId("cog:packing")} onChange={(z) => updatePacking({ cog: { ...draftModel.packing.cog, z } })} />
         </div>
       </FormSection>
-      <FormSection title="Visual footprint" description="Web-only geometry for the live views; it does not alter the engineering calculation or verification data.">
+      <FormSection title="Visual footprint" description="Geometry for the live views; it does not alter the engineering calculation or exported case values.">
         <div className="wizard-segmented">
           <button
             type="button"
@@ -1042,7 +1007,7 @@ export function SetupWizard({
           <NumberField label="Analysed trailer" value={draftModel.analysedTrailer} step={1} min={1} max={draftModel.trailers.length} onChange={(analysedTrailer) => setDraftModel((current) => ({ ...current, analysedTrailer: Math.round(analysedTrailer) }))} />
         </div>
       </FormSection>
-      <FormSection title="Road transport traction and braking" description="Uses the recovered EZTrailer friction, rolling-resistance, driven-bogie and brake-force data.">
+        <FormSection title="Road transport traction and braking" description="Uses the configured friction, rolling-resistance, driven-bogie and brake-force data.">
         <ToggleField
           label="Enable road transport analysis"
           checked={draftModel.roadTransport.enabled}
@@ -1054,7 +1019,7 @@ export function SetupWizard({
         />
         <div className="wizard-field-grid three">
           <SelectField label="Road surface" value={draftModel.roadTransport.surface} onChange={(surface) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, surface: surface as ProjectModel["roadTransport"]["surface"] } }))}>
-            {EZTRAILER_ROAD_SURFACES.map((surface) => <option key={surface.id} value={surface.id}>{surface.label}</option>)}
+            {ROAD_SURFACES.map((surface) => <option key={surface.id} value={surface.id}>{surface.label}</option>)}
           </SelectField>
           <SelectField label="Surface condition" value={draftModel.roadTransport.condition} onChange={(condition) => setDraftModel((current) => ({ ...current, roadTransport: { ...current.roadTransport, condition: condition as ProjectModel["roadTransport"]["condition"] } }))}>
             <option value="DRY">Dry</option><option value="WET">Wet</option>
@@ -1127,8 +1092,8 @@ export function SetupWizard({
       <aside className="wizard-export-note">
         <IconFileImport size={17} />
         <div>
-          <b>Verification export</b>
-          <p>Resolved absolute trailer X/Y locations, shared axle count, split line, pins and all mapped values will export. The visual packing footprint stays web-only; verification data receives packing mass, height and COG.</p>
+          <b>AutoCAD interchange</b>
+          <p>The AutoCAD action exports resolved absolute trailer positions, axle lines, hydraulics, supports, catalogue values, result metrics and the calculation reference as coded JSON with a separate decoding key.</p>
         </div>
       </aside>
     </>
@@ -1160,17 +1125,6 @@ export function SetupWizard({
         saveAndClose();
       }}
     >
-      <input
-        ref={workbookInputRef}
-        hidden
-        type="file"
-        accept=".xlsm,.xlsx"
-        onChange={(event) => {
-          const file = event.currentTarget.files?.[0];
-          if (file) void importXlsm(file);
-          event.currentTarget.value = "";
-        }}
-      />
       <input
         ref={jsonInputRef}
         hidden

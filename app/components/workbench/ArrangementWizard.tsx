@@ -29,7 +29,7 @@ import {
   spacingCandidates,
   validAxleLineValues,
 } from "../../engine/arrangement";
-import { EZTRAILER_ROAD_SURFACES } from "../../engine/road-transport";
+import { ROAD_SURFACES } from "../../engine/road-transport";
 import { createBlankSetupModel } from "../../engine/setup";
 import type {
   ArrangementOptimiserSettings,
@@ -500,7 +500,7 @@ export function ArrangementWizard({
           <small>Both evaluates and records each viable triangle and four-corner polygon. Applying a pass also applies its hydraulic system.</small>
         </label>
       </FormSection>
-      <FormSection title="Road transport analysis" description="Optional powered-traction and braking check using the recovered EZTrailer surface and bogie data.">
+      <FormSection title="Road transport analysis" description="Optional powered-traction and braking check using the configured surface and module data.">
         <label className="wizard-toggle">
           <input
             type="checkbox"
@@ -523,7 +523,7 @@ export function ArrangementWizard({
                 roadTransport: { ...current.roadTransport, surface: event.target.value as ProjectModel["roadTransport"]["surface"] },
               }))}
             >
-              {EZTRAILER_ROAD_SURFACES.map((surface) => <option key={surface.id} value={surface.id}>{surface.label}</option>)}
+              {ROAD_SURFACES.map((surface) => <option key={surface.id} value={surface.id}>{surface.label}</option>)}
             </select>
           </label>
           <label className="wizard-field is-valid">
