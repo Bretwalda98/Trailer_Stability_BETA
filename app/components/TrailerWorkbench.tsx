@@ -8,6 +8,9 @@ import type { SetupSourceType } from "../engine/setup";
 import type { PassResult, ProjectModel } from "../engine/types";
 import { downloadText } from "../engine/download";
 import { buildAutocadExport } from "../engine/autocad-export";
+import { buildAutocadDxfExport } from "../engine/autocad-dxf-export";
+import { buildCaseTextExport } from "../engine/case-text-export";
+import { downloadBytes, exportVerificationWorkbook } from "../engine/workbook";
 import { buildGeometryViewModel } from "../geometry/buildGeometryViewModel";
 import { useEngineeringEngine } from "../hooks/useEngineeringEngine";
 import { assetPath } from "../site-path";
@@ -215,6 +218,55 @@ export default function TrailerWorkbench() {
     }
   };
 
+  const exportStem = () => (model.cargo.name || "trailer-stability-case")
+    .trim()
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase() || "trailer-stability-case";
+
+  const handleExportAutoCADDxf = () => {
+    setBusy(true);
+    try {
+      const filename = `${exportStem()}-arrangement.dxf`;
+      downloadText(buildAutocadDxfExport(model, engine.result), filename, "application/dxf;charset=utf-8");
+      setToast({
+        text: `Direct AutoCAD drawing exported as ${filename}. Open it in AutoCAD; it does not require the LISP importer.`,
+        type: "ok",
+      });
+    } catch (error) {
+      setToast({ text: error instanceof Error ? error.message : String(error), type: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleExportCaseText = () => {
+    setBusy(true);
+    try {
+      const filename = `${exportStem()}-case-record.txt`;
+      downloadText(buildCaseTextExport(model, engine.result), filename, "text/plain;charset=utf-8");
+      setToast({ text: `Detailed case record exported as ${filename}.`, type: "ok" });
+    } catch (error) {
+      setToast({ text: error instanceof Error ? error.message : String(error), type: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    setBusy(true);
+    try {
+      const filename = `${exportStem()}-calculation.xlsm`;
+      const bytes = await exportVerificationWorkbook(model);
+      downloadBytes(bytes, filename, "application/vnd.ms-excel.sheet.macroEnabled.12");
+      setToast({ text: `Excel calculation exported as ${filename}.`, type: "ok" });
+    } catch (error) {
+      setToast({ text: error instanceof Error ? error.message : String(error), type: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleImportProject = async (file: File): Promise<boolean> => {
     setBusy(true);
     try {
@@ -325,6 +377,9 @@ export default function TrailerWorkbench() {
           setArrangementWizardOpen(true);
         }}
         onExportAutoCAD={handleExportAutoCAD}
+        onExportAutoCADDxf={handleExportAutoCADDxf}
+        onExportCaseText={handleExportCaseText}
+        onExportExcel={handleExportExcel}
         onExportProject={() =>
           downloadText(
             JSON.stringify(model, null, 2),

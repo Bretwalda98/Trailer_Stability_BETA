@@ -3115,7 +3115,7 @@ Select SARENS_Trailer_Data_Annotation_blocks.dwg.")
           (sartd:fmt0 v))
         "-"))))
 
-(defun sartd:attr-map (data / trailers first brand model equipment cargo packing totalW ex sh ppWeight ppCount powpack m)
+(defun sartd:attr-map (data / trailers first brand model equipment cargo packing totalW ex sh ppWeight ppCount powpack m caseId clientRef ownerRef documentRef generatedDate)
   ; v0.8.3.1: attribute values now follow SARENS_Trailerdataimport cell mapping/formatting.
   ; Keys are normalised to match tags with/without underscores.
   (setq trailers (sartd:g 'trailers data))
@@ -3131,6 +3131,13 @@ Select SARENS_Trailer_Data_Annotation_blocks.dwg.")
   (setq ppWeight (if ex (sartd:num (sartd:cell-display ex "C14") 0.0) 0.0))
   (setq ppCount (if ex (sartd:num (sartd:cell ex "C10") 0.0) (sartd:g 'total-powerpacks data)))
   (setq powpack (if (/= ppCount 0.0) (sartd:fmtfixed (/ ppWeight ppCount) 1) "0"))
+  ; Coded JSON imports do not have worksheet COM objects. Use the equivalent case metadata retained
+  ; by the JSON adapter so the normal PaperSpace/title-block stage receives the available values.
+  (setq caseId (sartd:str (sartd:g 'case-id data)))
+  (setq clientRef (sartd:str (sartd:g 'client-reference data)))
+  (setq ownerRef (sartd:str (sartd:g 'owner-reference data)))
+  (setq documentRef (if (/= ownerRef "") ownerRef clientRef))
+  (setq generatedDate (sartd:str (sartd:g 'generated-date data)))
 
   (setq m
     (list
@@ -3141,18 +3148,18 @@ Select SARENS_Trailer_Data_Annotation_blocks.dwg.")
 
       ; Sarens paper-space border / SAR_Border_Project title block mapping
       ; Source cells are from the Load and Stability Calculation sheet.
-      (cons "CLIENT" (sartd:cell-display sh "H4"))
+      (cons "CLIENT" (if sh (sartd:cell-display sh "H4") clientRef))
       (cons "EQUIPMENT" equipment)
       (cons "DESCRIPTION1" "Transport drawing")
       (cons "DESCRIPTION2" "-")
       (cons "OWNER" "Sarens")
-      (cons "DOCUMENTNUMBER" (sartd:cell-display sh "D22"))
+      (cons "DOCUMENTNUMBER" (if sh (sartd:cell-display sh "D22") documentRef))
       (cons "SITE" (sartd:cell-display sh "H5"))
-      (cons "PROJECT" (sartd:cell-display sh "N2"))
+      (cons "PROJECT" (if sh (sartd:cell-display sh "N2") caseId))
       (cons "SIZE" "A3")
       (cons "SHEET" (getvar "CTAB"))
-      (cons "DATE" (sartd:cell-display sh "C12"))
-      (cons "DESCRIPTION" (sartd:cell-display sh "D12"))
+      (cons "DATE" (if sh (sartd:cell-display sh "C12") generatedDate))
+      (cons "DESCRIPTION" (if sh (sartd:cell-display sh "D12") (sartd:str (sartd:g 'cargo-name data))))
       (cons "DRAWN" (sartd:revision-cell-downup sh "L"))
       (cons "VERIFIED" (sartd:revision-cell-downup sh "M"))
       (cons "APPROVED" (sartd:revision-cell-downup sh "N"))
@@ -3163,11 +3170,11 @@ Select SARENS_Trailer_Data_Annotation_blocks.dwg.")
       ; T.EN / Technip Energies A3 footer title block mapping
       ; Block seen as e.g. *_Title_block_A3_footer1 with TITLE_1/2/3, CLIENT_DOC_REF, SC_DOC_REF, SHT, SCALE, REV, etc.
       ; Title lines are filled from the main project/title data already used by the Sarens border.
-      (cons "TITLE_1" (sartd:cell-display sh "N2"))
-      (cons "TITLE_2" (sartd:cell-display sh "D12"))
+      (cons "TITLE_1" (if sh (sartd:cell-display sh "N2") caseId))
+      (cons "TITLE_2" (if sh (sartd:cell-display sh "D12") (sartd:str (sartd:g 'cargo-name data))))
       (cons "TITLE_3" equipment)
-      (cons "CLIENT_DOC_REF" (sartd:cell-display sh "D22"))
-      (cons "SC_DOC_REF" (sartd:cell-display sh "D22"))
+      (cons "CLIENT_DOC_REF" (if sh (sartd:cell-display sh "D22") documentRef))
+      (cons "SC_DOC_REF" (if sh (sartd:cell-display sh "D22") documentRef))
       (cons "SC_LOGO" "SARENS")
       (cons "SHT" "1 OF 1")
       (cons "REV" (sartd:v39-first-present-row-cell sh '("B" "A") 12 8))
@@ -3257,20 +3264,20 @@ Select SARENS_Trailer_Data_Annotation_blocks.dwg.")
       ; Trailer Specifics - exact Trailerdataimport mapping
       (cons "BRAND" (if brand brand ""))
       (cons "MODEL" model)
-      (cons "GROSSAXLELINECAPACITY" (sartd:ex-text ex "D4"))
+      (cons "GROSSAXLELINECAPACITY" (if ex (sartd:ex-text ex "D4") (sartd:fmt1 (sartd:g 'gross-axle-line-capacity data))))
       (cons "AXLELINESELFWEIGHT" (sartd:ex-text ex "D6"))
       (cons "POWERPACKSELFWEIGHT" powpack)
-      (cons "TOTALNUMBEROFAXLELINES" (sartd:ex-int ex "C7"))
-      (cons "TOTALNUMBEROFPOWERPACKS" (sartd:ex-int ex "C10"))
-      (cons "CONFIGURATION" (sartd:ex-int ex "C7"))
-      (cons "TOTALNOOFAXLELINES" (sartd:ex-int ex "C7"))
-      (cons "TOTALNOOFPOWERPACKS" (sartd:ex-int ex "C10"))
+      (cons "TOTALNUMBEROFAXLELINES" (if ex (sartd:ex-int ex "C7") (itoa (fix (sartd:g 'total-axles data)))))
+      (cons "TOTALNUMBEROFPOWERPACKS" (if ex (sartd:ex-int ex "C10") (itoa (fix (sartd:g 'total-powerpacks data)))))
+      (cons "CONFIGURATION" (if ex (sartd:ex-int ex "C7") (itoa (fix (sartd:g 'total-axles data)))))
+      (cons "TOTALNOOFAXLELINES" (if ex (sartd:ex-int ex "C7") (itoa (fix (sartd:g 'total-axles data)))))
+      (cons "TOTALNOOFPOWERPACKS" (if ex (sartd:ex-int ex "C10") (itoa (fix (sartd:g 'total-powerpacks data)))))
 
       ; Parameters - exact Trailerdataimport mapping
-      (cons "COGXPOS"         (sartd:fmtplus2 (if ex (sartd:num (sartd:cell ex "C29") 0.0) 0.0)))
-      (cons "COGYPOS"         (sartd:fmtplus2 (if ex (sartd:num (sartd:cell ex "C30") 0.0) 0.0)))
-      (cons "GOGXPOS"         (sartd:fmtplus2 (if ex (sartd:num (sartd:cell ex "C29") 0.0) 0.0)))
-      (cons "GOGYPOS"         (sartd:fmtplus2 (if ex (sartd:num (sartd:cell ex "C30") 0.0) 0.0)))
+      (cons "COGXPOS"         (sartd:fmtplus2 (if ex (sartd:num (sartd:cell ex "C29") 0.0) (sartd:g 'export-cogx data))))
+      (cons "COGYPOS"         (sartd:fmtplus2 (if ex (sartd:num (sartd:cell ex "C30") 0.0) (sartd:g 'export-cogy data))))
+      (cons "GOGXPOS"         (sartd:fmtplus2 (if ex (sartd:num (sartd:cell ex "C29") 0.0) (sartd:g 'export-cogx data))))
+      (cons "GOGYPOS"         (sartd:fmtplus2 (if ex (sartd:num (sartd:cell ex "C30") 0.0) (sartd:g 'export-cogy data))))
       (cons "LONGITUDINALUP"  (sartd:fmtplus1 (sartd:g 'longitudinal-up data)))
       (cons "TRAVERSAL"       (sartd:fmtplus1 (sartd:g 'transversal data)))
       (cons "VVALUE"          (sartd:fmt0 (sartd:g 'vwind data)))
@@ -3900,6 +3907,316 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
 
 (princ)
 
+; =================================================================================================
+; v1.19 SINGLE-SELECTION EXCEL / JSON SARTDRUN
+; -------------------------------------------------------------------------------------------------
+; - SARTDRUN asks once whether the source is Excel or JSON.
+; - Excel keeps Active/Browse/Last, but the selected workbook is read once into a stable data object.
+; - JSON opens one numbered-case picker and validates/adapts the selected file once.
+; - Both sources then use the same six drawing stages: ModelSpace, PaperSpace sheet import,
+;   viewport fitting, scale diagnostics, all annotation/title-block attributes, and final sheet fit.
+; - Auto-fit redraws reuse the retained data object and never reopen Excel or reprompt for JSON.
+; =================================================================================================
+
+(setq sartd:*version* "1.19")
+(setq sartd:*v118-run-data* nil)
+(setq sartd:*v118-run-source-label* nil)
+
+(defun sartd:v118-json-metric-number (metrics key default / item value)
+  (setq item (if (sartd:json-object-p metrics) (sartd:json-get metrics key) nil))
+  (setq value (if (sartd:json-object-p item) (sartd:json-number-value (sartd:json-get item "value")) nil))
+  (if (numberp value) value default))
+
+(defun sartd:v118-enrich-json-data (root adapted / payload caseData result metrics generated dateText trailers trailer powerpacks ownerRef clientRef)
+  (setq payload (sartd:json-get root "data"))
+  (setq caseData (sartd:json-get payload "c"))
+  (setq result (sartd:json-get payload "r"))
+  (setq metrics (sartd:json-get result "mt"))
+  (setq generated (sartd:json-string (sartd:json-get root "generatedAt")))
+  (setq dateText (if (and generated (>= (strlen generated) 10)) (substr generated 1 10) (if generated generated "")))
+  (setq trailers (sartd:g 'trailers adapted) powerpacks 0)
+  (foreach trailer trailers
+    (if (cdr (assoc 'ppu-left trailer)) (setq powerpacks (1+ powerpacks)))
+    (if (cdr (assoc 'ppu-right trailer)) (setq powerpacks (1+ powerpacks))))
+  (setq clientRef (sartd:json-string (sartd:json-get caseData "cr")))
+  (setq ownerRef (sartd:json-string (sartd:json-get caseData "or")))
+  (append
+    (list
+      (cons 'case-id (sartd:json-string (sartd:json-get caseData "id")))
+      (cons 'client-reference clientRef)
+      (cons 'owner-reference ownerRef)
+      (cons 'document-reference (if (and ownerRef (/= ownerRef "")) ownerRef clientRef))
+      (cons 'engineering-degree (sartd:json-string (sartd:json-get caseData "er")))
+      (cons 'weight-cog-reference (sartd:json-string (sartd:json-get caseData "wr")))
+      (cons 'reference-point (sartd:json-string (sartd:json-get caseData "rp")))
+      (cons 'generated-date dateText)
+      (cons 'total-powerpacks powerpacks)
+      (cons 'basic-tipping (sartd:v118-json-metric-number metrics "basicAngle" 0.0))
+      (cons 'dynamic-tipping (sartd:v118-json-metric-number metrics "dynamicAngle" 0.0)))
+    adapted))
+
+(defun sartd:v118-select-run-import (/ default choice)
+  (setq default (getenv "SARTD_RUN_IMPORT"))
+  (if (not (member default '("Excel" "JSON"))) (setq default "Excel"))
+  (initget "Excel JSON")
+  (setq choice (getkword (strcat "\nSARTDRUN import source [Excel/JSON] <" default ">: ")))
+  (if (null choice) (setq choice default))
+  (setenv "SARTD_RUN_IMPORT" choice)
+  choice)
+
+(defun sartd:v118-load-excel-data-once (/ source oldauto data)
+  ; v59 selection validates and locks Active/Browse/Last once. The selected workbook is then read once;
+  ; all later drawing, layout and title-block stages consume the returned plain data object.
+  (setq source (sartd:v59-select-excel-source))
+  (if (not source)
+    nil
+    (progn
+      (setq oldauto (if (boundp 'sartd:*auto-excel-source*) sartd:*auto-excel-source* nil))
+      (setq sartd:*auto-excel-source* source)
+      (setq data (vl-catch-all-apply 'sartd:read-data (list nil)))
+      (setq sartd:*auto-excel-source* oldauto)
+      (if (vl-catch-all-error-p data)
+        (progn
+          (sartd:pr (strcat "The selected Excel workbook could not be read: " (vl-catch-all-error-message data)))
+          nil)
+        (if data
+          (progn
+            (sartd:pr (strcat "Excel data retained for the complete run: " sartd:*v59-excel-source-label*))
+            data)
+          (progn
+            (sartd:pr "The selected Excel workbook did not return calculation data.")
+            nil))))))
+
+(defun sartd:v118-safe-data-stage (label fn data / result)
+  (setq result (vl-catch-all-apply fn (list data)))
+  (cond
+    ((vl-catch-all-error-p result)
+      (sartd:pr (strcat label " failed: " (vl-catch-all-error-message result)))
+      nil)
+    ((not result)
+      (sartd:pr (strcat label " stopped before completion."))
+      nil)
+    (T T)))
+
+(defun sartd:v118-draw-json-overlays-if-present (data base / result)
+  (if (sartd:g 'json-root data)
+    (progn
+      (setq result (vl-catch-all-apply 'sartd:json-draw-result-overlays (list data base base base)))
+      (if (vl-catch-all-error-p result)
+        (sartd:pr (strcat "JSON result overlays could not be drawn: " (vl-catch-all-error-message result)))
+        T))
+    T))
+
+(defun sartd:v118-print-import-summary (data)
+  ; JSON has already been validated and summarised at source selection.  The older Excel debug
+  ; summary expects worksheet-only fields such as Htrailer source, so it must never be called
+  ; with adapted JSON data.
+  (if (sartd:g 'json-root data)
+    (sartd:pr
+      (strcat
+        "JSON data retained for ModelSpace: case=" (sartd:str (sartd:g 'case-id data))
+        ", trailers=" (itoa (length (sartd:g 'trailers data)))
+        ", boundary points=" (itoa (length (sartd:g 'json-polygon data))) "."))
+    (sartd:print-data-summary data)))
+
+(defun sartd:v118-run-model-from-data (data / base space result)
+  (vl-load-com)
+  (sartd:setup-layers)
+  (sartd:go-modelspace)
+  (sartd:v118-print-import-summary data)
+  (setq base (list 0.0 0.0 0.0))
+  (sartd:save-base base)
+  (sartd:delete-generated)
+  (sartd:sheet-viewport-scale)
+  (setq space (sartd:modelspace) sartd:*space-override* space)
+  (setq result (vl-catch-all-apply 'sartd:draw-arrangement (list data base)))
+  (setq sartd:*space-override* nil)
+  (if (vl-catch-all-error-p result)
+    (progn
+      (sartd:pr (strcat "ModelSpace arrangement failed: " (vl-catch-all-error-message result)))
+      nil)
+    (progn
+      (sartd:scale-generated-dims (sartd:current-view-scale))
+      (sartd:scale-generated-callouts (sartd:current-view-scale))
+      (sartd:v118-draw-json-overlays-if-present data base)
+      (sartd:refresh-generated-extents)
+      (sartd:pr (strcat "ModelSpace drawing complete from " sartd:*v118-run-source-label* "."))
+      T)))
+
+(defun sartd:v118-run-paper-from-data (data / ext layoutName result)
+  (vl-load-com)
+  (sartd:setup-layers)
+  (sartd:go-paperspace)
+  (setq ext (sartd:last-extents))
+  (if (not ext)
+    (progn
+      (sartd:pr "No saved model extents are available for the PaperSpace sheet.")
+      nil)
+    (progn
+      ; This is the same Sarens/T.EN library-layout selector used by the Excel workflow.
+      (setq layoutName (sartd:import-library-layout))
+      (if (not layoutName)
+        (progn
+          (sartd:pr "PaperSpace sheet import was cancelled or failed.")
+          nil)
+        (progn
+          (if (not (sartd:activate-paper-layout layoutName))
+            (sartd:pr (strcat "Warning: imported layout '" layoutName "' could not be activated before viewport fit.")))
+          (sartd:fit-current-layout-viewport-default (car ext) (cadr ext))
+          (setq result (vl-catch-all-apply 'sartd:update-all-paperspace-annotations (list data)))
+          (if (vl-catch-all-error-p result)
+            (sartd:pr (strcat "PaperSpace attributes could not be updated: " (vl-catch-all-error-message result))))
+          (sartd:go-paperspace)
+          (setq sartd:*space-override* nil)
+          T)))))
+
+(defun sartd:v118-run-border-from-data (data / result denominator)
+  (vl-load-com)
+  (sartd:pr
+    (strcat "Updating border/title attributes from retained " sartd:*v118-run-source-label*
+            ". Final viewport scale source = " (sartd:current-border-scale-string) "."))
+  (setq result (vl-catch-all-apply 'sartd:update-border-attributes (list data)))
+  (if (vl-catch-all-error-p result)
+    (sartd:pr (strcat "Warning: border/title update failed: " (vl-catch-all-error-message result))))
+  (setq denominator (sartd:v51-force-border-scale-final "SARTDRUN retained-data border/title update"))
+  (sartd:pr (strcat "Border/title block update complete. Border SCALE = 1:" (sartd:scale-denom->string denominator) "."))
+  T)
+
+(defun sartd:auto-redraw-spaced-at-scale (scale / oldauto oldspace oldautospace oldScale oldEnv data base drawResult)
+  ; v1.19 override: during SARTDRUN, redraw from the one retained Excel/JSON data object. Outside
+  ; SARTDRUN this preserves the older Active-Excel fallback used by standalone viewport commands.
+  (vl-load-com)
+  (setq scale (sartd:scale-int scale))
+  (setq oldauto (if (boundp 'sartd:*auto-excel-source*) sartd:*auto-excel-source* nil))
+  (setq oldspace (if (boundp 'sartd:*space-override*) sartd:*space-override* nil))
+  (setq oldautospace (if (boundp 'sartd:*auto-spacing-active*) sartd:*auto-spacing-active* nil))
+  (setq oldScale (if (boundp 'sartd:*last-viewport-scale*) sartd:*last-viewport-scale* nil))
+  (setq oldEnv (getenv "SARTD_LAST_VIEWPORT_SCALE"))
+  (setq sartd:*last-viewport-scale* scale)
+  (setenv "SARTD_LAST_VIEWPORT_SCALE" (itoa scale))
+  (setq data (if (and (boundp 'sartd:*v118-run-data*) sartd:*v118-run-data*)
+               sartd:*v118-run-data*
+               (progn (setq sartd:*auto-excel-source* "Active") (sartd:read-data T))))
+  (if data
+    (progn
+      (setq base (sartd:last-base))
+      (if (not base) (setq base (list 0.0 0.0 0.0)))
+      (sartd:save-base base)
+      (sartd:setup-layers)
+      (sartd:go-modelspace)
+      (sartd:delete-generated)
+      (setq sartd:*auto-spacing-active* T)
+      (setq sartd:*space-override* (sartd:modelspace))
+      (setq drawResult (vl-catch-all-apply 'sartd:draw-arrangement (list data base)))
+      (setq sartd:*space-override* oldspace)
+      (if (vl-catch-all-error-p drawResult)
+        (progn
+          (sartd:pr (strcat "Retained-data viewport redraw failed: " (vl-catch-all-error-message drawResult)))
+          (setq data nil))
+        (progn
+          (sartd:scale-generated-dims scale)
+          (sartd:scale-generated-callouts scale)
+          (sartd:v118-draw-json-overlays-if-present data base)
+          (sartd:refresh-generated-extents)
+          (sartd:pr (strcat "Auto-spaced model views redrawn from the retained source for scale 1:" (itoa scale) "."))))))
+  (setq sartd:*auto-excel-source* oldauto)
+  (setq sartd:*space-override* oldspace)
+  (setq sartd:*auto-spacing-active* oldautospace)
+  data)
+
+(defun sartd:v118-run-data-workflow (data sourceLabel / olddata oldlabel oldcmdecho oldregen ok layoutName)
+  (vl-load-com)
+  (sartd:v59-kill-old-public-commands)
+  (setq olddata (if (boundp 'sartd:*v118-run-data*) sartd:*v118-run-data* nil))
+  (setq oldlabel (if (boundp 'sartd:*v118-run-source-label*) sartd:*v118-run-source-label* nil))
+  (setq oldcmdecho (getvar "CMDECHO") oldregen (getvar "REGENAUTO"))
+  (setq sartd:*v118-run-data* data sartd:*v118-run-source-label* sourceLabel)
+  (sartd:setvar-safe "CMDECHO" 0)
+  (sartd:setvar-safe "REGENAUTO" 0)
+  (setq ok T)
+  (sartd:pr (strcat "RUNNING SARENS_TRAILERDRAFTSMAN v" sartd:*version* " from " sourceLabel "."))
+
+  (sartd:pr "1/6 Draw ModelSpace from the retained import at 0,0.")
+  (setq ok (sartd:v118-safe-data-stage "1/6 ModelSpace draw" 'sartd:v118-run-model-from-data data))
+
+  (if ok
+    (progn
+      (sartd:pr "2/6 Select and import the Sarens or T.EN PaperSpace sheet, then populate its attributes.")
+      (setq ok (sartd:v118-safe-data-stage "2/6 PaperSpace sheet and attributes" 'sartd:v118-run-paper-from-data data))
+      (if ok (sartd:v69-fit-last-layout-view "2/6 After sheet import"))))
+
+  (if ok
+    (progn
+      (setq layoutName (getenv "SARTD_LAST_LAYOUT"))
+      (if (and layoutName (/= layoutName "")) (sartd:activate-paper-layout layoutName))
+      (sartd:v69-fit-current-paper-layout-view "3/6 Before viewport scale")
+      (sartd:pr "3/6 Auto-space views, run viewport ZOOM All, then apply the nearest safe existing viewport scale.")
+      (setq ok (sartd:safe-stage "3/6 Auto-space and viewport scale" 'sartd:run-autofit))
+      (if ok (sartd:v69-fit-last-layout-view "3/6 After viewport scale"))))
+
+  (if ok
+    (progn
+      (sartd:pr "4/6 Confirm the final viewport scale for dimensions, blocks and border.")
+      (setq ok (sartd:safe-stage "4/6 Final viewport scale diagnostics" 'sartd:post-autofit-diagnostics))
+      (if ok (sartd:v69-fit-last-layout-view "4/6 After scale diagnostics"))))
+
+  (if ok
+    (progn
+      (setq layoutName (getenv "SARTD_LAST_LAYOUT"))
+      (if (and layoutName (/= layoutName "")) (sartd:activate-paper-layout layoutName))
+      (sartd:v69-fit-current-paper-layout-view "5/6 Before border update")
+      (sartd:pr "5/6 Populate all available border and title-block attributes from the retained import.")
+      (setq ok (sartd:v118-safe-data-stage "5/6 Border/title attributes" 'sartd:v118-run-border-from-data data))
+      (if ok (sartd:v69-fit-last-layout-view "5/6 After border update"))))
+
+  (if ok
+    (progn
+      (setq layoutName (getenv "SARTD_LAST_LAYOUT"))
+      (if (and layoutName (/= layoutName "")) (sartd:activate-paper-layout layoutName))
+      (sartd:v69-force-paper-view-state)
+      (vl-catch-all-apply 'vla-Regen (list (vla-get-ActiveDocument (vlax-get-acad-object)) 1))
+      (sartd:pr "6/6 PaperSpace restored and drawing regenerated.")
+      (sartd:v51-force-border-scale-final "SARTDRUN final end-check")
+      (sartd:v69-fit-last-layout-view "6/6 Final PaperSpace fit")))
+
+  (sartd:setvar-safe "REGENAUTO" oldregen)
+  (sartd:setvar-safe "CMDECHO" oldcmdecho)
+  (setq sartd:*v118-run-data* olddata sartd:*v118-run-source-label* oldlabel)
+  (if ok
+    (sartd:pr "SARTDRUN complete. The selected source was used once and the PaperSpace sheet remains fitted to screen.")
+    (sartd:pr "SARTDRUN stopped before completion. Check the last numbered stage above."))
+  ok)
+
+(defun sartd:v118-run-json-import (/ path data result)
+  ; The numbered JSON is selected and parsed once. Every later stage uses DATA in memory.
+  (setq path (sartd:v117-json-prompt-source-path))
+  (if (not (and path (/= path "")))
+    (progn (sartd:pr "No numbered case-data JSON was selected; the run stopped.") nil)
+    (progn
+      (setq data (sartd:json-load-validated path))
+      (if (not data)
+        (progn (sartd:json-log "JSON import stopped before drawing.") nil)
+        (progn
+          (sartd:json-summary data)
+          (if (not (sartd:v116-ensure-block-library))
+            (progn (sartd:json-log "JSON import stopped because the AutoCAD block library is not ready.") nil)
+            (progn
+              (sartd:v50-clear-scale-cache)
+              (setq result (sartd:v118-run-data-workflow data (strcat "JSON case: " path)))
+              (if result (sartd:json-log "SARTDRUN JSON workflow complete.")
+                (sartd:json-log "SARTDRUN JSON workflow stopped before completion."))
+              result)))))))
+
+(defun sartd:v118-run-excel-import (/ data)
+  ; Active/Browse/Last selection happens once, followed by one data read and the common six stages.
+  (setq data (sartd:v118-load-excel-data-once))
+  (if (not data)
+    nil
+    (if (not (sartd:v116-ensure-block-library))
+      (progn (sartd:pr "Excel import stopped because the AutoCAD block library is not ready.") nil)
+      (progn
+        (sartd:v50-clear-scale-cache)
+        (sartd:v118-run-data-workflow data (strcat "Excel import: " sartd:*v59-excel-source-label*))))))
 
 ; =================================================================================================
 ; v0.9.9.4.3.21 OVERRIDES
@@ -14012,7 +14329,8 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
         (progn (foreach e (cadr verdict) (sartd:json-log e)) nil)
         (progn
           (setenv "SARTD_JSON_LAST" path)
-          (setq sartd:*json-root* root sartd:*json-data* (sartd:json-adapt root))
+          (setq sartd:*json-root* root
+                sartd:*json-data* (sartd:v118-enrich-json-data root (sartd:json-adapt root)))
           (sartd:json-log
             (strcat "Validated numbered case export: "
                     (itoa (length (sartd:g 'trailers sartd:*json-data*))) " trailer(s), "
@@ -15458,7 +15776,8 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
         (progn (foreach e (cadr verdict) (sartd:json-log e)) nil)
         (progn
           (setenv "SARTD_JSON_LAST" path)
-          (setq sartd:*json-root* root sartd:*json-data* (sartd:json-adapt root))
+          (setq sartd:*json-root* root
+                sartd:*json-data* (sartd:v118-enrich-json-data root (sartd:json-adapt root)))
           (sartd:json-log
             (strcat "Validated numbered case export: "
                     (itoa (length (sartd:g 'trailers sartd:*json-data*))) " trailer(s), "
@@ -15502,4 +15821,30 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
     "\nSARENS_TRAILERDRAFTSMAN v" sartd:*version* " final overrides loaded."
     " Active discovers visible Excel workbooks and captures current in-memory values."
     " SARTDJSON always prompts for the numbered case-data JSON; SARTDJSONDATA reuses the last validated case."))
+(princ)
+
+; v1.19 public command overrides are repeated at EOF so they win over every historical compatibility
+; definition above. The helper and shared workflow functions are defined in the v1.19 section earlier.
+(setq sartd:*version* "1.19")
+
+(defun c:SARTDRUN (/ source)
+  (vl-load-com)
+  (setq source (sartd:v118-select-run-import))
+  (cond
+    ((= source "JSON") (sartd:v118-run-json-import))
+    ((= source "Excel") (sartd:v118-run-excel-import))
+    (T (sartd:pr "No SARTDRUN import source was selected.")))
+  (princ))
+
+(defun c:SARTDJSON ()
+  ; Shortcut to the same full JSON workflow used by SARTDRUN > JSON.
+  (vl-load-com)
+  (sartd:v118-run-json-import)
+  (princ))
+
+(princ
+  (strcat
+    "\nSARENS_TRAILERDRAFTSMAN v" sartd:*version* " final overrides loaded."
+    " SARTDRUN asks Excel or JSON once, retains that selected import in memory, then runs the same"
+    " six-stage ModelSpace/PaperSpace/viewport/attribute workflow for either source."))
 (princ)

@@ -5,6 +5,8 @@ import {
   IconDownload,
   IconEdit,
   IconExternalLink,
+  IconFileSpreadsheet,
+  IconFileText,
   IconFileImport,
   IconHelpCircle,
   IconPlayerPlay,
@@ -23,6 +25,9 @@ interface CaseHeaderProps {
   busy: boolean;
   onSetup(): void;
   onExportAutoCAD(): void;
+  onExportAutoCADDxf(): void;
+  onExportCaseText(): void;
+  onExportExcel(): void;
   onExportProject(): void;
   onImportProject(file: File): void;
   onHelp(): void;
@@ -39,6 +44,9 @@ export function CaseHeader({
   busy,
   onSetup,
   onExportAutoCAD,
+  onExportAutoCADDxf,
+  onExportCaseText,
+  onExportExcel,
   onExportProject,
   onImportProject,
   onHelp,
@@ -113,7 +121,10 @@ export function CaseHeader({
             <div className="header-menu-popover">
               {!running && <button onClick={() => { onArrangementSetup(); setMenuOpen(false); }}><IconTargetArrow size={14} /> Find a trailer arrangement</button>}
               <button onClick={() => { onSetup(); setMenuOpen(false); }}><IconEdit size={14} /> Edit case inputs</button>
-              <button onClick={() => { onExportAutoCAD(); setMenuOpen(false); }}><IconExternalLink size={14} /> Send data to AutoCAD</button>
+              <button onClick={() => { onExportAutoCAD(); setMenuOpen(false); }}><IconExternalLink size={14} /> AutoCAD JSON case data</button>
+              <button onClick={() => { onExportAutoCADDxf(); setMenuOpen(false); }}><IconExternalLink size={14} /> AutoCAD direct drawing (DXF)</button>
+              <button onClick={() => { onExportExcel(); setMenuOpen(false); }}><IconFileSpreadsheet size={14} /> Export Excel calculation</button>
+              <button onClick={() => { onExportCaseText(); setMenuOpen(false); }}><IconFileText size={14} /> Export detailed text record</button>
               <button onClick={() => { onExportProject(); setMenuOpen(false); }}><IconDownload size={14} /> Export project JSON</button>
               <button onClick={() => { projectInput.current?.click(); setMenuOpen(false); }}><IconFileImport size={14} /> Import project JSON</button>
               <button onClick={() => { onHelp(); setMenuOpen(false); }}><IconHelpCircle size={14} /> Help and user guide</button>
