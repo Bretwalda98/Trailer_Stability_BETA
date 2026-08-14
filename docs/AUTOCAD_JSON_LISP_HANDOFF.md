@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This document is the implementation brief for the next Codex chat that will update the AutoCAD LISP package so it reads the coded JSON produced by the Trailer Stability web application.
+This document records the coded JSON contract and the completed AutoCAD integration so a later Codex task can maintain it without rediscovering the schema or workflow.
 
-The web application already produces the JSON. The AutoLISP JSON reader, coded-field accessors, validation, adapter and `SARTDJSON`/`SARTDJSONDATA` commands are now present in the working tree. This document remains the source of truth for maintaining that path and for completing the desktop-AutoCAD drawing smoke test and package release. The legacy workbook/COM path remains isolated behind the older commands; the JSON workflow must not call it.
+The web application produces the JSON. AutoLISP release 1.18 contains the reader, coded-field accessors, validation, adapter and `SARTDJSON`/`SARTDJSONDATA` commands. `SARTDRUN` now asks for Excel or JSON, selects that source once, retains the imported case data in memory, and sends either source through the same ModelSpace, Sarens/T.EN PaperSpace, viewport, information-attribute and border/title-block workflow. The JSON reader itself remains independent of Excel/COM.
 
 Do not redesign the engineering engine in this task. Do not infer a new schema from screenshots. Read the live contract in the source files listed below and keep the AutoLISP reader aligned with that contract.
 
@@ -24,7 +24,7 @@ Relevant files:
 - Downloadable field key: `public/autocad-export-key-v1.json`
 - Engineering explanations embedded in the export: `app/engine/engineering-reference.ts`
 - Current AutoLISP source: `tools/autocad/SARENS_TRAILERDRAFTSMAN/SARENS_TRAILERDRAFTSMAN_v1.1.lsp`
-- Current distributable package: `public/autocad/SARENS_TRAILERDRAFTSMAN_v1.17_FULL_PACKAGE.zip`
+- Current distributable package: `public/autocad/SARENS_TRAILERDRAFTSMAN_v1.18_FULL_PACKAGE.zip`
 - AutoCAD source-package files: `tools/autocad/SARENS_TRAILERDRAFTSMAN/`
 
 The current LISP still contains the old workbook/code transfer path, including `SARTDWEB`, Excel COM functions and legacy comments. Do not use that path for JSON. The JSON implementation is a parser plus an adapter that produces the internal data shape expected by the existing drawing workflow. Do not blindly delete old drawing routines: the JSON command should reuse them where desktop AutoCAD supports the existing VLA/block operations.
@@ -33,31 +33,36 @@ The current LISP still contains the old workbook/code transfer path, including `
 
 - `data.r.rv` is emitted by the web exporter and documented in the key. It contains the authoritative post-placement start/centre positions, lengths, widths and rear/front PPU lengths.
 - `SARTDJSONDATA` validates the export envelope and writes a `.lisp.log` beside the input file without drawing.
-- `SARTDJSON` validates first, then runs the existing drawing workflow through the JSON adapter and catches drawing errors safely.
+- `SARTDJSON` validates first, then runs the complete retained-data drawing workflow through the JSON adapter and catches drawing errors safely.
 - `SARTDJSON` always opens the case-file picker; `SARTDJSONDATA` deliberately reuses only the last validated case.
+- `SARTDRUN` first asks `Excel/JSON`. Excel then asks `Active/Browse/Last` once; JSON opens its case picker once.
+- After selection, either source uses the same six stages: ModelSpace, Sarens/T.EN PaperSpace selection/import, all matching information attributes, auto-fit and viewport scaling, border/title attributes, and final PaperSpace restoration.
+- Auto-fit redraws consume the retained in-memory case, so they do not reopen/reselect the workbook or reparse/reselect the JSON.
 - The browser downloads one numbered case file. The versioned decoding key is bundled with the AutoCAD reader instead of being downloaded for every case.
 - `Active` discovers compatible workbooks across visible Excel processes and takes a temporary copy containing the current unsaved in-memory values.
 - Core Console load and JSON validation tests cover valid three-/four-point exports, invalid JSON, missing file, wrong key, wrong version, missing cargo/trailers and invalid three-/four-point geometry.
 - A desktop AutoCAD smoke test is still required for the final packaged drawing result because the existing renderer uses VLA document/block operations that Core Console does not expose in the same way.
 
-## User-facing workflow to implement
+## User-facing workflow
 
 The intended workflow is:
 
 1. The user clicks **AutoCAD** in the web application.
 2. The browser downloads one export file named like `trailer-stability-autocad-XXXXXX.json`. The companion key is already bundled with the AutoCAD reader package.
-3. The user starts AutoCAD, opens or creates a drawing, loads the LISP package, and runs a JSON command.
-4. The LISP asks for the JSON file with a normal file picker. It must not require Excel, a workbook, a browser bridge or a transfer code.
-5. The LISP validates the envelope, decodes the compact fields, maps them into the existing drawing data model, draws the arrangement and imports the available result/engineering tables.
-6. Errors are reported in the AutoCAD command line and in a log file, but malformed input must not leave AutoCAD in a broken state or crash the command session.
+3. The user starts AutoCAD, opens or creates a drawing, loads the LISP package, and runs `SARTDRUN`.
+4. The LISP asks for Excel or JSON. JSON opens one normal file picker and must not require Excel, a browser bridge or a transfer code. Excel asks for Active/Browse/Last once.
+5. The LISP validates/reads the selected source into one retained data object, then asks for the Sarens or T.EN PaperSpace sheet.
+6. It draws the arrangement, populates all matching information attributes, scales/fits the viewport, updates the border/title block and leaves the selected PaperSpace sheet fitted to the screen.
+7. Errors are reported at the AutoCAD command line and JSON errors are also written beside the input file; malformed input must not leave AutoCAD in a broken state or crash the command session.
 
 Recommended command names:
 
-- `SARTDJSON` — choose a JSON file and run the complete drawing workflow.
+- `SARTDRUN` — choose Excel or JSON once and run the complete common drawing workflow.
+- `SARTDJSON` — direct shortcut to the same complete workflow using one JSON file selection.
 - `SARTDJSONDATA` — validate the last successfully selected numbered case and print a compact data summary for debugging without opening the picker or drawing.
 - Keep `SARTDWEB` only as an explicitly labelled legacy workbook-transfer command if backward compatibility is useful. It must not be used by the JSON workflow.
 
-`SARTDJSON` must always open the file picker so a remembered test or failed case can never be reused silently.
+`SARTDJSON` must always open the file picker so a remembered test or failed case can never be reused silently. `SARTDJSONDATA` is the only command that deliberately reuses the last validated JSON for a non-drawing diagnostic summary.
 
 ## JSON envelope and coded key
 
@@ -449,12 +454,14 @@ Use an export generated by the current web application and test in AutoCAD:
 - [ ] Verify cargo and combined COG annotations are distinct and correctly labelled.
 - [ ] Verify warnings, failure class and unavailable metrics are shown without substituting false zeros.
 - [ ] Try a missing file, malformed JSON, wrong format, wrong key id and unsupported version; each gives a readable error and leaves AutoCAD usable.
-- [ ] Run the old `SARTDRUN`/`SARTDWEB` only as a legacy compatibility check if retained; confirm the new JSON command does not call Excel COM.
-- [ ] Load the final ZIP into a clean AutoCAD profile and run the JSON command from a new blank drawing.
+- [ ] Run `SARTDRUN > Excel`; select Active/Browse/Last once, choose Sarens or T.EN, and confirm the retained workbook data populates ModelSpace and all matching PaperSpace information attributes without another workbook prompt.
+- [ ] Run `SARTDRUN > JSON`; select the numbered case once, choose Sarens or T.EN, and confirm the retained JSON data populates the same ModelSpace/PaperSpace stages without Excel COM or another JSON prompt.
+- [ ] Confirm `SARTDJSON` is a direct shortcut to the same full JSON workflow and `SARTDJSONDATA` alone reuses the last case for non-drawing diagnostics.
+- [ ] Load the final v1.18 ZIP into a clean AutoCAD profile and test both import sources from a new blank drawing.
 
-## Work boundary for the next Codex chat
+## Maintenance boundary for the next Codex chat
 
-Implement the AutoLISP JSON reader, adapter, JSON drawing command, four-point-aware geometry and packaged documentation. Keep the web export contract unchanged unless a real schema defect is found. If a schema change is unavoidable, update all three together:
+Maintain the v1.18 reader, adapter, retained-data workflow, four-point-aware geometry and packaged documentation. Keep the web export contract unchanged unless a real schema defect is found. If a schema change is unavoidable, update all three together:
 
 1. `app/engine/autocad-export.ts`;
 2. `public/autocad-export-key-v1.json`;
@@ -464,4 +471,4 @@ Do not reintroduce visible references to Excel or EZ Trailer into the web applic
 
 ## Suggested first prompt for the next Codex chat
 
-> Read `docs/AUTOCAD_JSON_LISP_HANDOFF.md` completely. Then inspect `app/engine/autocad-export.ts`, `public/autocad-export-key-v1.json`, `app/engine/engineering-reference.ts` and `tools/autocad/SARENS_TRAILERDRAFTSMAN/SARENS_TRAILERDRAFTSMAN_v1.1.lsp`. Implement the JSON reader and AutoCAD drawing workflow described in the handoff. Preserve the existing drawing stages through an adapter, use authoritative resolved geometry/results, support both three-point and four-point boundaries, enforce rear=lower-X/front=higher-X, draw true vertical end-view tyre profiles, remove sloped ground from side/end views, and package the updated LISP. Test malformed input and valid three-/four-point exports before reporting completion. Do not guess the schema and do not use Excel COM in the new JSON workflow.
+> Read `docs/AUTOCAD_JSON_LISP_HANDOFF.md` completely. Then inspect `app/engine/autocad-export.ts`, `public/autocad-export-key-v1.json`, `app/engine/engineering-reference.ts` and `tools/autocad/SARENS_TRAILERDRAFTSMAN/SARENS_TRAILERDRAFTSMAN_v1.1.lsp`. Maintain the v1.18 retained-data workflow: SARTDRUN selects Excel or JSON once, and either source completes the same ModelSpace, Sarens/T.EN PaperSpace, attribute, viewport and title-block stages. Use authoritative resolved geometry/results, support both three-point and four-point boundaries, enforce rear=lower-X/front=higher-X, and do not let JSON invoke Excel COM. Do not guess the schema; run the malformed-input, three-/four-point and single-selection regressions before packaging.
