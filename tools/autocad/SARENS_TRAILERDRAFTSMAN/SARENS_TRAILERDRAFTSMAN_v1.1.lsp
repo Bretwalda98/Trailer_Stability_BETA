@@ -3908,7 +3908,7 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
 (princ)
 
 ; =================================================================================================
-; v1.18 SINGLE-SELECTION EXCEL / JSON SARTDRUN
+; v1.19 SINGLE-SELECTION EXCEL / JSON SARTDRUN
 ; -------------------------------------------------------------------------------------------------
 ; - SARTDRUN asks once whether the source is Excel or JSON.
 ; - Excel keeps Active/Browse/Last, but the selected workbook is read once into a stable data object.
@@ -3918,7 +3918,7 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
 ; - Auto-fit redraws reuse the retained data object and never reopen Excel or reprompt for JSON.
 ; =================================================================================================
 
-(setq sartd:*version* "1.18")
+(setq sartd:*version* "1.19")
 (setq sartd:*v118-run-data* nil)
 (setq sartd:*v118-run-source-label* nil)
 
@@ -4007,11 +4007,23 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
         T))
     T))
 
+(defun sartd:v118-print-import-summary (data)
+  ; JSON has already been validated and summarised at source selection.  The older Excel debug
+  ; summary expects worksheet-only fields such as Htrailer source, so it must never be called
+  ; with adapted JSON data.
+  (if (sartd:g 'json-root data)
+    (sartd:pr
+      (strcat
+        "JSON data retained for ModelSpace: case=" (sartd:str (sartd:g 'case-id data))
+        ", trailers=" (itoa (length (sartd:g 'trailers data)))
+        ", boundary points=" (itoa (length (sartd:g 'json-polygon data))) "."))
+    (sartd:print-data-summary data)))
+
 (defun sartd:v118-run-model-from-data (data / base space result)
   (vl-load-com)
   (sartd:setup-layers)
   (sartd:go-modelspace)
-  (sartd:print-data-summary data)
+  (sartd:v118-print-import-summary data)
   (setq base (list 0.0 0.0 0.0))
   (sartd:save-base base)
   (sartd:delete-generated)
@@ -4071,7 +4083,7 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
   T)
 
 (defun sartd:auto-redraw-spaced-at-scale (scale / oldauto oldspace oldautospace oldScale oldEnv data base drawResult)
-  ; v1.18 override: during SARTDRUN, redraw from the one retained Excel/JSON data object. Outside
+  ; v1.19 override: during SARTDRUN, redraw from the one retained Excel/JSON data object. Outside
   ; SARTDRUN this preserves the older Active-Excel fallback used by standalone viewport commands.
   (vl-load-com)
   (setq scale (sartd:scale-int scale))
@@ -15811,9 +15823,9 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
     " SARTDJSON always prompts for the numbered case-data JSON; SARTDJSONDATA reuses the last validated case."))
 (princ)
 
-; v1.18 public command overrides are repeated at EOF so they win over every historical compatibility
-; definition above. The helper and shared workflow functions are defined in the v1.18 section earlier.
-(setq sartd:*version* "1.18")
+; v1.19 public command overrides are repeated at EOF so they win over every historical compatibility
+; definition above. The helper and shared workflow functions are defined in the v1.19 section earlier.
+(setq sartd:*version* "1.19")
 
 (defun c:SARTDRUN (/ source)
   (vl-load-com)

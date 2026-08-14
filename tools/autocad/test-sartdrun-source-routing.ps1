@@ -13,6 +13,7 @@ if (-not (Test-Path -LiteralPath $AutoCADCoreConsole)) {
 $output = ((& $AutoCADCoreConsole /i $dwg /s $script /l en-US 2>&1 | Out-String) -replace "`0", "")
 $required = @(
   "V118_JSON_PAPERSPACE_DATA_PASS",
+  "V118_JSON_SKIPS_EXCEL_DEBUG_PASS",
   "V118_EXCEL_SINGLE_SELECTION_PASS",
   "V118_JSON_SINGLE_SELECTION_PASS",
   "V118_SARTDRUN_JSON_ROUTE_PASS",

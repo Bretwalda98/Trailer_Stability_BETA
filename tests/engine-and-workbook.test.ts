@@ -68,6 +68,8 @@ import {
 import { derivedCargoWindInputs } from "../app/engine/wind";
 import { exportVerificationWorkbook, importWorkbook } from "../app/engine/workbook";
 import { AUTOCAD_EXPORT_KEY, buildAutocadExport } from "../app/engine/autocad-export";
+import { buildAutocadDxfExport } from "../app/engine/autocad-dxf-export";
+import { buildCaseTextExport } from "../app/engine/case-text-export";
 
 function arrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -147,6 +149,15 @@ async function main(): Promise<void> {
   assert.equal(cadResolvedTrailers.length, model.trailers.length);
   assert.ok(cadResolvedTrailers.every((trailer) => trailer.lengthM > 0 && trailer.widthM > 0 && Number.isFinite(trailer.startXM) && Number.isFinite(trailer.centreYM)));
   assert.ok((cadExport.data.eng as { methods: unknown[] }).methods.length >= 10);
+  const directDxf = buildAutocadDxfExport(model, calculateProject(model));
+  assert.match(directDxf, /^0\nSECTION\n2\nHEADER\n/);
+  assert.match(directDxf, /TS_TRAILERS/);
+  assert.match(directDxf, /Trailer Stability/);
+  assert.match(directDxf, /0\nEOF\n$/);
+  const caseText = buildCaseTextExport(model, calculateProject(model), "2026-08-14T12:00:00.000Z");
+  assert.match(caseText, /TRAILER STABILITY — CASE RECORD/);
+  assert.match(caseText, /RESOLVED TRAILERS/);
+  assert.match(caseText, /CALCULATION REFERENCE/);
 
   const staggerTemplates = longitudinalOffsetCandidates(
     { ...model.arrangementOptimiser, formationMode: "ALLOW_STAGGERED", maximumLongitudinalStaggerM: 4, longitudinalStaggerSamples: 1 },

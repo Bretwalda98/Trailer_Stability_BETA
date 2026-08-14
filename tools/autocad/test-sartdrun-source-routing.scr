@@ -13,6 +13,16 @@
   (princ "\nV118_JSON_PAPERSPACE_DATA_PASS")
   (princ "\nV118_JSON_PAPERSPACE_DATA_FAIL"))
 
+; JSON must not pass through the Excel-only debug summary before ModelSpace drawing.
+(setq sartd:test-excel-summary-count 0)
+(defun sartd:print-data-summary (data)
+  (setq sartd:test-excel-summary-count (1+ sartd:test-excel-summary-count))
+  T)
+(sartd:v118-print-import-summary sartd:test-json-data)
+(if (= sartd:test-excel-summary-count 0)
+  (princ "\nV118_JSON_SKIPS_EXCEL_DEBUG_PASS")
+  (princ "\nV118_JSON_SKIPS_EXCEL_DEBUG_FAIL"))
+
 ; Excel: one source selection, one workbook read, one shared-workflow invocation.
 (setq sartd:test-excel-select-count 0)
 (setq sartd:test-excel-read-count 0)

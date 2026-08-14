@@ -1,12 +1,12 @@
-# SARENS_TRAILERDRAFTSMAN v1.18
+# SARENS_TRAILERDRAFTSMAN v1.19
 
 SARENS_TRAILERDRAFTSMAN is an AutoCAD AutoLISP tool for producing a complete trailer-arrangement drawing from either a compatible Excel calculation workbook or a Trailer Stability coded JSON case export.
 
-Version 1.18 gives both import sources the same drawing process. `SARTDRUN` asks for **Excel** or **JSON**, captures the selected source once, retains its case data in memory, and then completes ModelSpace, the selected Sarens or T.EN PaperSpace sheet, all matching information attributes, viewport scaling, border/title-block updates and final PaperSpace display.
+Version 1.19 gives both import sources the same drawing process. `SARTDRUN` asks for **Excel** or **JSON**, captures the selected source once, retains its case data in memory, and then completes ModelSpace, the selected Sarens or T.EN PaperSpace sheet, all matching information attributes, viewport scaling, border/title-block updates and final PaperSpace display. JSON data is explicitly kept out of the older Excel-only diagnostic routine before ModelSpace drawing.
 
 ## Release contents
 
-- `SARENS_TRAILERDRAFTSMAN_v1.1.lsp` - AutoLISP program, release 1.18.
+- `SARENS_TRAILERDRAFTSMAN_v1.1.lsp` - AutoLISP program, release 1.19.
 - `DOCUMENT_CONTROL.md` - controlled release identification, change summary and verification record.
 - `SARTD_Excel_Active.ps1` - discovers compatible workbooks in visible Excel processes and captures current unsaved in-memory values without saving the original.
 - `SARTD_JSON_Prepare.ps1` - prepares a temporary drawing-only copy of a coded JSON case for efficient AutoLISP parsing.
@@ -26,7 +26,7 @@ Keep the `.lsp`, both PowerShell helpers, the key file and the `Autocad Blocks` 
 
 ## Installation
 
-1. Extract the full v1.18 package to a stable local or network folder.
+1. Extract the full v1.19 package to a stable local or network folder.
 2. If required by AutoCAD security, add the extracted folder to AutoCAD **Trusted Locations**.
 3. Run `APPLOAD`.
 4. Load `SARENS_TRAILERDRAFTSMAN_v1.1.lsp`.
@@ -35,7 +35,7 @@ Keep the `.lsp`, both PowerShell helpers, the key file and the `Autocad Blocks` 
 The last load message must end with:
 
 ```text
-SARENS_TRAILERDRAFTSMAN v1.18 final overrides loaded. SARTDRUN asks Excel or JSON once, retains that selected import in memory, then runs the same six-stage ModelSpace/PaperSpace/viewport/attribute workflow for either source.
+SARENS_TRAILERDRAFTSMAN v1.19 final overrides loaded. SARTDRUN asks Excel or JSON once, retains that selected import in memory, then runs the same six-stage ModelSpace/PaperSpace/viewport/attribute workflow for either source.
 ```
 
 ## Main workflow: SARTDRUN
@@ -142,7 +142,7 @@ To clear an incorrect saved location manually:
 
 ## Troubleshooting
 
-- If `SARTDRUN` does not first ask `Excel/JSON`, reload the LSP and confirm the final load message reports v1.18.
+- If `SARTDRUN` does not first ask `Excel/JSON`, reload the LSP and confirm the final load message reports v1.19.
 - If `SARTDJSON` does not open a picker, an older LSP is still loaded.
 - If the coded key file is selected instead of the numbered case, select `trailer-stability-autocad-*.json` when prompted again.
 - If JSON is rejected, inspect its `.lisp.log` for the exact format, key, field or geometry failure.
@@ -150,12 +150,13 @@ To clear an incorrect saved location manually:
 - If blocks or layouts are missing, run `SARTDBLOCKS` and select the exact bundled block-library DWG.
 - If AutoCAD refuses to load the LSP, add the program folder to Trusted Locations.
 
-## Verification supplied with v1.18
+## Verification supplied with v1.19
 
 Repository tests include:
 
 - a ten-case Core Console JSON validation matrix covering valid three-/four-point inputs, malformed JSON, missing files, wrong key/version, missing cargo/trailers and invalid three-/four-point boundaries;
 - a Core Console source-routing regression proving one Excel selection/read, one JSON selection/parse, correct `SARTDRUN` routing, and the same common workflow invocation;
+- a Core Console ModelSpace smoke test proving a valid JSON case reaches the retained-data drawing path without calling the older Excel-only diagnostic summary;
 - repeatable JSON fixtures for manual `SARTDJSONDATA` checks.
 
 Desktop AutoCAD remains the authoritative visual smoke-test environment for block insertion, Sarens/T.EN layout import, attribute appearance and viewport presentation.

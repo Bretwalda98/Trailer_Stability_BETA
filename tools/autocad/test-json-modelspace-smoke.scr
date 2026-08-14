@@ -1,0 +1,14 @@
+(load "C:/Users/Harry/Documents/Codex/2026-07-16/the/github-publish/Trailer_Stability_BETA/tools/autocad/SARENS_TRAILERDRAFTSMAN/SARENS_TRAILERDRAFTSMAN_v1.1.lsp")
+(setq sartd:test-model-data
+  (sartd:json-load-validated
+    "C:/Users/Harry/Documents/Codex/2026-07-16/the/github-publish/Trailer_Stability_BETA/tools/autocad/test-fixtures/valid-four-point.json"))
+(setq sartd:*v118-run-source-label* "JSON ModelSpace smoke test")
+(setq sartd:test-model-result
+  (vl-catch-all-apply 'sartd:v118-run-model-from-data (list sartd:test-model-data)))
+(if (and (not (vl-catch-all-error-p sartd:test-model-result)) sartd:test-model-result)
+  (princ "\nV118_JSON_MODELSPACE_SMOKE_PASS")
+  (progn
+    (princ "\nV118_JSON_MODELSPACE_SMOKE_FAIL")
+    (if (vl-catch-all-error-p sartd:test-model-result)
+      (princ (strcat "\nV118_JSON_MODELSPACE_ERROR=" (vl-catch-all-error-message sartd:test-model-result))))))
+(princ)
