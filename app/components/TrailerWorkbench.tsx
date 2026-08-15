@@ -361,6 +361,7 @@ export default function TrailerWorkbench() {
 
   return (
     <main className="trailer-stability-app">
+      <a className="skip-link" href="#engineering-workspace">Skip to engineering workspace</a>
       <CaseHeader
         model={model}
         run={engine.run}
@@ -517,7 +518,7 @@ export default function TrailerWorkbench() {
           onModelChange={setModel}
           onOpenDetails={() => setDetailsOpen(true)}
         />
-        <div className="central-workspace">{centralWorkspace}</div>
+        <div className="central-workspace" id="engineering-workspace" tabIndex={-1}>{centralWorkspace}</div>
         <ResultsInspector
           model={model}
           result={engine.result}
@@ -555,10 +556,10 @@ export default function TrailerWorkbench() {
         />
       </div>
       <footer className="application-statusbar">
-        <span>Load case Â· {preferences.loadCase}</span>
-        <span>Engineering verification degree Â· {model.engineeringDegree}</span>
-        <span>Weight / COG reference Â· {model.weightCogReference}</span>
-        <span>Load datum / reference point Â· {model.referencePoint}</span>
+        <span>Load case · {preferences.loadCase}</span>
+        <span>Engineering verification degree · {model.engineeringDegree}</span>
+        <span>Weight / COG reference · {model.weightCogReference}</span>
+        <span>Load datum / reference point · {model.referencePoint}</span>
       </footer>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.text}</div>}
     </main>

@@ -64,10 +64,18 @@ export function EngineeringViewport({
 }: EngineeringViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; start: Point2; pan: Point2 } | null>(null);
+  const pointersRef = useRef(new Map<number, Point2>());
+  const pinchRef = useRef<{
+    distance: number;
+    midpoint: Point2;
+    zoom: number;
+    pan: Point2;
+  } | null>(null);
   const [size, setSize] = useState({ width: 980, height: 620 });
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point2>({ x: 0, y: 0 });
   const [layersOpen, setLayersOpen] = useState(false);
+  const [gesture, setGesture] = useState<"idle" | "panning" | "pinching">("idle");
 
   useEffect(() => {
     const host = hostRef.current;
@@ -123,30 +131,119 @@ export function EngineeringViewport({
     setPan({ x: 0, y: 0 });
   };
 
+  const pointerPair = () => Array.from(pointersRef.current.values()).slice(0, 2);
+  const pairGeometry = (points: Point2[]) => {
+    const [first, second] = points;
+    if (!first || !second) return null;
+    return {
+      distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+      midpoint: {
+        x: (first.x + second.x) / 2,
+        y: (first.y + second.y) / 2,
+      },
+    };
+  };
+
+  const pointerInViewBox = (event: React.PointerEvent<SVGSVGElement>): Point2 => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const viewBox = event.currentTarget.viewBox.baseVal;
+    return {
+      x: ((event.clientX - rect.left) / Math.max(1, rect.width)) * viewBox.width,
+      y: ((event.clientY - rect.top) / Math.max(1, rect.height)) * viewBox.height,
+    };
+  };
+
+  const beginPinch = () => {
+    const geometry = pairGeometry(pointerPair());
+    if (!geometry) return;
+    pinchRef.current = { ...geometry, zoom, pan };
+    dragRef.current = null;
+    setGesture("pinching");
+  };
+
   const pointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     if (event.button !== 0) return;
-    if ((event.target as Element).closest(".svg-selectable")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    const pointer = pointerInViewBox(event);
+    pointersRef.current.set(event.pointerId, pointer);
+    if (pointersRef.current.size >= 2) {
+      beginPinch();
+      return;
+    }
+    if ((event.target as Element).closest(".svg-selectable")) return;
     dragRef.current = {
       pointerId: event.pointerId,
-      start: { x: event.clientX, y: event.clientY },
+      start: pointer,
       pan,
     };
   };
   const pointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!pointersRef.current.has(event.pointerId)) return;
+    const pointer = pointerInViewBox(event);
+    pointersRef.current.set(event.pointerId, pointer);
+    if (pointersRef.current.size >= 2) {
+      if (!pinchRef.current) beginPinch();
+      const pinch = pinchRef.current;
+      const geometry = pairGeometry(pointerPair());
+      if (!pinch || !geometry) return;
+      const nextZoom = Math.max(
+        0.35,
+        Math.min(6, pinch.zoom * (geometry.distance / pinch.distance)),
+      );
+      const ratio = nextZoom / pinch.zoom;
+      const centre = { x: size.width / 2, y: drawableHeight / 2 };
+      setZoom(nextZoom);
+      setPan({
+        x:
+          geometry.midpoint.x -
+          centre.x -
+          (pinch.midpoint.x - centre.x - pinch.pan.x) * ratio,
+        y:
+          geometry.midpoint.y -
+          centre.y -
+          (pinch.midpoint.y - centre.y - pinch.pan.y) * ratio,
+      });
+      setGesture("pinching");
+      return;
+    }
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
+    if (Math.hypot(pointer.x - drag.start.x, pointer.y - drag.start.y) > 2) {
+      setGesture("panning");
+    }
     setPan({
-      x: drag.pan.x + event.clientX - drag.start.x,
-      y: drag.pan.y + event.clientY - drag.start.y,
+      x: drag.pan.x + pointer.x - drag.start.x,
+      y: drag.pan.y + pointer.y - drag.start.y,
     });
   };
   const pointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
+    pointersRef.current.delete(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
     if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+    if (pointersRef.current.size < 2) pinchRef.current = null;
+    if (pointersRef.current.size === 0) setGesture("idle");
   };
   const wheel = (event: React.WheelEvent<SVGSVGElement>) => {
     event.preventDefault();
-    setZoom((current) => Math.max(0.35, Math.min(6, current * (event.deltaY > 0 ? 0.9 : 1.1))));
+    const rect = event.currentTarget.getBoundingClientRect();
+    const viewBox = event.currentTarget.viewBox.baseVal;
+    const cursor = {
+      x: ((event.clientX - rect.left) / Math.max(1, rect.width)) * viewBox.width,
+      y: ((event.clientY - rect.top) / Math.max(1, rect.height)) * viewBox.height,
+    };
+    const centre = { x: viewBox.width / 2, y: viewBox.height / 2 };
+    const factor = Math.max(0.82, Math.min(1.18, Math.exp(-event.deltaY * 0.0015)));
+    setZoom((currentZoom) => {
+      const nextZoom = Math.max(0.35, Math.min(6, currentZoom * factor));
+      const ratio = nextZoom / currentZoom;
+      setPan((currentPan) => ({
+        x: cursor.x - centre.x - (cursor.x - centre.x - currentPan.x) * ratio,
+        y: cursor.y - centre.y - (cursor.y - centre.y - currentPan.y) * ratio,
+      }));
+      return nextZoom;
+    });
   };
 
   const viewProps = {
@@ -329,8 +426,21 @@ export function EngineeringViewport({
           )}
         </div>
       </div>
-      <div className="viewport-stage" ref={hostRef}>
+      <div
+        className={`viewport-stage gesture-${gesture}`}
+        ref={hostRef}
+        onDoubleClick={(event) => {
+          if (!(event.target as Element).closest(".svg-selectable")) resetView();
+        }}
+      >
         {renderedView}
+        {!compact && (
+          <div className="viewport-gesture-hint" aria-hidden="true">
+            <span>Drag to pan</span>
+            <span>Wheel or pinch to zoom</span>
+            <span>Select geometry for details</span>
+          </div>
+        )}
         {preferences.legend && (view === "plan" || view === "end" || view === "side") && (
           <div className="viewport-legend">
             <span><i className="line axle" /> Axle line</span>

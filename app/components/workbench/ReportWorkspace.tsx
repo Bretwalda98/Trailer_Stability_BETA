@@ -72,8 +72,8 @@ export function ReportWorkspace({
         <section>
           <header><b>COG reference decision</b></header>
           <dl>
-            <div><dt>Cargo-only basic tipping</dt><dd className={result.stabilityReferences.cargoBasicAngle.status === "NOK" ? "status-nok" : "status-ok"}>{formatEngineering(result.stabilityReferences.cargoBasicAngle.value, "Â°")}</dd></div>
-            <div><dt>Cargo-only slope tipping</dt><dd className={result.stabilityReferences.cargoSlopeAngle.status === "NOK" ? "status-nok" : "status-ok"}>{formatEngineering(result.stabilityReferences.cargoSlopeAngle.value, "Â°")}</dd></div>
+            <div><dt>Cargo-only basic tipping</dt><dd className={result.stabilityReferences.cargoBasicAngle.status === "NOK" ? "status-nok" : "status-ok"}>{formatEngineering(result.stabilityReferences.cargoBasicAngle.value, "°")}</dd></div>
+            <div><dt>Cargo-only slope tipping</dt><dd className={result.stabilityReferences.cargoSlopeAngle.status === "NOK" ? "status-nok" : "status-ok"}>{formatEngineering(result.stabilityReferences.cargoSlopeAngle.value, "°")}</dd></div>
             <div><dt>Cargo-only dynamic tipping</dt><dd className={result.stabilityReferences.cargoDynamicAngle.status === "NOK" ? "status-nok" : "status-ok"}>{formatEngineering(result.stabilityReferences.cargoDynamicAngle.value, "°")}</dd></div>
             <div><dt>Cargo-only stability</dt><dd className={result.stabilityReferences.cargoOnlyPass ? "status-ok" : "status-nok"}>{result.stabilityReferences.cargoOnlyPass ? "PASS" : "FAIL"}</dd></div>
             <div><dt>Combined COG required</dt><dd className={result.stabilityReferences.combinedCogRequired ? "status-nok" : "status-ok"}>{result.stabilityReferences.combinedCogRequired ? "YES" : "NO"}</dd></div>

@@ -29,8 +29,8 @@ Hydraulic groups may use distinct plot colours, but every group must also carry 
 
 ## 3. Typography & Data Hierarchy
 
-- **Interface:** `Geist`, with `Segoe UI Variable` and `Segoe UI` as local fallbacks.
-- **Engineering data:** `Geist Mono`, with `Cascadia Mono` and `Consolas` as fallbacks.
+- **Interface:** `IBM Plex Sans Variable`, with `Segoe UI Variable` and `Segoe UI` as fallbacks.
+- **Engineering data:** `IBM Plex Mono`, with `Cascadia Mono` and `Consolas` as fallbacks.
 - **Primary values:** 12–14 px, weight 650, tabular numerals.
 - **Control labels:** 10–11 px, weight 550–650.
 - **Section labels:** 9–10 px uppercase, tracking `0.045em`.
@@ -77,6 +77,8 @@ Show `PASS`, `NOK`, `WARNING`, or `CALCULATING` in words with an icon and colour
 ### Engineering drawings
 
 Draw geometry to scale from selected catalogue data. Use crisp 1 px structural lines and slightly stronger selected/controlling lines. Dimensions, COGs, envelopes, forces, support reactions, hydraulic boundaries, and tipping constructions must remain readable at zoom. Rear/lower X is always screen left; front/higher X is always screen right. Three-point mode draws a triangle; four-point mode draws the authoritative four-corner polygon. End-view tyres use vertical profiles, never circles.
+
+All engineering drawings are directly operable with mouse and touch. Click or tap geometry to select it, drag a clear region to pan, use the mouse wheel or two-finger pinch to zoom around the pointer or gesture midpoint, and provide explicit Fit model and Reset view controls. Large translucent cargo and packing envelopes may be selected at their outlines but must not intercept selection of equipment beneath them. Every gesture retains an equivalent labelled control or model-tree action.
 
 ### Dialogs, empty states, and loading
 

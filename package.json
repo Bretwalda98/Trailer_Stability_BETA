@@ -17,6 +17,8 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
     "@gsap/react": "^2.1.2",
     "@tabler/icons-react": "3.34.1",
     "drizzle-orm": "0.45.2",
