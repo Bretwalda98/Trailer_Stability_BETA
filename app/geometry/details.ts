@@ -486,8 +486,8 @@ export function buildEngineeringDetailRows(
   });
 
   rows.push(
-    row("cargo-basic-angle", "COG reference decision", "Cargo-only basic tipping angle", result.stabilityReferences.cargoBasicAngle.value, "Â°", "Engine stabilityReferences.cargoBasicAngle", { status: result.stabilityReferences.cargoBasicAngle.status }),
-    row("cargo-slope-angle", "COG reference decision", "Cargo-only slope tipping angle", result.stabilityReferences.cargoSlopeAngle.value, "Â°", "Engine stabilityReferences.cargoSlopeAngle", { status: result.stabilityReferences.cargoSlopeAngle.status }),
+    row("cargo-basic-angle", "COG reference decision", "Cargo-only basic tipping angle", result.stabilityReferences.cargoBasicAngle.value, "°", "Engine stabilityReferences.cargoBasicAngle", { status: result.stabilityReferences.cargoBasicAngle.status }),
+    row("cargo-slope-angle", "COG reference decision", "Cargo-only slope tipping angle", result.stabilityReferences.cargoSlopeAngle.value, "°", "Engine stabilityReferences.cargoSlopeAngle", { status: result.stabilityReferences.cargoSlopeAngle.status }),
     row("cargo-dynamic-angle", "COG reference decision", "Cargo-only dynamic tipping angle", result.stabilityReferences.cargoDynamicAngle.value, "°", "Engine stabilityReferences.cargoDynamicAngle", { status: result.stabilityReferences.cargoDynamicAngle.status }),
     row("cargo-only-pass", "COG reference decision", "Cargo-only stability pass", result.stabilityReferences.cargoOnlyPass ? "YES" : "NO", "", "Engine stabilityReferences.cargoOnlyPass", { status: result.stabilityReferences.cargoOnlyPass ? "OK" : "NOK", valueType: "text" }),
     row("combined-cog-required", "COG reference decision", "Combined COG required", result.stabilityReferences.combinedCogRequired ? "YES" : "NO", "", "Engine stabilityReferences.combinedCogRequired", { status: result.stabilityReferences.combinedCogRequired ? "NOK" : "OK", valueType: "text" }),

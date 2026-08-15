@@ -60,17 +60,24 @@ export function CaseHeader({
   return (
     <header className="case-header">
       <div className="product-title">
-        <b>Trailer Stability</b>
-        <span>Engineering workbench</span>
+        <span className="product-mark" aria-hidden="true">TS</span>
+        <div>
+          <b>Trailer Stability</b>
+          <span>Engineering workbench</span>
+        </div>
       </div>
       <div className="case-identity">
-        <span>Client</span>
-        <b>{model.cargo.clientReference || "No client reference"}</b>
+        <div>
+          <span>Client</span>
+          <b>{model.cargo.clientReference || "No client reference"}</b>
+        </div>
         <i />
-        <span>Case</span>
-        <b>{model.cargo.name || "Untitled case"}</b>
+        <div>
+          <span>Case</span>
+          <b>{model.cargo.name || "Untitled case"}</b>
+        </div>
       </div>
-      <div className="save-state">
+      <div className="save-state" aria-live="polite">
         <i className={saved ? "saved" : "saving"} />
         <span>{saved ? "Saved on this device" : "Saving…"}</span>
         {calculating && <em>Recalculating</em>}
