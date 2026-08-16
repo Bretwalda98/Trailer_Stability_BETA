@@ -11,7 +11,7 @@
     "build": "vinext build",
     "start": "node scripts/serve.mjs",
     "typecheck": "tsc --noEmit",
-    "test:engine": "tsc -p tsconfig.tests.json && node test-output/cjs/tests/engine-and-workbook.test.js && node test-output/cjs/tests/geometry-adapter.test.js",
+    "test:engine": "tsc -p tsconfig.tests.json && node scripts/prepare-engine-test-output.mjs && node test-output/cjs/tests/engine-and-workbook.test.js && node test-output/cjs/tests/geometry-adapter.test.js",
     "test": "pnpm run typecheck && pnpm run test:engine && pnpm run build && node tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
