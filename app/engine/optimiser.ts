@@ -1,4 +1,12 @@
-import { applySharedAxleLines, applySharedPins, applySharedSplit, applySharedX, calculateProject } from "./core";
+import {
+  applySharedAxleLines,
+  applySharedPins,
+  applySharedSplit,
+  applySharedX,
+  calculateProject,
+  calculateStabilityProbe,
+  engineeringLimitsFor,
+} from "./core";
 import { applyArrangementDescriptor } from "./arrangement";
 import type {
   ActivityEvent,
@@ -487,8 +495,8 @@ function automaticE89Cases(
 ): PlannedCase[] {
   const probe0: PlannedCase = { c89, d138, e89: 0, phase: "COARSE_SCAN" };
   const probe1: PlannedCase = { c89, d138, e89: 1, phase: "COARSE_SCAN" };
-  const result0 = calculateProject(caseModel(model, probe0));
-  const result1 = calculateProject(caseModel(model, probe1));
+  const result0 = calculateStabilityProbe(caseModel(model, probe0));
+  const result1 = calculateStabilityProbe(caseModel(model, probe1));
   const interval = deriveContainmentXInterval(
     result0,
     result1,
@@ -509,12 +517,6 @@ function automaticE89Cases(
     d138,
     e89,
     phase: "COARSE_SCAN",
-    cachedResult:
-      Math.abs(e89) < 1e-10
-        ? result0
-        : Math.abs(e89 - 1) < 1e-10
-          ? result1
-          : undefined,
   }));
 }
 
@@ -629,6 +631,97 @@ export function deriveSupportXInterval(
   return { minimumM, maximumM };
 }
 
+function hydraulicGroupCapacityT(result: CalculationResult, group: number): number | null {
+  const members = result.axlePoints.filter((axle) => axle.group === group && !axle.pinned);
+  if (!members.length) return null;
+  const minimumAxleCapacityT = Math.min(...members.map((axle) => axle.capacityT));
+  return Number.isFinite(minimumAxleCapacityT) && minimumAxleCapacityT > 0
+    ? minimumAxleCapacityT * members.length
+    : null;
+}
+
+/**
+ * Derives exact longitudinal limits for hydraulic group capacity and the
+ * minimum dynamic/static reaction ratio. For a fixed axle/split geometry the
+ * group reactions are affine in shared trailer X. Intersecting these linear
+ * inequalities removes engineering-impossible legacy steps without sampling
+ * or approximating a workbook result.
+ */
+export function deriveEngineeringXInterval(
+  model: ProjectModel,
+  result0: CalculationResult,
+  result1: CalculationResult,
+): StabilityXInterval | null {
+  if (
+    result0.groups.length < 3 ||
+    result0.groups.length !== result1.groups.length ||
+    result0.groups.some((group, index) => group.group !== result1.groups[index]?.group)
+  ) return null;
+
+  const limits = engineeringLimitsFor(model.engineeringDegree);
+  let minimumM = Number.NEGATIVE_INFINITY;
+  let maximumM = Number.POSITIVE_INFINITY;
+  const intersectGreaterThanOrEqual = (intercept: number, slope: number): boolean => {
+    if (!Number.isFinite(intercept) || !Number.isFinite(slope)) return false;
+    if (Math.abs(slope) < 1e-12) return intercept >= -1e-9;
+    const boundary = -intercept / slope;
+    if (slope > 0) minimumM = Math.max(minimumM, boundary);
+    else maximumM = Math.min(maximumM, boundary);
+    return minimumM <= maximumM + 1e-9;
+  };
+
+  const constrainCaseLoads = (
+    cases0: number[][],
+    cases1: number[][],
+    utilisationLimit: number,
+  ): boolean => {
+    if (cases0.length !== cases1.length) return false;
+    for (let caseIndex = 0; caseIndex < cases0.length; caseIndex += 1) {
+      const loads0 = cases0[caseIndex];
+      const loads1 = cases1[caseIndex];
+      if (loads0.length !== result0.groups.length || loads1.length !== result1.groups.length) return false;
+      for (let groupIndex = 0; groupIndex < result0.groups.length; groupIndex += 1) {
+        const capacityT = hydraulicGroupCapacityT(result0, result0.groups[groupIndex].group);
+        if (capacityT === null) return false;
+        const demand0 = loads0[groupIndex];
+        const demand1 = loads1[groupIndex];
+        const slope = demand1 - demand0;
+        const allowableT = capacityT * utilisationLimit;
+        // The engine uses absolute axle utilisation, so retain both bounds.
+        if (!intersectGreaterThanOrEqual(allowableT - demand0, -slope)) return false;
+        if (!intersectGreaterThanOrEqual(allowableT + demand0, slope)) return false;
+      }
+    }
+    return true;
+  };
+
+  if (!constrainCaseLoads(result0.stabilityLoads.basic, result1.stabilityLoads.basic, limits.basicUtil)) return null;
+  if (!constrainCaseLoads(result0.stabilityLoads.slope, result1.stabilityLoads.slope, limits.slopeUtil)) return null;
+  if (!constrainCaseLoads(result0.stabilityLoads.dynamic, result1.stabilityLoads.dynamic, limits.dynamicUtil)) return null;
+
+  const neutral0 = result0.stabilityLoads.neutral;
+  const neutral1 = result1.stabilityLoads.neutral;
+  const dynamic0 = result0.stabilityLoads.dynamic;
+  const dynamic1 = result1.stabilityLoads.dynamic;
+  if (
+    neutral0.length !== result0.groups.length ||
+    neutral1.length !== result1.groups.length ||
+    dynamic0.length !== dynamic1.length
+  ) return null;
+  for (let caseIndex = 0; caseIndex < dynamic0.length; caseIndex += 1) {
+    if (
+      dynamic0[caseIndex].length !== result0.groups.length ||
+      dynamic1[caseIndex].length !== result1.groups.length
+    ) return null;
+    for (let groupIndex = 0; groupIndex < result0.groups.length; groupIndex += 1) {
+      const margin0 = dynamic0[caseIndex][groupIndex] - limits.dynamicRatio * neutral0[groupIndex];
+      const margin1 = dynamic1[caseIndex][groupIndex] - limits.dynamicRatio * neutral1[groupIndex];
+      if (!intersectGreaterThanOrEqual(margin0, margin1 - margin0)) return null;
+    }
+  }
+  return { minimumM, maximumM };
+}
+
 function mathematicalE89Cases(
   model: ProjectModel,
   c89: number,
@@ -636,15 +729,25 @@ function mathematicalE89Cases(
 ): PlannedCase[] {
   const probe0: PlannedCase = { c89, d138, e89: 0, phase: "COARSE_SCAN" };
   const probe1: PlannedCase = { c89, d138, e89: 1, phase: "COARSE_SCAN" };
-  const result0 = calculateProject(caseModel(model, probe0));
-  const result1 = calculateProject(caseModel(model, probe1));
+  const result0 = calculateStabilityProbe(caseModel(model, probe0));
+  const result1 = calculateStabilityProbe(caseModel(model, probe1));
   const interval = deriveStabilityXInterval(result0, result1);
   if (!interval) return [];
   const supportInterval = deriveSupportXInterval(model, result0, result1);
   if (!supportInterval) return [];
+  const engineeringInterval = deriveEngineeringXInterval(model, result0, result1);
+  if (!engineeringInterval) return [];
   const tolerance = Math.max(0, model.optimiser.boundaryToleranceM);
-  const minimum = Math.max(interval.minimumM, supportInterval.minimumM) - tolerance;
-  const maximum = Math.min(interval.maximumM, supportInterval.maximumM) + tolerance;
+  const minimum = Math.max(
+    interval.minimumM,
+    supportInterval.minimumM,
+    engineeringInterval.minimumM,
+  ) - tolerance;
+  const maximum = Math.min(
+    interval.maximumM,
+    supportInterval.maximumM,
+    engineeringInterval.maximumM,
+  ) + tolerance;
   if (minimum > maximum + 1e-9) return [];
   const midpoint = (minimum + maximum) / 2;
   const values = [
@@ -661,12 +764,6 @@ function mathematicalE89Cases(
       d138,
       e89,
       phase: "COARSE_SCAN",
-      cachedResult:
-        Math.abs(e89) < 1e-10
-          ? result0
-          : Math.abs(e89 - 1) < 1e-10
-            ? result1
-            : undefined,
     }));
 }
 
@@ -722,57 +819,132 @@ interface StabilityPrunedPlan {
   splitCount: number;
   feasibleSplitCount: number;
   supportPrunedCount: number;
+  engineeringPrunedCount: number;
 }
 
 /**
- * Restores the exact legacy step grid only where a PASS remains
- * mathematically possible. Any point outside the intersection returned by
- * deriveStabilityXInterval must fail the stability geometry check, so removing
- * it cannot remove a valid result.
+ * Restores the exact legacy step grid only where a PASS remains mathematically
+ * possible. Stability geometry, support footprint, hydraulic group capacity
+ * and dynamic/static reaction ratio are exact affine-X inequalities, so
+ * removing points outside their intersection cannot remove a valid result.
  */
 function planStabilityPrunedExactCases(model: ProjectModel): StabilityPrunedPlan {
-  const completeCases = planCoarseCases(model, "FULL");
-  const bySplit = new Map<string, PlannedCase[]>();
-  for (const planned of completeCases) {
-    const key = `${planned.c89}|${planned.d138}`;
-    const current = bySplit.get(key);
-    if (current) current.push(planned);
-    else bySplit.set(key, [planned]);
-  }
-
+  const settings = model.optimiser;
   const tolerance = Math.max(0, model.optimiser.boundaryToleranceM) + 1e-9;
-  const cases: PlannedCase[] = [];
+  const orderedCases: Array<{
+    planned: PlannedCase;
+    splitDistance: number;
+    xDistance: number;
+  }> = [];
+  let fullCaseCount = 0;
+  let splitCount = 0;
   let feasibleSplitCount = 0;
   let supportPrunedCount = 0;
-  for (const splitCases of bySplit.values()) {
-    const first = splitCases[0];
-    const result0 = calculateProject(
-      caseModel(model, { ...first, e89: 0, cachedResult: undefined }),
+  let engineeringPrunedCount = 0;
+  for (const c89 of range(settings.c89Start, settings.c89Maximum, settings.c89Step).map(Math.round)) {
+    const maximumD = Math.max(
+      settings.d138Start,
+      settings.overrideD138Limit
+        ? c89 - 1
+        : Math.min(c89 - 1, Math.floor(c89 * settings.d138MaximumFraction)),
     );
-    const result1 = calculateProject(
-      caseModel(model, { ...first, e89: 1, cachedResult: undefined }),
-    );
-    const interval = deriveStabilityXInterval(result0, result1);
-    if (!interval) continue;
-    feasibleSplitCount += 1;
-    const minimum = interval.minimumM - tolerance;
-    const maximum = interval.maximumM + tolerance;
-    for (const planned of splitCases) {
-      if (planned.e89 < minimum || planned.e89 > maximum) continue;
-      if (!supportGeometryAllowsCase(model, result0, result1, planned.e89)) {
-        supportPrunedCount += 1;
-        continue;
+    const splitValues = range(settings.d138Start, maximumD, settings.d138Step).map(Math.round);
+    for (const d138 of splitValues) {
+      if (d138 < 1 || d138 >= c89) continue;
+      splitCount += 1;
+      const probe0: PlannedCase = { c89, d138, e89: 0, phase: "COARSE_SCAN" };
+      const probe1: PlannedCase = { c89, d138, e89: 1, phase: "COARSE_SCAN" };
+      const result0 = calculateStabilityProbe(caseModel(model, probe0));
+      const result1 = calculateStabilityProbe(caseModel(model, probe1));
+      let configuredMinimum: number;
+      let configuredMaximum: number;
+      if (settings.e89RangeMode === "MANUAL") {
+        configuredMinimum = Math.min(settings.e89Minimum, settings.e89Maximum);
+        configuredMaximum = Math.max(settings.e89Minimum, settings.e89Maximum);
+      } else {
+        const configuredInterval = deriveContainmentXInterval(
+          result0,
+          result1,
+          [result0.combinedCog],
+          [result1.combinedCog],
+        );
+        if (!configuredInterval) continue;
+        configuredMinimum = configuredInterval.minimumM - Math.max(0, settings.boundaryToleranceM);
+        configuredMaximum = configuredInterval.maximumM + Math.max(0, settings.boundaryToleranceM);
       }
-      cases.push({ ...planned, cachedResult: undefined });
+      const configuredValues = range(
+        configuredMinimum,
+        configuredMaximum,
+        settings.e89Step,
+      );
+      fullCaseCount += configuredValues.length;
+      const stabilityInterval = deriveStabilityXInterval(result0, result1);
+      const supportInterval = deriveSupportXInterval(model, result0, result1);
+      const engineeringInterval = deriveEngineeringXInterval(model, result0, result1);
+      if (!stabilityInterval || !supportInterval || !engineeringInterval) continue;
+      const minimum = Math.max(
+        configuredMinimum,
+        stabilityInterval.minimumM - tolerance,
+        supportInterval.minimumM - tolerance,
+        engineeringInterval.minimumM - tolerance,
+      );
+      const maximum = Math.min(
+        configuredMaximum,
+        stabilityInterval.maximumM + tolerance,
+        supportInterval.maximumM + tolerance,
+        engineeringInterval.maximumM + tolerance,
+      );
+      if (minimum > maximum + 1e-9) continue;
+      feasibleSplitCount += 1;
+      const centre = (minimum + maximum) / 2;
+      const targetSplit = Math.max(1, Math.round(c89 / 3));
+      for (const e89 of configuredValues) {
+        if (
+          e89 < stabilityInterval.minimumM - tolerance ||
+          e89 > stabilityInterval.maximumM + tolerance
+        ) {
+          continue;
+        }
+        if (
+          e89 < engineeringInterval.minimumM - tolerance ||
+          e89 > engineeringInterval.maximumM + tolerance
+        ) {
+          engineeringPrunedCount += 1;
+          continue;
+        }
+        if (
+          e89 < supportInterval.minimumM - tolerance ||
+          e89 > supportInterval.maximumM + tolerance ||
+          !supportGeometryAllowsCase(model, result0, result1, e89)
+        ) {
+          supportPrunedCount += 1;
+          continue;
+        }
+        orderedCases.push({
+          planned: { c89, d138, e89, phase: "COARSE_SCAN" },
+          splitDistance: Math.abs(d138 - targetSplit),
+          xDistance: Math.abs(e89 - centre),
+        });
+      }
     }
   }
 
+  orderedCases.sort(
+    (left, right) =>
+      left.splitDistance - right.splitDistance ||
+      left.xDistance - right.xDistance ||
+      left.planned.d138 - right.planned.d138 ||
+      left.planned.e89 - right.planned.e89,
+  );
+  const cases = orderedCases.map((item) => item.planned);
+
   return {
     cases,
-    fullCaseCount: completeCases.length,
-    splitCount: bySplit.size,
+    fullCaseCount,
+    splitCount,
     feasibleSplitCount,
     supportPrunedCount,
+    engineeringPrunedCount,
   };
 }
 
@@ -1218,7 +1390,7 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
             ? "Mathematical probes found no pass; exact fallback started"
             : "Reduced probes found no pass",
           planningMode === "MATHEMATICAL"
-            ? `${fallbackCases.length} exact legacy-step cases remain inside the complete stability-feasible X intervals across ${mathematicalPlan?.feasibleSplitCount ?? 0} of ${mathematicalPlan?.splitCount ?? 0} configured splits; ${Math.max(0, (mathematicalPlan?.fullCaseCount ?? 0) - (mathematicalPlan?.cases.length ?? 0) - (mathematicalPlan?.supportPrunedCount ?? 0))} stability-impossible and ${mathematicalPlan?.supportPrunedCount ?? 0} support-geometry-impossible cases were pruned. The exact fallback is required because settled support reactions are not monotonic in trailer X.`
+            ? `${fallbackCases.length} exact legacy-step cases remain inside the complete necessary-feasible X intervals across ${mathematicalPlan?.feasibleSplitCount ?? 0} of ${mathematicalPlan?.splitCount ?? 0} configured splits; ${Math.max(0, (mathematicalPlan?.fullCaseCount ?? 0) - (mathematicalPlan?.cases.length ?? 0) - (mathematicalPlan?.supportPrunedCount ?? 0) - (mathematicalPlan?.engineeringPrunedCount ?? 0))} stability-impossible, ${mathematicalPlan?.engineeringPrunedCount ?? 0} load-ratio/capacity-impossible and ${mathematicalPlan?.supportPrunedCount ?? 0} support-geometry-impossible cases were pruned. The exact fallback is required because settled support reactions and spine-beam response are not monotonic in trailer X.`
             : `${fallbackCases.length} remaining exact cases were restored so the search cannot miss an isolated feasible region.`,
           "INFO",
         );
@@ -1241,7 +1413,7 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
           "",
           "Bound",
           "No stability-feasible legacy-step case",
-          `${Math.max(0, mathematicalPlan?.fullCaseCount ?? 0)} configured exact cases were checked against every basic, slope, dynamic and COG-envelope stability inequality plus the minimum support-footprint gate; none can pass both necessary geometry checks.`,
+          `${Math.max(0, mathematicalPlan?.fullCaseCount ?? 0)} configured exact cases were checked against every basic, slope, dynamic and COG-envelope stability inequality, hydraulic group-capacity and dynamic/static reaction-ratio limit, plus the support-footprint gate; none can pass all necessary checks.`,
           "INFO",
         );
       }

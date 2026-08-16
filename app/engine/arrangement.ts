@@ -144,6 +144,35 @@ export function minimumTotalAxleLines(
   return Math.max(4, Math.ceil((carriedMassT + ppuMassT) / netCapacityPerLine));
 }
 
+/**
+ * Exact deck-length lower bound for the packing/support footprint. The
+ * calculation engine requires every allowed support (up to the workbook's ten
+ * support rows) to remain on the analysed trailer deck. Any shorter formation
+ * is therefore impossible regardless of split, hydraulic mode or trailer X.
+ */
+export function minimumAxleLinesPerTrainForSupports(
+  model: ProjectModel,
+  settings: ArrangementOptimiserSettings,
+): number {
+  const definition = selectedDefinition(model, settings);
+  if (!definition || !(definition.axleSpacingM > EPS)) return 4;
+  const supports = model.supports
+    .filter((support) => support.allowed && Number.isFinite(support.xM))
+    .slice(0, 10);
+  if (!supports.length) return 4;
+  const rearEdgeM = Math.min(
+    ...supports.map((support) => support.xM - Math.max(0, support.widthM) / 2),
+  );
+  const frontEdgeM = Math.max(
+    ...supports.map((support) => support.xM + Math.max(0, support.widthM) / 2),
+  );
+  const requiredDeckLengthM = Math.max(0, frontEdgeM - rearEdgeM);
+  return Math.max(
+    4,
+    Math.ceil((requiredDeckLengthM - EPS) / definition.axleSpacingM),
+  );
+}
+
 export function effectiveMaximumFormationWidth(
   settings: ArrangementOptimiserSettings,
   cargoWidthM?: number,

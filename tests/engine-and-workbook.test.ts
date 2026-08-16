@@ -15,6 +15,7 @@ import {
   applySharedSplit,
   applySharedX,
   calculateProject,
+  calculateStabilityProbe,
   engineeringLimitsFor,
   validateCatalogue,
 } from "../app/engine/core";
@@ -44,7 +45,13 @@ import {
   requiredHydraulicGroupYSpan,
   runArrangementOptimiser,
 } from "../app/engine/arrangement-optimiser";
-import { deriveStabilityXInterval, deriveSupportXInterval, passToProject, runOptimiser } from "../app/engine/optimiser";
+import {
+  deriveEngineeringXInterval,
+  deriveStabilityXInterval,
+  deriveSupportXInterval,
+  passToProject,
+  runOptimiser,
+} from "../app/engine/optimiser";
 import {
   canRunOptimiserWizard,
   collectOptimiserWizardIssues,
@@ -454,6 +461,12 @@ async function main(): Promise<void> {
   assert.ok(arrangementRun.events.some((item) => item.message === "Winning formation fully verified"));
   const mathematicalBest = arrangementRun.passes.find((pass) => pass.overallRank === 1);
   assert.ok(mathematicalBest?.arrangement);
+  assert.ok(
+    arrangementRun.passes
+      .filter((pass) => pass.result.status === "PASS")
+      .every((pass) => pass.result.beam.points.length > 0),
+    "A stability-only planning probe must never be retained as an authoritative PASS.",
+  );
   assert.equal(mathematicalBest.arrangement.trainCount, 2);
   assert.equal(mathematicalBest.arrangement.totalAxleLines, 8);
   const appliedFourPointPass = arrangementRun.passes.find(
@@ -487,19 +500,42 @@ async function main(): Promise<void> {
   assert.equal(mathematicalBest.arrangement.totalAxleLines, legacyBest?.arrangement?.totalAxleLines);
   const intervalProbe = applyArrangementDescriptor(compactArrangementSearch, mathematicalBest.arrangement);
   const splitProbe = applySharedSplit(intervalProbe, mathematicalBest.d138);
-  const interval = deriveStabilityXInterval(
-    calculateProject(applySharedX(splitProbe, 0)),
-    calculateProject(applySharedX(splitProbe, 1)),
-  );
+  const fullProbe0 = calculateProject(applySharedX(splitProbe, 0));
+  const fullProbe1 = calculateProject(applySharedX(splitProbe, 1));
+  const stabilityProbe0 = calculateStabilityProbe(applySharedX(splitProbe, 0));
+  const stabilityProbe1 = calculateStabilityProbe(applySharedX(splitProbe, 1));
+  assert.deepEqual(stabilityProbe0.stabilityLoads, fullProbe0.stabilityLoads);
+  assert.deepEqual(stabilityProbe1.stabilityLoads, fullProbe1.stabilityLoads);
+  for (const key of [
+    "basicUtil",
+    "slopeUtil",
+    "dynamicUtil",
+    "basicAngle",
+    "slopeAngle",
+    "dynamicAngle",
+    "dynamicRatio",
+  ] as const) {
+    assert.equal(stabilityProbe0.metrics[key].value, fullProbe0.metrics[key].value);
+    assert.equal(stabilityProbe1.metrics[key].value, fullProbe1.metrics[key].value);
+  }
+  assert.equal(stabilityProbe0.beam.points.length, 0);
+  const interval = deriveStabilityXInterval(stabilityProbe0, stabilityProbe1);
   assert.ok(interval);
   assert.ok(interval.minimumM <= interval.maximumM);
   const supportInterval = deriveSupportXInterval(
     compactArrangementSearch,
-    calculateProject(applySharedX(splitProbe, 0)),
-    calculateProject(applySharedX(splitProbe, 1)),
+    stabilityProbe0,
+    stabilityProbe1,
   );
   assert.ok(supportInterval);
   assert.ok(supportInterval.minimumM <= supportInterval.maximumM);
+  const engineeringInterval = deriveEngineeringXInterval(
+    compactArrangementSearch,
+    stabilityProbe0,
+    stabilityProbe1,
+  );
+  assert.ok(engineeringInterval);
+  assert.ok(engineeringInterval.minimumM <= engineeringInterval.maximumM);
   const appliedArrangement = passToProject(compactArrangementSearch, arrangementRun.passes[0]);
   assert.equal(appliedArrangement.trailers.length, 2);
   assert.ok(appliedArrangement.trailers.every((trailer) => trailer.axleLines === 4));
@@ -708,7 +744,8 @@ async function main(): Promise<void> {
       pass.result.spineAxlePoints.length === 0,
   );
   const detailedRejectedCases = rejectedLargeCases.length - compactRejectedProbes.length;
-  assert.ok(compactRejectedProbes.length > 0);
+  // Exact load-ratio/capacity intervals may now remove all compact rejected
+  // probes before evaluation. Any retained detailed failures must stay small.
   assert.ok(detailedRejectedCases < 200);
 
   const blankSetup = createBlankSetupModel();

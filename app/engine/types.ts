@@ -453,6 +453,17 @@ export interface StabilityAnalysisSummary {
   }>;
 }
 
+/**
+ * Hydraulic group reactions retained for exact optimiser bounds. The case
+ * order matches `CalculationResult.casePoints`; values are tonnes per group.
+ */
+export interface StabilityLoadCases {
+  neutral: number[];
+  basic: number[][];
+  slope: number[][];
+  dynamic: number[][];
+}
+
 export interface TrailerOverlap {
   firstTrailerId: string;
   firstTrailerIndex: number;
@@ -535,6 +546,7 @@ export interface CalculationResult {
   componentCogs: ComponentCogs;
   stabilityReferences: StabilityReferenceChecks;
   analysis: StabilityAnalysisSummary;
+  stabilityLoads: StabilityLoadCases;
   resolvedTrailers: Array<{
     id: string;
     index: number;
