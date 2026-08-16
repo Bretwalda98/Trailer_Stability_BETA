@@ -154,6 +154,17 @@ export function HydraulicsView(props: HydraulicsViewProps) {
           {vm.bogies.map((bogie) => {
             const point = transform.toScreen(bogie.engineeringCoordinates);
             const corner = cornerFor(bogie.trailerIndex, bogie.axleLine, bogie.yM, vm);
+            const activate = () => {
+              if (bogie.pinned) {
+                onSelect(bogie.id);
+                return;
+              }
+              const nextGroup = bogie.groupId >= groupIds.length ? 1 : bogie.groupId + 1;
+              onModelChange(
+                setCorner(model, bogie.trailerIndex, corner, nextGroup),
+              );
+              onSelect(bogie.id);
+            };
             return (
               <g
                 key={bogie.id}
@@ -161,17 +172,18 @@ export function HydraulicsView(props: HydraulicsViewProps) {
                   selectedId === bogie.id ? " is-selected" : ""
                 }`}
                 style={{ color: GROUP_COLOURS[bogie.groupId] }}
+                role="button"
+                tabIndex={0}
+                aria-label={`${bogie.selection.title}. Hydraulic group G${bogie.groupId}. ${bogie.pinned ? "Pinned axle line" : `Activate to change to G${bogie.groupId >= groupIds.length ? 1 : bogie.groupId + 1}`}.`}
                 onClick={(event) => {
                   event.stopPropagation();
-                  if (bogie.pinned) {
-                    onSelect(bogie.id);
-                    return;
-                  }
-                  const nextGroup = bogie.groupId >= 3 ? 1 : bogie.groupId + 1;
-                  onModelChange(
-                    setCorner(model, bogie.trailerIndex, corner, nextGroup),
-                  );
-                  onSelect(bogie.id);
+                  activate();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  activate();
                 }}
               >
                 <rect x={point.x - 8} y={point.y - 5} width={16} height={10} />
@@ -181,7 +193,7 @@ export function HydraulicsView(props: HydraulicsViewProps) {
                   </text>
                 )}
                 <desc>
-                  Click to cycle this {corner.replace(/([A-Z])/g, " $1").toLowerCase()} circuit.
+                  Tap, click or press Enter to cycle this {corner.replace(/([A-Z])/g, " $1").toLowerCase()} circuit.
                 </desc>
               </g>
             );

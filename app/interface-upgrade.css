@@ -592,6 +592,11 @@ textarea::placeholder {
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 2%);
 }
 
+.viewport-stage:focus-visible {
+  outline: 2px solid #72adf7;
+  outline-offset: -2px;
+}
+
 .viewport-stage.gesture-panning .engineering-svg,
 .viewport-stage.gesture-pinching .engineering-svg {
   cursor: grabbing;
@@ -637,7 +642,7 @@ textarea::placeholder {
 
 .engineering-svg .svg-selectable {
   outline: none;
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 .engineering-svg .svg-selectable:hover {
@@ -646,6 +651,59 @@ textarea::placeholder {
 
 .engineering-svg .svg-selectable.is-selected {
   filter: brightness(1.22) drop-shadow(0 0 3px rgb(75 149 244 / 28%));
+}
+
+.engineering-svg .svg-selectable:focus-visible,
+.beam-schematic .svg-selectable:focus-visible {
+  filter: brightness(1.35) drop-shadow(0 0 4px rgb(123 180 255 / 38%));
+  outline: none;
+}
+
+.interactive-beam-series {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.interactive-beam-series:focus-visible {
+  outline: 2px solid #72adf7;
+  outline-offset: -2px;
+}
+
+.beam-diagram-readout {
+  min-height: 22px;
+  padding: 4px 10px 3px;
+  border-top: 1px solid #1d252c;
+  border-bottom: 1px solid #1d252c;
+  background: #090d10;
+  color: #9fc9fb;
+  font-family: var(--font-data);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.beam-diagram svg .beam-series-inspector line {
+  stroke: currentColor;
+  stroke-dasharray: 3 3;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.beam-diagram svg .beam-series-inspector circle {
+  fill: #07090b;
+  stroke: currentColor;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+@media (pointer: coarse) {
+  .viewport-gesture-hint .mouse-instruction,
+  .viewport-gesture-hint .keyboard-instruction {
+    display: none;
+  }
+
+  .engineering-svg .svg-selectable {
+    filter: brightness(1.08);
+  }
 }
 
 /* Large translucent envelopes must not hide selectable equipment below them.

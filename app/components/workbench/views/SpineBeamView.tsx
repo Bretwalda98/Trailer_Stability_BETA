@@ -2,6 +2,7 @@
 
 import { GROUP_COLOURS } from "../../../geometry/buildGeometryViewModel";
 import type { BeamPoint, ProjectModel, SpineLoadCase } from "../../../engine/types";
+import { useEffect, useRef, useState } from "react";
 import { ViewGrid } from "../svg-primitives";
 import type { EngineeringViewProps } from "./view-types";
 
@@ -51,6 +52,8 @@ function SeriesDiagram({
   const xMin = Math.min(...finitePoints.map((point) => point.xM), 0);
   const xMax = Math.max(...finitePoints.map((point) => point.xM), 1);
   const values = finitePoints.map(value);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const frameRef = useRef<number | null>(null);
   const maximum = Math.max(1e-9, ...values.map((item) => Math.abs(item)));
   const x = (item: number) =>
     margin.left + ((item - xMin) / Math.max(1e-9, xMax - xMin)) * (width - margin.left - margin.right);
@@ -63,6 +66,38 @@ function SeriesDiagram({
   const maximumValue = values.length ? Math.max(...values) : null;
   const formatExtrema = (item: number | null) =>
     item === null ? "—" : item.toFixed(2);
+  const activePoint = activeIndex === null ? null : finitePoints[activeIndex] ?? null;
+  const queueActiveIndex = (index: number) => {
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(() => {
+      setActiveIndex(index);
+      frameRef.current = null;
+    });
+  };
+  const inspectPointer = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!finitePoints.length) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pointerX = ((event.clientX - rect.left) / Math.max(1, rect.width)) * width;
+    let nearestIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    finitePoints.forEach((point, index) => {
+      const distance = Math.abs(x(point.xM) - pointerX);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    });
+    queueActiveIndex(nearestIndex);
+  };
+
+  useEffect(
+    () => () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    },
+    [],
+  );
+
+  const activeValue = activePoint ? value(activePoint) : null;
   return (
     <div className="beam-diagram">
       <div className="beam-diagram-title">
@@ -70,10 +105,71 @@ function SeriesDiagram({
         <span>MIN {formatExtrema(minimumValue)} {unit}</span>
         <span>MAX {formatExtrema(maximumValue)} {unit}</span>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${title} diagram`}>
+      <div className="beam-diagram-readout" aria-live="polite">
+        {activePoint && activeValue !== null
+          ? `X ${activePoint.xM.toFixed(3)} m | ${activeValue.toFixed(2)} ${unit}`
+          : "Point or touch to inspect"}
+      </div>
+      <svg
+        className="interactive-beam-series"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        tabIndex={0}
+        aria-label={`${title} diagram. Use the pointer, touch, or left and right arrow keys to inspect values.`}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          inspectPointer(event);
+        }}
+        onPointerMove={inspectPointer}
+        onPointerUp={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+          inspectPointer(event);
+        }}
+        onPointerCancel={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse" && event.buttons === 0) setActiveIndex(null);
+        }}
+        onFocus={() => {
+          if (activeIndex === null && finitePoints.length) setActiveIndex(0);
+        }}
+        onKeyDown={(event) => {
+          if (!finitePoints.length) return;
+          const current = activeIndex ?? 0;
+          if (event.key === "ArrowLeft") {
+            setActiveIndex(Math.max(0, current - 1));
+          } else if (event.key === "ArrowRight") {
+            setActiveIndex(Math.min(finitePoints.length - 1, current + 1));
+          } else if (event.key === "Home") {
+            setActiveIndex(0);
+          } else if (event.key === "End") {
+            setActiveIndex(finitePoints.length - 1);
+          } else {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      >
         <line x1={margin.left} y1={height / 2} x2={width - margin.right} y2={height / 2} />
         <line x1={margin.left} y1={margin.top} x2={margin.left} y2={height - margin.bottom} />
         {path && <path d={path} style={{ stroke: colour }} />}
+        {activePoint && activeValue !== null && (
+          <g className="beam-series-inspector" style={{ color: colour }}>
+            <line
+              x1={x(activePoint.xM)}
+              y1={margin.top}
+              x2={x(activePoint.xM)}
+              y2={height - margin.bottom}
+            />
+            <circle cx={x(activePoint.xM)} cy={y(activeValue)} r={4} />
+          </g>
+        )}
         <text x={margin.left} y={height - 3}>REAR · 0</text>
         <text x={width - margin.right} y={height - 3} textAnchor="end">
           FRONT · {xMax.toFixed(2)} m
@@ -96,6 +192,15 @@ export function SpineBeamView(props: SpineBeamViewProps) {
 
   const setField = <K extends keyof ProjectModel>(key: K, value: ProjectModel[K]) => {
     onModelChange({ ...model, [key]: value });
+  };
+  const selectFromKeyboard = (
+    event: React.KeyboardEvent<SVGGElement>,
+    id: string,
+  ) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    onSelect(id);
   };
 
   return (
@@ -168,7 +273,13 @@ export function SpineBeamView(props: SpineBeamViewProps) {
                       selectedId === `axle-line:${axle.trailerId}:${axle.axleLine}` ? " is-selected" : ""
                     }`}
                     style={{ color: GROUP_COLOURS[axle.group] }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Select axle line ${axle.axleLine}, load ${axle.loadT.toFixed(1)} tonnes`}
                     onClick={() => onSelect(`axle-line:${axle.trailerId}:${axle.axleLine}`)}
+                    onKeyDown={(event) =>
+                      selectFromKeyboard(event, `axle-line:${axle.trailerId}:${axle.axleLine}`)
+                    }
                   >
                     <line x1={x} y1={28} x2={x} y2={72} />
                     <path d={`M ${x} 72 l -5 -8 l 10 0 z`} />
@@ -190,7 +301,11 @@ export function SpineBeamView(props: SpineBeamViewProps) {
                   className={`beam-support svg-selectable${support.active ? "" : " inactive"}${
                     selectedId === support.id ? " is-selected" : ""
                   }`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Select support ${support.supportIndex + 1}, reaction ${support.reactionT.toFixed(1)} tonnes`}
                   onClick={() => onSelect(support.id)}
+                  onKeyDown={(event) => selectFromKeyboard(event, support.id)}
                 >
                   <line x1={x} y1={89} x2={x} y2={142} />
                   <path d={`M ${x} 90 l -8 14 h 16 z`} />
