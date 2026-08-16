@@ -1144,7 +1144,7 @@ function analysisSummary(
   };
 }
 
-export function calculateProject(model: ProjectModel): CalculationResult {
+function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boolean): CalculationResult {
   model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   model = applyAutomaticProjectWindInputs(model);
   const started = performance.now();
@@ -1201,6 +1201,7 @@ export function calculateProject(model: ProjectModel): CalculationResult {
         combinedCogPassOnly: false,
       },
       analysis: emptyAnalysis(baseLoad.point),
+      stabilityLoads: { neutral: [], basic: [], slope: [], dynamic: [] },
       resolvedTrailers: [],
       beam: emptyBeamMetrics(),
       metrics: {
@@ -1329,7 +1330,20 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     group.loadT = neutral?.loads[index] ?? 0;
     group.reactionFraction = neutral?.state.fractions[index] ?? 0;
   });
-  const supportSettle = cargoSupportBeam(model, resolved.trailers, spineAxlePoints, model.supports);
+  const supportSettle = stabilityProbeOnly
+    ? {
+        supportResults: model.supports.slice(0, 10).map((support) => ({
+          ...support,
+          active: support.allowed,
+          reactionT: 0,
+          disableReason: support.allowed ? "" as const : "NOT_ALLOWED" as const,
+        })),
+        iterations: 0,
+        converged: true,
+        warning: "",
+        settledSystem: null,
+      }
+    : cargoSupportBeam(model, resolved.trailers, spineAxlePoints, model.supports);
   if (supportSettle.warning) warnings.push(supportSettle.warning);
   const activeSupportCount = supportSettle.supportResults.filter((item) => item.active).length;
   const analysedTrailerIndex = clamp(
@@ -1340,25 +1354,29 @@ export function calculateProject(model: ProjectModel): CalculationResult {
   const cargoPoint = cargoCogPoint(model);
   const cargoEnvelopeX = Math.max(0, model.cargo.envelopeX);
   const cargoEnvelopeY = Math.max(0, model.cargo.envelopeY);
-  const cargoBasicPoints = [
-    { x: cargoPoint.x, y: cargoPoint.y },
-    { x: cargoPoint.x - cargoEnvelopeX, y: cargoPoint.y + cargoEnvelopeY },
-    { x: cargoPoint.x + cargoEnvelopeX, y: cargoPoint.y + cargoEnvelopeY },
-    { x: cargoPoint.x - cargoEnvelopeX, y: cargoPoint.y - cargoEnvelopeY },
-    { x: cargoPoint.x + cargoEnvelopeX, y: cargoPoint.y - cargoEnvelopeY },
-  ];
+  const cargoBasicPoints = stabilityProbeOnly
+    ? []
+    : [
+        { x: cargoPoint.x, y: cargoPoint.y },
+        { x: cargoPoint.x - cargoEnvelopeX, y: cargoPoint.y + cargoEnvelopeY },
+        { x: cargoPoint.x + cargoEnvelopeX, y: cargoPoint.y + cargoEnvelopeY },
+        { x: cargoPoint.x - cargoEnvelopeX, y: cargoPoint.y - cargoEnvelopeY },
+        { x: cargoPoint.x + cargoEnvelopeX, y: cargoPoint.y - cargoEnvelopeY },
+      ];
   const cargoSlopeShift = {
     x: cargoPoint.z * Math.tan((model.environment.longitudinalSlopeDeg * Math.PI) / 180),
     y: cargoPoint.z * Math.tan((model.environment.transverseSlopeDeg * Math.PI) / 180),
   };
-  const cargoSlopePoints = perimeterCases(
-    cargoPoint,
-    cargoEnvelopeX,
-    cargoEnvelopeY,
-    cargoSlopeShift.x,
-    cargoSlopeShift.y,
-    model.environment.combinationFactor,
-  );
+  const cargoSlopePoints = stabilityProbeOnly
+    ? []
+    : perimeterCases(
+        cargoPoint,
+        cargoEnvelopeX,
+        cargoEnvelopeY,
+        cargoSlopeShift.x,
+        cargoSlopeShift.y,
+        model.environment.combinationFactor,
+      );
   const cargoWindShift = {
     x:
       model.cargo.massT > EPS
@@ -1379,14 +1397,16 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     x: cargoAccelerationShift.x + cargoWindShift.x,
     y: cargoAccelerationShift.y + cargoWindShift.y,
   };
-  const cargoDynamicPoints = perimeterCases(
-    cargoPoint,
-    cargoEnvelopeX,
-    cargoEnvelopeY,
-    cargoSlopeShift.x + cargoDynamicShift.x,
-    cargoSlopeShift.y + cargoDynamicShift.y,
-    model.environment.combinationFactor,
-  );
+  const cargoDynamicPoints = stabilityProbeOnly
+    ? []
+    : perimeterCases(
+        cargoPoint,
+        cargoEnvelopeX,
+        cargoEnvelopeY,
+        cargoSlopeShift.x + cargoDynamicShift.x,
+        cargoSlopeShift.y + cargoDynamicShift.y,
+        model.environment.combinationFactor,
+      );
   const cargoBasicCases = cargoBasicPoints.map((point) =>
     utilisationForPoint(point, cargoPoint.z, polygon, groups, axleBase, resolved.mass),
   );
@@ -1399,13 +1419,28 @@ export function calculateProject(model: ProjectModel): CalculationResult {
   const cargoBasicAngle = minimumOf(cargoBasicCases.map((item) => item.state.minimumAngleDeg));
   const cargoSlopeAngle = minimumOf(cargoSlopeCases.map((item) => item.state.minimumAngleDeg));
   const cargoDynamicAngle = minimumOf(cargoDynamicCases.map((item) => item.state.minimumAngleDeg));
-  const cargoBasicMetric = metric(cargoBasicAngle, limits.basicAngle, true);
-  const cargoSlopeMetric = metric(cargoSlopeAngle, limits.slopeAngle, true);
-  const cargoDynamicMetric = metric(cargoDynamicAngle, limits.dynamicAngle, true);
-  const cargoOnlyPass = [cargoBasicMetric, cargoSlopeMetric, cargoDynamicMetric].every(
+  const cargoBasicMetric = metric(
+    stabilityProbeOnly ? null : cargoBasicAngle,
+    limits.basicAngle,
+    true,
+    !stabilityProbeOnly,
+  );
+  const cargoSlopeMetric = metric(
+    stabilityProbeOnly ? null : cargoSlopeAngle,
+    limits.slopeAngle,
+    true,
+    !stabilityProbeOnly,
+  );
+  const cargoDynamicMetric = metric(
+    stabilityProbeOnly ? null : cargoDynamicAngle,
+    limits.dynamicAngle,
+    true,
+    !stabilityProbeOnly,
+  );
+  const cargoOnlyPass = !stabilityProbeOnly && [cargoBasicMetric, cargoSlopeMetric, cargoDynamicMetric].every(
     (item) => item.status === "OK",
   );
-  const combinedCogRequired = !cargoOnlyPass;
+  const combinedCogRequired = !stabilityProbeOnly && !cargoOnlyPass;
   const analysedTrailer = resolved.trailers[analysedTrailerIndex] ?? resolved.trailers[0];
   const supportsOutsideTrailer = analysedTrailer
     ? model.supports
@@ -1438,13 +1473,15 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     }
   }
   const dynamicRatio = ratios.length ? Math.min(...ratios) : 0;
-  const beamResult = spineBeam(
-    model,
-    resolved.trailers,
-    spineAxlePoints,
-    supportSettle.supportResults,
-    supportSettle.settledSystem,
-  );
+  const beamResult = stabilityProbeOnly
+    ? { metrics: emptyBeamMetrics(), warning: "" }
+    : spineBeam(
+        model,
+        resolved.trailers,
+        spineAxlePoints,
+        supportSettle.supportResults,
+        supportSettle.settledSystem,
+      );
   if (beamResult.warning) warnings.push(beamResult.warning);
   const beam = beamResult.metrics;
   const spineUtil = Math.max(beam.shearUtilisation, beam.bendingUtilisation);
@@ -1544,20 +1581,22 @@ export function calculateProject(model: ProjectModel): CalculationResult {
   if (basicCases.some((item) => !item.state.inside)) warnings.push("One or more static COG envelope points fall outside the stability polygon.");
   if (dynamicCases.some((item) => !item.state.inside)) warnings.push("One or more dynamic COG points fall outside the stability polygon.");
   const componentMassCogs = resolvedComponentCogs(model, resolved.trailers, baseLoad);
-  const analysis = analysisSummary(
-    groups,
-    polygon,
-    basicPoints,
-    slopePoints,
-    dynamicPoints,
-    basicCases,
-    slopeCases,
-    dynamicCases,
-    slopeShift,
-    windShift,
-    accelerationShift,
-    dynamicShift,
-  );
+  const analysis = stabilityProbeOnly
+    ? emptyAnalysis(resolved.combined)
+    : analysisSummary(
+        groups,
+        polygon,
+        basicPoints,
+        slopePoints,
+        dynamicPoints,
+        basicCases,
+        slopeCases,
+        dynamicCases,
+        slopeShift,
+        windShift,
+        accelerationShift,
+        dynamicShift,
+      );
 
   return {
     status,
@@ -1602,6 +1641,12 @@ export function calculateProject(model: ProjectModel): CalculationResult {
       combinedCogPassOnly,
     },
     analysis,
+    stabilityLoads: {
+      neutral: [...staticLoads],
+      basic: basicCases.map((item) => [...item.loads]),
+      slope: slopeCases.map((item) => [...item.loads]),
+      dynamic: dynamicCases.map((item) => [...item.loads]),
+    },
     resolvedTrailers: resolved.trailers.map((item) => ({
       id: item.input.id,
       index: item.index,
@@ -1618,6 +1663,21 @@ export function calculateProject(model: ProjectModel): CalculationResult {
     warnings,
     calculationMs: performance.now() - started,
   };
+}
+
+/** Full authoritative engineering calculation used for logged cases and results. */
+export function calculateProject(model: ProjectModel): CalculationResult {
+  return calculateProjectInternal(model, false);
+}
+
+/**
+ * Exact stability-only calculation used by mathematical search planning. It
+ * retains the production COG, hydraulic reaction, utilisation and angle
+ * equations while omitting support settlement and the spine-beam solve. No
+ * probe result is eligible to be logged or selected as a final pass.
+ */
+export function calculateStabilityProbe(model: ProjectModel): CalculationResult {
+  return calculateProjectInternal(model, true);
 }
 
 export function applySharedAxleLines(model: ProjectModel, axleLines: number): ProjectModel {

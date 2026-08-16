@@ -3,6 +3,7 @@ import {
   applySharedSplit,
   applySharedX,
   calculateProject,
+  calculateStabilityProbe,
   engineeringLimitsFor,
 } from "./core";
 import {
@@ -13,6 +14,7 @@ import {
   createArrangementDescriptor,
   effectiveMaximumFormationWidth,
   formationPitchBounds,
+  minimumAxleLinesPerTrainForSupports,
   minimumTotalAxleLines,
   longitudinalOffsetCandidates,
   spacingCandidates,
@@ -397,6 +399,7 @@ export async function runArrangementOptimiser(
 
   const definition = model.catalogue.find((item) => item.id === settings.trailerDefinitionId)!;
   const hydraulicModes = arrangementHydraulicModes(model);
+  const supportAxleLowerBound = minimumAxleLinesPerTrainForSupports(model, settings);
   const plannedFormationUpperBound = Array.from(
     {
       length: Math.max(0, settings.maximumTrains - settings.minimumTrains + 1),
@@ -404,7 +407,10 @@ export async function runArrangementOptimiser(
     (_, offset) => settings.minimumTrains + offset,
   ).flatMap((trainCount) => {
     const totalAxleLowerBound = minimumTotalAxleLines(model, settings, trainCount);
-    const minimumPerTrain = Math.ceil(totalAxleLowerBound / trainCount);
+    const minimumPerTrain = Math.max(
+      Math.ceil(totalAxleLowerBound / trainCount),
+      supportAxleLowerBound,
+    );
     const axleBuckets = validAxleLineValues(settings, trainCount, minimumPerTrain).length;
     const pitchesPerBucket = settings.searchMode === "MATHEMATICAL_BRANCH_BOUND"
       ? mathematicalPitchEvaluationUpperBound(definition, settings, trainCount, model.cargo.widthM)
@@ -468,6 +474,62 @@ export async function runArrangementOptimiser(
       hydraulicSystemMode,
     );
     const arranged = applyArrangementDescriptor(model, descriptor);
+    if (finalVerification && verificationTemplate) {
+      const unitStarted = performance.now();
+      run.progress.reference = `${arrangementSummary(descriptor)}; exact winning case`;
+      addEvent(
+        run,
+        started,
+        "Final",
+        "Reapplying exact winning arrangement",
+        `${arrangementSummary(descriptor)}; split ${verificationTemplate.d138}, X ${verificationTemplate.e89.toFixed(6)} m and pins ${verificationTemplate.pinnedAxleLines.join(", ") || "none"}.`,
+      );
+      let verificationModel = applySharedSplit(arranged, verificationTemplate.d138);
+      verificationModel = applySharedX(verificationModel, verificationTemplate.e89);
+      verificationModel = applySharedPins(
+        verificationModel,
+        verificationTemplate.pinnedAxleLines,
+      );
+      const verificationResult = calculateProject(verificationModel);
+      run.passes.push(makeRefinementPass(
+        run,
+        descriptor,
+        verificationTemplate,
+        verificationResult,
+        performance.now() - unitStarted,
+      ));
+      completedUnits += 1;
+      run.progress.overallCompleted = completedUnits;
+      run.progress.overallPercent = Math.min(
+        99,
+        (completedUnits / Math.max(1, run.progress.overallPlanned)) * 100,
+      );
+      rankArrangementPasses(run.passes, model);
+      addEvent(
+        run,
+        started,
+        "Final",
+        verificationResult.status === "PASS"
+          ? "Winning case reapplied and verified"
+          : "Winning case recheck failed",
+        `Split ${verificationTemplate.d138}, X ${verificationTemplate.e89.toFixed(6)} m and pins ${verificationTemplate.pinnedAxleLines.join(", ") || "none"}; ${verificationResult.failDetail || "exact result verified"}.`,
+        verificationResult.status === "PASS" ? "PASS" : "ERROR",
+      );
+      addEvent(
+        run,
+        started,
+        "Final",
+        verificationResult.status === "PASS"
+          ? "Winning formation fully verified"
+          : "Winning formation verification failed",
+        verificationResult.status === "PASS"
+          ? `${arrangementSummary(descriptor)}; the retained split, X, pins, support settlement, beam response and engineering result were recalculated from the applied formation.`
+          : `${arrangementSummary(descriptor)}; the retained winning case did not reproduce its earlier PASS status.`,
+        verificationResult.status === "PASS" ? "PASS" : "ERROR",
+      );
+      await notify(true, true);
+      return verificationResult.status === "PASS";
+    }
     const mathematical = settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" && !finalVerification;
     const exactModel: ProjectModel = {
       ...arranged,
@@ -520,32 +582,7 @@ export async function runArrangementOptimiser(
     run.progress.phasePlanned = Math.max(1, run.progress.overallPlanned - 1);
     run.progress.phasePercent = Math.min(100, (completedUnits / run.progress.phasePlanned) * 100);
     rankArrangementPasses(run.passes, model);
-    let hasPass = inner.passes.some((pass) => pass.result.status === "PASS");
-    if (finalVerification && verificationTemplate) {
-      let verificationModel = applyArrangementDescriptor(model, descriptor);
-      verificationModel = applySharedSplit(verificationModel, verificationTemplate.d138);
-      verificationModel = applySharedX(verificationModel, verificationTemplate.e89);
-      verificationModel = applySharedPins(verificationModel, verificationTemplate.pinnedAxleLines);
-      const verificationStarted = performance.now();
-      const verificationResult = calculateProject(verificationModel);
-      run.passes.push(makeRefinementPass(
-        run,
-        descriptor,
-        verificationTemplate,
-        verificationResult,
-        performance.now() - verificationStarted,
-      ));
-      hasPass ||= verificationResult.status === "PASS";
-      rankArrangementPasses(run.passes, model);
-      addEvent(
-        run,
-        started,
-        "Final",
-        verificationResult.status === "PASS" ? "Winning case reapplied and verified" : "Winning case recheck failed",
-        `Split ${verificationTemplate.d138}, X ${verificationTemplate.e89.toFixed(6)} m and pins ${verificationTemplate.pinnedAxleLines.join(", ") || "none"}; ${verificationResult.failDetail || "exact result verified"}.`,
-        verificationResult.status === "PASS" ? "PASS" : "ERROR",
-      );
-    }
+    const hasPass = inner.passes.some((pass) => pass.result.status === "PASS");
     if (hasPass) {
       addEvent(
         run,
@@ -591,7 +628,11 @@ export async function runArrangementOptimiser(
     for (let trainCount = settings.minimumTrains; trainCount <= settings.maximumTrains; trainCount += 1) {
       throwIfStopped(callbacks.signal);
       const totalAxleLowerBound = minimumTotalAxleLines(model, settings, trainCount);
-      const minimumPerTrain = Math.ceil(totalAxleLowerBound / trainCount);
+      const capacityPerTrainLowerBound = Math.ceil(totalAxleLowerBound / trainCount);
+      const minimumPerTrain = Math.max(
+        capacityPerTrainLowerBound,
+        supportAxleLowerBound,
+      );
       const axleValues = validAxleLineValues(settings, trainCount, minimumPerTrain);
       if (!axleValues.length) {
         addEvent(
@@ -600,6 +641,87 @@ export async function runArrangementOptimiser(
           "Bound",
           "Train count rejected by capacity or stock bound",
           `${trainCount} train${trainCount === 1 ? "" : "s"} require at least ${totalAxleLowerBound} total AL, but no enabled 4/5/6-AL module composition fits the configured per-train and stock limits.`,
+          "INFO",
+        );
+        continue;
+      }
+      if (supportAxleLowerBound > capacityPerTrainLowerBound) {
+        addEvent(
+          run,
+          started,
+          "Bound",
+          "Support span raised the axle-line lower bound",
+          `${trainCount} train${trainCount === 1 ? "" : "s"} need at least ${capacityPerTrainLowerBound} AL/train by capacity, but every allowed support can fit on the deck only from ${supportAxleLowerBound} AL/train. Shorter constructible module combinations were removed without calculation.`,
+          "INFO",
+        );
+      }
+      const maximumAxleBucket = axleValues[axleValues.length - 1];
+      const pitchBoundsForBranch = formationPitchBounds(
+        definition,
+        settings,
+        trainCount,
+        model.cargo.widthM,
+      );
+      const viableHydraulicModes: HydraulicSystemMode[] = [];
+      if (pitchBoundsForBranch) {
+        for (const hydraulicSystemMode of hydraulicModes) {
+          const resultAtPitch = (pitchM: number) => calculateStabilityProbe(
+            applyArrangementDescriptor(
+              model,
+              createArrangementDescriptor(
+                definition,
+                settings,
+                trainCount,
+                maximumAxleBucket.composition,
+                pitchM,
+                [],
+                hydraulicSystemMode,
+              ),
+            ),
+          );
+          const minimumPitchResult = resultAtPitch(pitchBoundsForBranch.minimumPitchM);
+          const maximumPitchResult =
+            Math.abs(pitchBoundsForBranch.maximumPitchM - pitchBoundsForBranch.minimumPitchM) <= EPS
+              ? minimumPitchResult
+              : resultAtPitch(pitchBoundsForBranch.maximumPitchM);
+          const branchYBound = deriveHydraulicYPitchBound(
+            model,
+            pitchBoundsForBranch.minimumPitchM,
+            pitchBoundsForBranch.maximumPitchM,
+            minimumPitchResult,
+            maximumPitchResult,
+          );
+          if (branchYBound.feasible) {
+            viableHydraulicModes.push(hydraulicSystemMode);
+          } else {
+            addEvent(
+              run,
+              started,
+              "Bound",
+              "Hydraulic Y-span bound rejected formation",
+              `${trainCount} train${trainCount === 1 ? "" : "s"} with ${hydraulicModeLabel(hydraulicSystemMode)} hydraulics cannot provide the required ${branchYBound.requiredSpanM.toFixed(3)} m Y span even at ${maximumAxleBucket.axleLines} AL/train and the maximum ${pitchBoundsForBranch.maximumPitchM.toFixed(3)} m pitch. Every smaller AL formation in this branch was removed.`,
+              "INFO",
+            );
+          }
+        }
+      }
+      if (!pitchBoundsForBranch || !viableHydraulicModes.length) {
+        addEvent(
+          run,
+          started,
+          "Bound",
+          "Train branch has no feasible hydraulic width",
+          pitchBoundsForBranch
+            ? `${trainCount} train${trainCount === 1 ? "" : "s"} cannot form a passing 3-point or 4-point stability boundary inside the configured spacing horizon.`
+            : `${trainCount} train${trainCount === 1 ? "" : "s"} do not fit inside the configured spacing horizon at minimum clearance.`,
+          "INFO",
+        );
+        addEvent(
+          run,
+          started,
+          "Bound",
+          "Maximum axle formation failed necessary gates",
+          `${trainCount} train${trainCount === 1 ? "" : "s"} at the maximum ${maximumAxleBucket.axleLines} AL/train cannot satisfy the configured formation-width and hydraulic stability gates. Smaller axle formations at this train count were removed by the same necessary bounds.`,
           "INFO",
         );
         continue;
@@ -661,7 +783,7 @@ export async function runArrangementOptimiser(
               [],
               hydraulicSystemMode,
             );
-            return calculateProject(applyArrangementDescriptor(model, descriptor));
+            return calculateStabilityProbe(applyArrangementDescriptor(model, descriptor));
           };
           const minimumPitchResult = resultAtPitch(pitchBounds.minimumPitchM);
           const maximumPitchResult =
@@ -729,7 +851,7 @@ export async function runArrangementOptimiser(
             return outcome;
           };
           const preferred = effectivePitchBounds.preferredPitchM;
-          const independentPitchCandidates = [
+          const independentPitchCandidates = [...new Set([
             ...spacingCandidates(definition, settings, trainCount, model.cargo.widthM),
             effectivePitchBounds.minimumPitchM,
             effectivePitchBounds.maximumPitchM,
@@ -738,11 +860,22 @@ export async function runArrangementOptimiser(
             (value) =>
               value >= effectivePitchBounds.minimumPitchM - EPS &&
               value <= effectivePitchBounds.maximumPitchM + EPS,
+          ).map((value) => Math.round(value * 1e9) / 1e9))].sort(
+            (left, right) =>
+              Math.abs(left - preferred) - Math.abs(right - preferred) ||
+              right - left,
           );
           const passingSeeds: number[] = [];
           for (const seed of independentPitchCandidates) {
             const outcome = await testPitch(seed);
-            if (outcome.passed) passingSeeds.push(seed);
+            if (outcome.passed) {
+              // Candidates are ordered by distance from the preferred pitch.
+              // The first passing seed is therefore the correct bracket for
+              // nearest-boundary convergence; testing farther independent
+              // seeds before that convergence cannot improve the pitch goal.
+              passingSeeds.push(seed);
+              break;
+            }
           }
           const preferredOutcome = await testPitch(preferred);
           if (!preferredOutcome.passed && passingSeeds.length) {
@@ -843,7 +976,7 @@ export async function runArrangementOptimiser(
         if (previous) return previous;
         const passStart = run.passes.length;
         let passed = false;
-        for (const hydraulicSystemMode of hydraulicModes) {
+        for (const hydraulicSystemMode of viableHydraulicModes) {
           const modePassed = await evaluateAxleBucket(axleValues[index], hydraulicSystemMode);
           passed ||= modePassed;
         }
@@ -878,17 +1011,27 @@ export async function runArrangementOptimiser(
           selectWinningAxleIndex(0);
         } else if (axleValues.length > 1) {
           const maximumIndex = axleValues.length - 1;
-          const upperOutcome = await evaluateAxleIndex(maximumIndex);
-          if (upperOutcome.passed) {
-            let failingIndex = 0;
-            let passingIndex = maximumIndex;
+          let failingIndex = 0;
+          let passingIndex: number | null = null;
+          let probeIndex = 1;
+          while (probeIndex <= maximumIndex) {
+            const outcome = await evaluateAxleIndex(probeIndex);
+            if (outcome.passed) {
+              passingIndex = probeIndex;
+              break;
+            }
+            failingIndex = probeIndex;
+            if (probeIndex === maximumIndex) break;
+            probeIndex = Math.min(maximumIndex, probeIndex * 2 + 1);
+          }
+          if (passingIndex !== null) {
             while (passingIndex - failingIndex > 1) {
               const midpointIndex = Math.floor((failingIndex + passingIndex) / 2);
               if ((await evaluateAxleIndex(midpointIndex)).passed) passingIndex = midpointIndex;
               else failingIndex = midpointIndex;
             }
             selectWinningAxleIndex(passingIndex);
-          } else if (upperOutcome.necessaryGateFailure) {
+          } else if ((await evaluateAxleIndex(maximumIndex)).necessaryGateFailure) {
             addEvent(
               run,
               started,
@@ -899,6 +1042,7 @@ export async function runArrangementOptimiser(
             );
           } else {
             for (let index = 1; index < maximumIndex; index += 1) {
+              if (bucketOutcomes.has(index)) continue;
               if ((await evaluateAxleIndex(index)).passed) {
                 selectWinningAxleIndex(index);
                 break;
