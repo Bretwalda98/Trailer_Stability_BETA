@@ -1,4 +1,4 @@
-name: Deploy Trailer Stability beta to GitHub Pages
+name: Build and deploy Trailer Stability to Pages
 
 on:
   push:
@@ -11,8 +11,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: github-pages
-  cancel-in-progress: false
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -31,6 +31,12 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Verify TypeScript
+        run: pnpm typecheck
+      - name: Run engineering regressions
+        run: pnpm test:engine
       - name: Build static GitHub Pages site
         run: pnpm build
         env:
@@ -38,6 +44,8 @@ jobs:
           NEXT_PUBLIC_BASE_PATH: /Trailer_Stability_BETA
       - name: Disable Jekyll processing
         run: touch dist/client/.nojekyll
+      - name: Verify static entry point
+        run: test -f dist/client/index.html
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:

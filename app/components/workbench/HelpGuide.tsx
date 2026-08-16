@@ -14,7 +14,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
-export const HELP_GUIDE_REVISION = "Professional workbench revision 0.9.0 · reviewed 15 August 2026";
+export const HELP_GUIDE_REVISION = "Professional workbench revision 0.9.1 · reviewed 16 August 2026";
 
 const GUIDE_SECTIONS = [
   {
@@ -57,7 +57,10 @@ const GUIDE_SECTIONS = [
       "Select WORKSPACE to choose Arrangement, Hydraulics, Load cases, Stability, Spine beam or Report.",
       "Use the model tree to select cargo, trailers, axle lines, supports and hydraulic groups.",
       "In any engineering drawing, click or tap geometry to inspect it. Drag a clear area to pan; use the mouse wheel or a two-finger pinch to zoom around the pointer position.",
+      "Hold Shift or the middle mouse button to pan from over selectable geometry. A completed drag or pinch is suppressed so it cannot accidentally activate the item underneath.",
+      "With the drawing focused, use the arrow keys to pan, + and - to zoom, and 0 or Home to fit the model.",
       "Use Fit model or Reset view to recover the complete drawing. Double-clicking a clear desktop drawing area also fits the model.",
+      "In Spine beam, point, touch or use the left and right arrow keys on each chart to inspect the exact X position and result value.",
       "On a phone, use View, Model and Results to move between the drawing, model tree and result editor.",
       "The Plan, End, Side, Hydraulics, Stability and Spine beam views all use the current authoritative result.",
     ],

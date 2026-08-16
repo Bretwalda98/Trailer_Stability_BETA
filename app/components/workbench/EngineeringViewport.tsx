@@ -9,7 +9,7 @@ import {
   IconRefresh,
   IconRuler2,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Point2, ProjectModel } from "../../engine/types";
 import {
   createViewportTransform,
@@ -65,6 +65,7 @@ export function EngineeringViewport({
   const hostRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; start: Point2; pan: Point2 } | null>(null);
   const pointersRef = useRef(new Map<number, Point2>());
+  const suppressClickRef = useRef(false);
   const pinchRef = useRef<{
     distance: number;
     midpoint: Point2;
@@ -76,6 +77,7 @@ export function EngineeringViewport({
   const [pan, setPan] = useState<Point2>({ x: 0, y: 0 });
   const [layersOpen, setLayersOpen] = useState(false);
   const [gesture, setGesture] = useState<"idle" | "panning" | "pinching">("idle");
+  const gestureHintId = useId();
 
   useEffect(() => {
     const host = hostRef.current;
@@ -131,6 +133,18 @@ export function EngineeringViewport({
     setPan({ x: 0, y: 0 });
   };
 
+  const zoomBy = (factor: number) => {
+    setZoom((currentZoom) => {
+      const nextZoom = Math.max(0.35, Math.min(6, currentZoom * factor));
+      const ratio = nextZoom / currentZoom;
+      setPan((currentPan) => ({
+        x: currentPan.x * ratio,
+        y: currentPan.y * ratio,
+      }));
+      return nextZoom;
+    });
+  };
+
   const pointerPair = () => Array.from(pointersRef.current.values()).slice(0, 2);
   const pairGeometry = (points: Point2[]) => {
     const [first, second] = points;
@@ -158,11 +172,14 @@ export function EngineeringViewport({
     if (!geometry) return;
     pinchRef.current = { ...geometry, zoom, pan };
     dragRef.current = null;
+    suppressClickRef.current = true;
     setGesture("pinching");
   };
 
   const pointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 && event.button !== 1) return;
+    if (pointersRef.current.size === 0) suppressClickRef.current = false;
+    if (event.button === 1) event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const pointer = pointerInViewBox(event);
     pointersRef.current.set(event.pointerId, pointer);
@@ -170,7 +187,11 @@ export function EngineeringViewport({
       beginPinch();
       return;
     }
-    if ((event.target as Element).closest(".svg-selectable")) return;
+    if (
+      event.button === 0 &&
+      !event.shiftKey &&
+      (event.target as Element).closest(".svg-selectable")
+    ) return;
     dragRef.current = {
       pointerId: event.pointerId,
       start: pointer,
@@ -209,6 +230,7 @@ export function EngineeringViewport({
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (Math.hypot(pointer.x - drag.start.x, pointer.y - drag.start.y) > 2) {
+      suppressClickRef.current = true;
       setGesture("panning");
     }
     setPan({
@@ -261,6 +283,40 @@ export function EngineeringViewport({
     compact,
   };
 
+  const keyboardNavigate = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if ((event.target as Element).closest("button, input, select, textarea")) return;
+    const distance = event.shiftKey ? 72 : 24;
+    switch (event.key) {
+      case "ArrowLeft":
+        setPan((current) => ({ ...current, x: current.x - distance }));
+        break;
+      case "ArrowRight":
+        setPan((current) => ({ ...current, x: current.x + distance }));
+        break;
+      case "ArrowUp":
+        setPan((current) => ({ ...current, y: current.y - distance }));
+        break;
+      case "ArrowDown":
+        setPan((current) => ({ ...current, y: current.y + distance }));
+        break;
+      case "+":
+      case "=":
+        zoomBy(1.2);
+        break;
+      case "-":
+      case "_":
+        zoomBy(1 / 1.2);
+        break;
+      case "0":
+      case "Home":
+        resetView();
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+  };
+
   const renderedView = (() => {
     switch (view) {
       case "end":
@@ -302,7 +358,7 @@ export function EngineeringViewport({
             className="icon-button"
             title="Zoom out"
             aria-label="Zoom out"
-            onClick={() => setZoom((current) => Math.max(0.35, current / 1.2))}
+            onClick={() => zoomBy(1 / 1.2)}
           >
             <IconMinus size={16} />
           </button>
@@ -311,7 +367,7 @@ export function EngineeringViewport({
             className="icon-button"
             title="Zoom in"
             aria-label="Zoom in"
-            onClick={() => setZoom((current) => Math.min(6, current * 1.2))}
+            onClick={() => zoomBy(1.2)}
           >
             <IconPlus size={16} />
           </button>
@@ -429,16 +485,29 @@ export function EngineeringViewport({
       <div
         className={`viewport-stage gesture-${gesture}`}
         ref={hostRef}
+        role="group"
+        tabIndex={0}
+        aria-label="Engineering drawing interaction area"
+        aria-describedby={!compact ? gestureHintId : undefined}
+        aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown + - 0 Home"
+        onKeyDown={keyboardNavigate}
+        onClickCapture={(event) => {
+          if (!suppressClickRef.current) return;
+          event.preventDefault();
+          event.stopPropagation();
+          suppressClickRef.current = false;
+        }}
         onDoubleClick={(event) => {
           if (!(event.target as Element).closest(".svg-selectable")) resetView();
         }}
       >
         {renderedView}
         {!compact && (
-          <div className="viewport-gesture-hint" aria-hidden="true">
-            <span>Drag to pan</span>
-            <span>Wheel or pinch to zoom</span>
-            <span>Select geometry for details</span>
+          <div id={gestureHintId} className="viewport-gesture-hint">
+            <span className="mouse-instruction">Mouse: drag to pan, wheel to zoom</span>
+            <span className="touch-instruction">Touch: drag to pan, pinch to zoom</span>
+            <span>Tap geometry for details</span>
+            <span className="keyboard-instruction">Keys: arrows, +, -, 0</span>
           </div>
         )}
         {preferences.legend && (view === "plan" || view === "end" || view === "side") && (
