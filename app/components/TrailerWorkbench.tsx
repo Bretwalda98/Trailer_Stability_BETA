@@ -7,7 +7,7 @@ import { passToProject } from "../engine/optimiser";
 import type { SetupSourceType } from "../engine/setup";
 import type { PassResult, ProjectModel } from "../engine/types";
 import { downloadText } from "../engine/download";
-import { buildAutocadExport } from "../engine/autocad-export";
+import { buildAutocadCompactExport } from "../engine/autocad-compact-export";
 import { buildAutocadDxfExport } from "../engine/autocad-dxf-export";
 import { buildCaseTextExport } from "../engine/case-text-export";
 import { downloadBytes, exportVerificationWorkbook } from "../engine/workbook";
@@ -22,6 +22,7 @@ import {
 import { EngineeringDetailsDrawer } from "./workbench/EngineeringDetailsDrawer";
 import { EngineeringViewport } from "./workbench/EngineeringViewport";
 import { HelpGuide } from "./workbench/HelpGuide";
+import { HandCalculationDialog } from "./workbench/HandCalculationDialog";
 import { ModelTree } from "./workbench/ModelTree";
 import { OptimiserDrawer } from "./workbench/OptimiserDrawer";
 import { ReportWorkspace } from "./workbench/ReportWorkspace";
@@ -75,6 +76,7 @@ export default function TrailerWorkbench() {
   const [optimiserOpen, setOptimiserOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("workspace");
   const [helpOpen, setHelpOpen] = useState(false);
+  const [handCalculationOpen, setHandCalculationOpen] = useState(false);
   const [optimiserStartModel, setOptimiserStartModel] = useState<ProjectModel | null>(null);
   const [undoModel, setUndoModel] = useState<ProjectModel | null>(null);
   const [saved, setSaved] = useState(true);
@@ -204,11 +206,11 @@ export default function TrailerWorkbench() {
     setBusy(true);
     const code = createAutoCADTransferCode();
     try {
-      const payload = buildAutocadExport(model, engine.result, new Date().toISOString());
-      const payloadFilename = `trailer-stability-autocad-${code}.json`;
-      downloadText(JSON.stringify(payload, null, 2), payloadFilename, "application/json");
+      const payload = buildAutocadCompactExport(model, engine.result, new Date().toISOString());
+      const payloadFilename = `trailer-stability-autocad-${code}.sartd`;
+      downloadText(payload, payloadFilename, "text/plain;charset=utf-8");
       setToast({
-        text: `AutoCAD case exported as ${payloadFilename}. In AutoCAD run SARTDJSON and select this numbered case file.`,
+        text: `Compact AutoCAD case exported as ${payloadFilename}. In AutoCAD run SARTDCAD, or choose CAD in SARTDRUN, and select this file.`,
         type: "ok",
       });
     } catch (error) {
@@ -401,6 +403,12 @@ export default function TrailerWorkbench() {
         onContinue={() => setStartupOpen(false)}
       />
       <HelpGuide open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <HandCalculationDialog
+        open={handCalculationOpen}
+        model={model}
+        result={engine.result}
+        onClose={() => setHandCalculationOpen(false)}
+      />
       {wizardOpen && (
         <SetupWizard
           activeModel={model}
@@ -530,6 +538,7 @@ export default function TrailerWorkbench() {
           onModelChange={setModel}
           onSelect={setSelectedId}
           onNavigate={changeWorkspace}
+          onOpenHandCalculation={() => setHandCalculationOpen(true)}
         />
       </div>
       <div className="lower-drawers">

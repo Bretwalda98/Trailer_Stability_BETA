@@ -9,6 +9,13 @@ async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
+  if (!worker || typeof worker.fetch !== "function") {
+    const html = await readFile(new URL("../dist/client/index.html", import.meta.url), "utf8");
+    return new Response(html, {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
   return worker.fetch(
     new Request("http://localhost/", { headers: { accept: "text/html" } }),
     {
@@ -47,13 +54,15 @@ test("server-renders the standalone engineering workbench", async () => {
   assert.doesNotMatch(html, /Your site is taking shape|Building your site/);
 });
 
-test("keeps phone, offline and coded AutoCAD exchange capabilities wired", async () => {
-  const [page, layout, manifest, workbench, optimiserDrawer, engineHook, worker, planView, endView, sideView, css, professionalCss, serviceWorker, setupWizard, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine] = await Promise.all([
+test("keeps phone, offline, interactive drawing and compact AutoCAD capabilities wired", async () => {
+  const [page, layout, manifest, workbench, optimiserDrawer, engineeringViewport, handCalculation, engineHook, worker, planView, endView, sideView, css, professionalCss, serviceWorker, setupWizard, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
     readFile(new URL("../app/components/TrailerWorkbench.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/workbench/OptimiserDrawer.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/workbench/EngineeringViewport.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/workbench/HandCalculationDialog.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/hooks/useEngineeringEngine.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/workers/engineering.worker.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/components/workbench/views/PlanView.tsx", import.meta.url), "utf8"),
@@ -74,12 +83,22 @@ test("keeps phone, offline and coded AutoCAD exchange capabilities wired", async
   assert.match(layout, /professional-workbench\.css/);
   assert.match(manifest, /"display": "standalone"/);
   assert.match(workbench, /assetPath\("\/sw\.js"\)/);
-  assert.match(workbench, /buildAutocadExport/);
-  assert.doesNotMatch(workbench, /downloadText\(JSON\.stringify\(AUTOCAD_EXPORT_KEY/);
-  assert.match(workbench, /select this numbered case file/);
+  assert.match(workbench, /buildAutocadCompactExport/);
+  assert.match(workbench, /\.sartd/);
+  assert.match(workbench, /SARTDCAD/);
+  assert.doesNotMatch(workbench, /AUTOCAD_EXPORT_KEY/);
   assert.doesNotMatch(workbench, /onExportWorkbook/);
   assert.match(workbench, /aria-label="Mobile workspace"/);
   assert.match(workbench, /StartupChooser/);
+  assert.match(workbench, /HandCalculationDialog/);
+  assert.match(handCalculation, /katex\.renderToString/);
+  assert.match(handCalculation, /Download PDF/);
+  assert.match(handCalculation, /\.latex/);
+  assert.match(engineeringViewport, /onBackgroundPointerDown: pointerDown/);
+  assert.match(engineeringViewport, /onBackgroundPointerMove: pointerMove/);
+  assert.match(engineeringViewport, /onWheel: wheel/);
+  assert.match(engineeringViewport, /pointersRef/);
+  assert.match(engineeringViewport, /beginPinch/);
   assert.match(engineHook, /deterministicInitialCalculation/);
   assert.match(engineHook, /new Worker\(new URL\("\.\.\/workers\/engineering\.worker\.ts"/);
   assert.match(worker, /calculateProject/);
@@ -99,7 +118,7 @@ test("keeps phone, offline and coded AutoCAD exchange capabilities wired", async
   assert.match(css, /\.mobile-workspace-nav/);
   assert.match(professionalCss, /\.workbench-grid\.navigation-collapsed/);
   assert.match(professionalCss, /\.arrangement-wizard-shell\.preview-expanded/);
-  assert.match(serviceWorker, /autocad-export-key-v1\.json/);
+  assert.doesNotMatch(serviceWorker, /autocad-export-key-v1\.json/);
   assert.doesNotMatch(serviceWorker, /Verification_Template|xlsm|xlsx/);
   assert.match(serviceWorker, /caches\.match/);
   assert.match(setupWizard, /Auto-calculate wind areas/);

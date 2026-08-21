@@ -1,6 +1,6 @@
 "use client";
 
-import { IconAlertTriangle, IconCheck, IconExternalLink, IconTrash } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCheck, IconExternalLink, IconFileDescription, IconTrash } from "@tabler/icons-react";
 import {
   applySharedAxleLines,
   applySharedPins,
@@ -30,6 +30,7 @@ interface ResultsInspectorProps {
   onModelChange(model: ProjectModel): void;
   onSelect(id: string): void;
   onNavigate(workspace: WorkspaceId): void;
+  onOpenHandCalculation(): void;
 }
 
 const RESULT_KEYS: Array<{
@@ -375,6 +376,7 @@ export function ResultsInspector({
   onModelChange,
   onSelect,
   onNavigate,
+  onOpenHandCalculation,
 }: ResultsInspectorProps) {
   const selected = vm.entityById.get(selectedId) ?? null;
   const blockingInvalid = ["GEOMETRY_FAIL", "SUPPORT_FAIL", "ERROR"].includes(result.status);
@@ -416,7 +418,12 @@ export function ResultsInspector({
       )}
 
       <section className="inspector-section result-summary">
-        <header><b>Results</b><span>{workerReady ? "Worker active" : "Safe fallback"}</span></header>
+        <header className="result-summary-header">
+          <div><b>Results</b><span>{workerReady ? "Worker active" : "Safe fallback"}</span></div>
+          <button type="button" onClick={onOpenHandCalculation}>
+            <IconFileDescription size={14} /> Hand calculation
+          </button>
+        </header>
         <dl className="primary-results">
               {RESULT_KEYS.map(({ key, label, unit, scale }) => {
                 const metric = result.metrics[key];

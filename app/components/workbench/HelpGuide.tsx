@@ -13,8 +13,9 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
+import { assetPath } from "../../site-path";
 
-export const HELP_GUIDE_REVISION = "Professional workbench revision 0.9.1 · reviewed 16 August 2026";
+export const HELP_GUIDE_REVISION = "Professional workbench revision 0.9.2 · reviewed 21 August 2026";
 
 const GUIDE_SECTIONS = [
   {
@@ -140,12 +141,12 @@ const GUIDE_SECTIONS = [
     label: "Data exchange",
     icon: IconFileImport,
     title: "Exchange project and drawing data",
-    intro: "Project JSON keeps the complete case portable. The AutoCAD export is a coded, versioned drawing-data interchange.",
+    intro: "Project JSON keeps the complete case portable. The AutoCAD action produces a compact, versioned drawing-data interchange containing only the values used by the drafting program.",
     steps: [
       "Use Open case or Import project JSON to resume a saved calculation-ready case.",
-      "Export to AutoCAD downloads one numbered case-data JSON containing resolved trailer geometry, axle points, hydraulic groups, supports, catalogue values and the authoritative result.",
-      "In AutoCAD run SARTDJSON and select the numbered trailer-stability-autocad-######.json file. The versioned decoding key is supplied separately with the AutoCAD reader package and is not downloaded for every case.",
-      "The AutoCAD action does not require a bridge, a running desktop application or a particular drawing command; AutoLISP or another reader can consume the JSON directly.",
+      "Export to AutoCAD downloads one numbered .sartd file containing the resolved cargo, packing, trailers, hydraulic routing, pins, supports, boundary and drawing-result values used by the AutoLISP workflow.",
+      "In AutoCAD run SARTDCAD, or run SARTDRUN and choose CAD, then select the numbered trailer-stability-autocad-######.sartd file. The selected source is read once and retained through ModelSpace, PaperSpace and annotation stages.",
+      "The line-oriented CAD file requires no JSON parser, PowerShell conversion or running desktop bridge. The direct DXF export remains available as a separate compatibility route.",
       "Project JSON saves the complete standalone web model and is available from the More menu.",
       "Visual-only packing footprint geometry stays in the web project and does not alter the engineering calculation.",
     ],
@@ -155,7 +156,7 @@ const GUIDE_SECTIONS = [
     label: "Methods and values",
     icon: IconTable,
     title: "Understand the values used by the engine",
-    intro: "The engineering reference lists the active inputs, constants, equations, pass gates and result fields. It is maintained with the calculation engine and is also embedded in AutoCAD exports.",
+    intro: "The engineering reference lists the active inputs, constants, equations, pass gates and result fields. It is maintained with the calculation engine and is available in Engineering details and the detailed hand calculation.",
     steps: [
       "Mass and COG values are combined using a mass-weighted average of cargo, packing, trailer, PPU and transporter components.",
       "The basic, slope and dynamic cases use the hydraulic stability polygon and the minimum angle from the COG projection to each controlling edge.",
@@ -163,7 +164,7 @@ const GUIDE_SECTIONS = [
       "Axle reactions satisfy total force and both horizontal moments. Pinned axle lines, support settlement and minimum active-support rules are applied before a case can pass.",
       "Road traction capacity is the lower of surface adhesion and the mechanical driven-bogie limit; braking is checked independently with its own adhesion and mechanical limits.",
       "Spine-beam shear, bending, deflection and local bending are calculated from settled support reactions and the selected load case.",
-      "Open Engineering details for the current numeric values, or read the engineering reference in the AutoCAD JSON for the equations and field meanings.",
+      "Open Engineering details for the current numeric values, or open Hand calculation from Results for rendered equations, explanations, PDF and LaTeX source.",
     ],
   },
   {
@@ -270,6 +271,14 @@ export function HelpGuide({
             <aside>
               <IconArrowsMaximize size={16} />
               Full-page mode retains filters, editing, CSV export and the latest authoritative calculation.
+            </aside>
+          )}
+          {section.id === "exchange" && (
+            <aside className="help-download-note">
+              <IconFileImport size={16} />
+              <span>
+                AutoCAD reader: <a href={assetPath("/autocad/SARENS_TRAILERDRAFTSMAN_v1.20_FULL_PACKAGE.zip")} download>download the tested v1.20 full package</a>. Its SHA-256 checksum is supplied beside the archive.
+              </span>
             </aside>
           )}
         </article>
