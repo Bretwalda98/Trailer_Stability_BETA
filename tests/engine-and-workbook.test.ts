@@ -75,8 +75,10 @@ import {
 import { derivedCargoWindInputs } from "../app/engine/wind";
 import { exportVerificationWorkbook, importWorkbook } from "../app/engine/workbook";
 import { AUTOCAD_EXPORT_KEY, buildAutocadExport } from "../app/engine/autocad-export";
+import { AUTOCAD_COMPACT_FORMAT, buildAutocadCompactExport } from "../app/engine/autocad-compact-export";
 import { buildAutocadDxfExport } from "../app/engine/autocad-dxf-export";
 import { buildCaseTextExport } from "../app/engine/case-text-export";
+import { buildHandCalculation } from "../app/engine/hand-calculation";
 
 function arrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -161,6 +163,14 @@ async function main(): Promise<void> {
   assert.match(directDxf, /TS_TRAILERS/);
   assert.match(directDxf, /Trailer Stability/);
   assert.match(directDxf, /0\nEOF\n$/);
+  const compactCad = buildAutocadCompactExport(model, calculateProject(model), "2026-08-21T09:30:00.000Z");
+  const compactCadLines = compactCad.trim().split(/\r?\n/);
+  assert.equal(compactCadLines[0], `${AUTOCAD_COMPACT_FORMAT}|1|MM-T-KN-DEG|REAR-LOW-X`);
+  assert.equal(compactCadLines.filter((item) => item.startsWith("TRAILER|")).length, calculateProject(model).resolvedTrailers.length);
+  assert.equal(compactCadLines.filter((item) => item.startsWith("HYDRAULIC|")).length, calculateProject(model).resolvedTrailers.length);
+  assert.equal(compactCadLines.filter((item) => item.startsWith("BOUNDARY|")).length, calculateProject(model).stabilityPolygon.length);
+  assert.match(compactCadLines.at(-1) ?? "", /^END\|/);
+  assert.doesNotMatch(compactCad, /[{}\[\]"]/);
   const caseText = buildCaseTextExport(model, calculateProject(model), "2026-08-14T12:00:00.000Z");
   assert.match(caseText, /TRAILER STABILITY — CASE RECORD/);
   assert.match(caseText, /RESOLVED TRAILERS/);
@@ -469,6 +479,31 @@ async function main(): Promise<void> {
   );
   assert.equal(mathematicalBest.arrangement.trainCount, 2);
   assert.equal(mathematicalBest.arrangement.totalAxleLines, 8);
+  const comparisonSearch = structuredClone(compactArrangementSearch);
+  comparisonSearch.arrangementOptimiser.maximumTrains = 5;
+  comparisonSearch.arrangementOptimiser.limitFormationWidthToCargo = false;
+  comparisonSearch.arrangementOptimiser.maximumFormationWidthM = 20;
+  comparisonSearch.arrangementOptimiser.searchMaximumFormationWidthM = 20;
+  const comparisonRun = await runArrangementOptimiser(comparisonSearch);
+  const comparisonTrainCounts = [...new Set(
+    comparisonRun.passes
+      .filter((pass) => pass.result.status === "PASS" && pass.arrangement)
+      .map((pass) => pass.arrangement!.trainCount),
+  )].sort((left, right) => left - right);
+  assert.deepEqual(
+    comparisonTrainCounts,
+    [2, 3, 4, 5],
+    "A mathematical search should retain one exact alternative for four permitted train counts.",
+  );
+  const comparisonBest = comparisonRun.passes.find((pass) => pass.overallRank === 1);
+  assert.ok(comparisonBest?.arrangement);
+  assert.equal(
+    comparisonBest.arrangement.totalAxleLines,
+    Math.min(...comparisonRun.passes
+      .filter((pass) => pass.result.status === "PASS" && pass.arrangement)
+      .map((pass) => pass.arrangement!.totalAxleLines)),
+    "Total axle lines must remain the primary arrangement objective.",
+  );
   const appliedFourPointPass = arrangementRun.passes.find(
     (pass) => pass.arrangement?.hydraulicSystemMode === "FOUR_POINT",
   );
@@ -817,6 +852,16 @@ async function main(): Promise<void> {
     ].every((item) => item.status === "OK"),
   );
   assert.equal(result.stabilityReferences.combinedCogRequired, !result.stabilityReferences.cargoOnlyPass);
+  const handCalculation = buildHandCalculation(model, result, "2026-08-21T12:00:00.000Z");
+  assert.deepEqual(
+    handCalculation.sections.map((section) => section.id),
+    ["basis", "mass-cog", "actions", "hydraulics", "stability", "supports", "beam", "traction", "conclusion"],
+  );
+  assert.match(handCalculation.latex, /^\\documentclass\[11pt,a4paper\]\{article\}/);
+  assert.match(handCalculation.latex, /Spine-beam shear, bending and deflection/);
+  assert.match(handCalculation.latex, /Road-transport traction and braking/);
+  assert.match(handCalculation.latex, /\\frac\{\\sum_i m_i x_i\}/);
+  assert.doesNotMatch(handCalculation.latex, /(?:NaN|Infinity)/);
   assert.deepEqual(engineeringLimitsFor("First"), {
     basicUtil: 0.7,
     basicAngle: 9,

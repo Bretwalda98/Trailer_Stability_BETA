@@ -1,11 +1,10 @@
-const CACHE_NAME = "trailer-stability-v0.7-standalone-8";
+const CACHE_NAME = "trailer-stability-v0.7-standalone-9";
 const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, "");
 const assetPath = (path) => `${BASE_PATH}${path}`;
 const CORE_ASSETS = [
   assetPath("/"),
   assetPath("/manifest.webmanifest"),
   assetPath("/favicon.svg"),
-  assetPath("/autocad-export-key-v1.json"),
 ];
 
 self.addEventListener("install", (event) => {

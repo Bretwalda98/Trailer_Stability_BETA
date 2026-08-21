@@ -17,6 +17,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -44,14 +45,21 @@ jobs:
           NEXT_PUBLIC_BASE_PATH: /Trailer_Stability_BETA
       - name: Disable Jekyll processing
         run: touch dist/client/.nojekyll
-      - name: Verify static entry point
-        run: test -f dist/client/index.html
+      - name: Verify rendered application and Pages base path
+        run: |
+          node tests/rendered-html.test.mjs
+          test -f dist/client/index.html
+          test -f dist/client/sw.js
+          test -f dist/client/autocad/SARENS_TRAILERDRAFTSMAN_v1.20_FULL_PACKAGE.zip
+          test -f dist/client/autocad/SARENS_TRAILERDRAFTSMAN_v1.20_FULL_PACKAGE.sha256
+          grep -q "/Trailer_Stability_BETA/" dist/client/index.html
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: dist/client
 
   deploy:
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

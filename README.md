@@ -22,10 +22,8 @@ data on the user's device unless an export is explicitly requested.
 - Stability envelopes, plan, elevation, axle-line loading, beam-load, shear,
   bending and deflection charts.
 - Permanent full-case, axle, beam-mesh and activity CSV logs plus project JSON.
-- Versioned project JSON and coded AutoCAD JSON interchange. The AutoCAD
-  action downloads a separate key file that maps every field code, unit and
-  coordinate convention, so AutoLISP and other tools can read the payload
-  without depending on the web UI.
+- Versioned project JSON plus a single compact, line-oriented AutoCAD exchange
+  containing the resolved geometry and drawing results consumed by the LISP.
 - Installable PWA service worker for offline use after the first HTTPS/localhost
   load.
 
@@ -89,18 +87,18 @@ pnpm test
 The automated checks cover analytical beam cases, shared-control propagation,
 COG-relative solving, engineering limits, support settling, loose packing,
 selectable beam cases, optimiser execution, the trailer catalogue, responsive
-server rendering and the coded AutoCAD interchange contract.
+server rendering and the compact AutoCAD interchange contract.
 
 The supplied v0.7 profile completed 1,135 fully calculated/logged cases in
 7.82 seconds in the final local benchmark (6.89 ms average per case), meeting
 the nine-second target. See `VERIFICATION_REPORT.md`.
 
-The Help and user guide includes the active calculation reference. The same
-equations, constants, inputs and result fields are embedded in each AutoCAD
-JSON payload under the `eng` section.
+The Help and user guide includes the active calculation reference. Results also
+provide a detailed hand calculation with rendered equations plus PDF and
+LaTeX-source downloads.
 
 ## Data handling
 
-Project autosave uses browser local storage. JSON and CSV files are processed
-locally and downloaded directly by the browser; the app does not need to upload
-engineering data to a server.
+Project autosave uses browser local storage. Project JSON, CSV and compact CAD
+files are processed locally and downloaded directly by the browser; the app
+does not need to upload engineering data to a server.

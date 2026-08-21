@@ -25,7 +25,10 @@
     "drizzle-orm": "0.45.2",
     "fflate": "0.8.2",
     "gsap": "^3.15.0",
+    "html2canvas": "^1.4.1",
     "hyperformula": "^3.3.0",
+    "jspdf": "^4.2.1",
+    "katex": "^0.18.4",
     "next": "16.2.6",
     "react": "19.2.6",
     "react-dom": "19.2.6",
@@ -35,6 +38,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@tailwindcss/postcss": "4.2.1",
+    "@types/katex": "^0.16.8",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",

@@ -31,6 +31,7 @@ import type {
 } from "./types";
 
 const EPS = 1e-9;
+export const MINIMUM_TRAIN_COUNT_COMPARISONS = 4;
 
 /**
  * Keep automatic formation searching independent of the hydraulic system
@@ -399,6 +400,10 @@ export async function runArrangementOptimiser(
 
   const definition = model.catalogue.find((item) => item.id === settings.trailerDefinitionId)!;
   const hydraulicModes = arrangementHydraulicModes(model);
+  const comparisonTrainCountTarget = Math.min(
+    MINIMUM_TRAIN_COUNT_COMPARISONS,
+    Math.max(0, settings.maximumTrains - settings.minimumTrains + 1),
+  );
   const supportAxleLowerBound = minimumAxleLinesPerTrainForSupports(model, settings);
   const plannedFormationUpperBound = Array.from(
     {
@@ -435,6 +440,15 @@ export async function runArrangementOptimiser(
     "Planning",
     "Hydraulic systems scheduled",
     `${hydraulicModes.map(hydraulicModeLabel).join(" and ")} configurations will be evaluated for every retained train, axle and spacing formation.`,
+  );
+  addEvent(
+    run,
+    started,
+    "Planning",
+    "Train-count comparison scheduled",
+    comparisonTrainCountTarget > 1
+      ? `The search will retain an exact passing arrangement for at least ${comparisonTrainCountTarget} permitted train counts where feasible. Total axle lines remain the primary ranking objective; train count is only the secondary tie-breaker.`
+      : "Only one train count is permitted by the configured search limits.",
   );
   if (settings.allowReducedEnvironmentalActions) {
     addEvent(
@@ -729,16 +743,23 @@ export async function runArrangementOptimiser(
       const smallestBuildableTotalAL = axleValues[0].axleLines * trainCount;
       const currentBest = run.passes.find((pass) => pass.overallRank === 1);
       const currentArrangement = currentBest?.arrangement;
-      if (
+      const representedTrainCounts = new Set(
+        run.passes
+          .filter((pass) => pass.result.status === "PASS" && pass.arrangement)
+          .map((pass) => pass.arrangement!.trainCount),
+      );
+      const dominatedByCurrentBest = Boolean(
         currentArrangement &&
-        (
-          smallestBuildableTotalAL > currentArrangement.totalAxleLines ||
           (
-            smallestBuildableTotalAL === currentArrangement.totalAxleLines &&
-            trainCount >= currentArrangement.trainCount
-          )
-        )
-      ) {
+            smallestBuildableTotalAL > currentArrangement.totalAxleLines ||
+            (
+              smallestBuildableTotalAL === currentArrangement.totalAxleLines &&
+              trainCount >= currentArrangement.trainCount
+            )
+          ),
+      );
+      const retainForComparison = representedTrainCounts.size < comparisonTrainCountTarget;
+      if (dominatedByCurrentBest && !retainForComparison && currentArrangement) {
         addEvent(
           run,
           started,
@@ -748,6 +769,16 @@ export async function runArrangementOptimiser(
           "INFO",
         );
         continue;
+      }
+      if (dominatedByCurrentBest && retainForComparison && currentArrangement) {
+        addEvent(
+          run,
+          started,
+          "Comparison",
+          "Dominated train count retained for comparison",
+          `${trainCount} train${trainCount === 1 ? "" : "s"} cannot beat the current ${currentArrangement.totalAxleLines}-AL primary result, but this branch is being solved so the operator can compare at least ${comparisonTrainCountTarget} permitted train-count arrangements.`,
+          "INFO",
+        );
       }
       const evaluateAxleBucket = async ({
         axleLines,

@@ -15848,3 +15848,389 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
     " SARTDRUN asks Excel or JSON once, retains that selected import in memory, then runs the same"
     " six-stage ModelSpace/PaperSpace/viewport/attribute workflow for either source."))
 (princ)
+
+; =================================================================================================
+; v1.20 COMPACT WEBSITE CAD EXCHANGE
+; -------------------------------------------------------------------------------------------------
+; The browser now exports only the values consumed by the established Excel-derived drawing data
+; object.  The SARTD-CAD line format is parsed directly by AutoLISP: no JSON reader, key file or
+; PowerShell conversion is involved.  JSON commands remain available for legacy case files.
+; =================================================================================================
+
+(setq sartd:*version* "1.20")
+(setq sartd:*cad-source* nil)
+(setq sartd:*cad-data* nil)
+
+(defun sartd:v120-replace-all (text old new / pos prefix suffix)
+  (setq text (sartd:str text))
+  (while (setq pos (vl-string-search old text))
+    (setq prefix (if (> pos 0) (substr text 1 pos) ""))
+    (setq suffix (substr text (+ pos (strlen old) 1)))
+    (setq text (strcat prefix new suffix)))
+  text)
+
+(defun sartd:v120-decode (text)
+  ; Decode in this order so a literal %257C remains the text %7C and is not decoded twice.
+  (setq text (sartd:v120-replace-all (sartd:str text) "%0D" " "))
+  (setq text (sartd:v120-replace-all text "%0A" " "))
+  (setq text (sartd:v120-replace-all text "%7C" "|"))
+  (sartd:v120-replace-all text "%25" "%"))
+
+(defun sartd:v120-split (text delimiter / out pos step)
+  (setq out nil text (sartd:str text) step (strlen delimiter))
+  (while (setq pos (vl-string-search delimiter text))
+    (setq out (append out (list (substr text 1 pos))))
+    (setq text (substr text (+ pos step 1))))
+  (append out (list text)))
+
+(defun sartd:v120-fields (line)
+  (mapcar 'sartd:v120-decode (sartd:v120-split line "|")))
+
+(defun sartd:v120-field (fields index default / value)
+  (setq value (nth index fields))
+  (if (null value) default value))
+
+(defun sartd:v120-number (fields index default)
+  (sartd:num (sartd:v120-field fields index "") default))
+
+(defun sartd:v120-integer (fields index default)
+  (sartd:int (sartd:v120-field fields index "") default))
+
+(defun sartd:v120-boolean (fields index)
+  (sartd:yesp (sartd:v120-field fields index "0")))
+
+(defun sartd:v120-add-unique (value values)
+  (if (member value values) values (append values (list value))))
+
+(defun sartd:v120-pins (value / pins item number)
+  (setq pins nil)
+  (if (/= (vl-string-trim " \t\r\n" (sartd:str value)) "")
+    (foreach item (sartd:v120-split value ",")
+      (setq number (sartd:int item 0))
+      (if (> number 0) (setq pins (append pins (list number))))))
+  pins)
+
+(defun sartd:v120-log (message / handle)
+  (sartd:pr (strcat "CAD: " message))
+  (if (and sartd:*cad-source* (/= sartd:*cad-source* ""))
+    (progn
+      (setq handle (open (strcat sartd:*cad-source* ".lisp.log") "a"))
+      (if handle
+        (progn (write-line (strcat "[SARTDCAD] " message) handle) (close handle)))))
+  message)
+
+(defun sartd:v120-trailer-record (fields deck / index name axles ppul ppur)
+  (setq index (sartd:v120-integer fields 1 0)
+        name (sartd:v120-field fields 2 "TRAILER")
+        axles (sartd:v120-integer fields 3 0)
+        ppul (sartd:v120-boolean fields 9)
+        ppur (sartd:v120-boolean fields 10))
+  (list
+    (cons 'row (+ 88 index))
+    (cons 'type name)
+    (cons 'model name)
+    (cons 'axles axles)
+    (cons 'x (sartd:v120-number fields 4 0.0))
+    (cons 'y (sartd:v120-number fields 5 0.0))
+    (cons 'spacing (sartd:v120-number fields 6 1400.0))
+    (cons 'length (sartd:v120-number fields 7 0.0))
+    (cons 'width (sartd:v120-number fields 8 2430.0))
+    (cons 'deck-height deck)
+    (cons 'ppu-left ppul)
+    (cons 'ppu-right ppur)
+    (cons 'ppu-left-length (sartd:v120-number fields 11 0.0))
+    (cons 'ppu-right-length (sartd:v120-number fields 12 0.0))
+    (cons 'ppu-state (sartd:ppu-state ppul ppur))
+    (cons 'ppu-left-weight (sartd:v120-number fields 13 0.0))
+    (cons 'ppu-right-weight (sartd:v120-number fields 14 0.0))
+    (cons 'self-weight (sartd:v120-number fields 15 0.0))
+    (cons 'axle-capacity (sartd:v120-number fields 16 0.0))
+    (cons 'trailer-index index)))
+
+(defun sartd:v120-hydraulic-records (fields / index mode split rl fl rr fr base)
+  (setq index (sartd:v120-integer fields 1 0)
+        mode (strcase (sartd:v120-field fields 2 "THREE_POINT"))
+        split (sartd:v120-integer fields 3 0)
+        rl (sartd:v120-integer fields 4 1)
+        fl (sartd:v120-integer fields 5 rl)
+        rr (sartd:v120-integer fields 6 1)
+        fr (sartd:v120-integer fields 7 rr)
+        base (+ 138 (* 2 (1- index))))
+  (list
+    (list (cons 'trailer-index index) (cons 'trailer-row (+ 88 index)) (cons 'excel-row base)
+          (cons 'side-name "TOP") (cons 'side-factor 1.0)
+          (cons 'group-before rl) (cons 'group-after fl) (cons 'split-after split))
+    (list (cons 'trailer-index index) (cons 'trailer-row (+ 88 index)) (cons 'excel-row (1+ base))
+          (cons 'side-name "BOTTOM") (cons 'side-factor 0.0)
+          (cons 'group-before rr) (cons 'group-after fr) (cons 'split-after split))))
+
+(defun sartd:v120-read-compact (path / handle raw lineNo fields tag header caseRec loadRec packRec deck trailers
+                                      hydDefs pins supportX supportW supportWidth boundary resultRec endRec mode
+                                      groupIds groups record index pinValues errors totalAx totalPP trailer minY maxY
+                                      capacity data)
+  (setq sartd:*cad-source* path sartd:*cad-data* nil)
+  (if (not (and path (/= path "") (findfile path)))
+    (progn (sartd:v120-log "The selected compact CAD exchange file does not exist.") nil)
+    (progn
+      (setq handle (open path "r"))
+      (if (not handle)
+        (progn (sartd:v120-log "The selected compact CAD exchange file could not be opened.") nil)
+        (progn
+          (setq lineNo 0 header nil caseRec nil loadRec nil packRec nil deck 0.0 trailers nil
+                hydDefs nil pins nil supportX nil supportW nil supportWidth nil boundary nil resultRec nil
+                endRec nil mode nil groupIds nil errors nil capacity 0.0)
+          (while (setq raw (read-line handle))
+            (setq lineNo (1+ lineNo))
+            (if (/= (vl-string-trim " \t\r\n" raw) "")
+              (progn
+                (setq fields (sartd:v120-fields raw) tag (strcase (sartd:v120-field fields 0 "")))
+                (cond
+                  ((= lineNo 1)
+                    (if (and (= tag "SARTD-CAD") (= (sartd:v120-integer fields 1 0) 1))
+                      (setq header T)
+                      (setq errors (append errors (list "Header must be SARTD-CAD version 1.")))))
+                  ((= tag "CASE") (setq caseRec fields))
+                  ((= tag "LOAD") (setq loadRec fields))
+                  ((= tag "PACKING") (setq packRec fields))
+                  ((= tag "DECK") (setq deck (sartd:v120-number fields 1 0.0)))
+                  ((= tag "TRAILER")
+                    (setq record (sartd:v120-trailer-record fields deck))
+                    (setq trailers (append trailers (list record)))
+                    (if (<= capacity 0.0) (setq capacity (sartd:v120-number fields 16 0.0))))
+                  ((= tag "HYDRAULIC")
+                    (if (not mode) (setq mode (strcase (sartd:v120-field fields 2 "THREE_POINT"))))
+                    (setq groups (list (sartd:v120-integer fields 4 0) (sartd:v120-integer fields 5 0)
+                                       (sartd:v120-integer fields 6 0) (sartd:v120-integer fields 7 0)))
+                    (foreach index groups
+                      (if (> index 0) (setq groupIds (sartd:v120-add-unique index groupIds))))
+                    (setq hydDefs (append hydDefs (sartd:v120-hydraulic-records fields))))
+                  ((= tag "PINS")
+                    (setq index (sartd:v120-integer fields 1 0)
+                          pinValues (sartd:v120-pins (sartd:v120-field fields 2 "")))
+                    (if pinValues (setq pins (append pins (list (cons index pinValues))))))
+                  ((= tag "SUPPORT")
+                    (setq supportX (append supportX (list (sartd:v120-number fields 2 0.0))))
+                    (setq supportWidth (append supportWidth (list (sartd:v120-number fields 3 0.0))))
+                    (setq supportW (append supportW (list (sartd:v120-number fields 6 0.0)))))
+                  ((= tag "BOUNDARY")
+                    (setq boundary (append boundary (list (list (sartd:v120-number fields 2 0.0)
+                                                                  (sartd:v120-number fields 3 0.0))))))
+                  ((= tag "RESULT") (setq resultRec fields))
+                  ((= tag "END") (setq endRec fields))
+                  (T (sartd:v120-log (strcat "Ignoring unknown record on line " (itoa lineNo) ": " tag)))))))
+          (close handle)
+
+          (if (not header) (setq errors (append errors (list "A valid SARTD-CAD|1 header was not found."))))
+          (if (not caseRec) (setq errors (append errors (list "CASE record is missing."))))
+          (if (not loadRec) (setq errors (append errors (list "LOAD record is missing."))))
+          (if (not packRec) (setq errors (append errors (list "PACKING record is missing."))))
+          (if (<= deck 0.0) (setq errors (append errors (list "DECK height must be greater than zero."))))
+          (if (not trailers) (setq errors (append errors (list "At least one TRAILER record is required."))))
+          (if (not hydDefs) (setq errors (append errors (list "HYDRAULIC records are missing."))))
+          (if (not resultRec) (setq errors (append errors (list "RESULT record is missing."))))
+          (if (not endRec) (setq errors (append errors (list "END record is missing or the file is incomplete."))))
+          (if (and loadRec (or (<= (sartd:v120-number loadRec 1 0.0) 0.0)
+                               (<= (sartd:v120-number loadRec 2 0.0) 0.0)
+                               (<= (sartd:v120-number loadRec 3 0.0) 0.0)))
+            (setq errors (append errors (list "LOAD length, width and height must be greater than zero."))))
+          (if (and mode (= mode "FOUR_POINT") (< (length groupIds) 4))
+            (sartd:v120-log "Warning: the four-point case has fewer than four populated group IDs; it will still be drawn for diagnosis."))
+          (if (and boundary (< (length boundary) 3))
+            (sartd:v120-log "Warning: the authoritative boundary has fewer than three points; hydraulic routing will still be drawn."))
+
+          (if errors
+            (progn (foreach record errors (sartd:v120-log record)) nil)
+            (progn
+              (setq totalAx 0 totalPP 0)
+              (foreach trailer trailers
+                (setq totalAx (+ totalAx (sartd:int (cdr (assoc 'axles trailer)) 0)))
+                (if (cdr (assoc 'ppu-left trailer)) (setq totalPP (1+ totalPP)))
+                (if (cdr (assoc 'ppu-right trailer)) (setq totalPP (1+ totalPP))))
+              (setq minY (apply 'min (mapcar '(lambda (item) (cdr (assoc 'y item))) trailers))
+                    maxY (apply 'max (mapcar '(lambda (item) (cdr (assoc 'y item))) trailers)))
+              (setq data
+                (list
+                  (cons 'cad-source path)
+                  (cons 'cad-boundary boundary)
+                  (cons 'case-id (sartd:v120-field caseRec 1 "Untitled case"))
+                  (cons 'cargo-name (sartd:v120-field caseRec 1 "Untitled case"))
+                  (cons 'client-reference (sartd:v120-field caseRec 2 ""))
+                  (cons 'owner-reference (sartd:v120-field caseRec 3 ""))
+                  (cons 'document-reference (if (/= (sartd:v120-field caseRec 3 "") "")
+                                               (sartd:v120-field caseRec 3 "")
+                                               (sartd:v120-field caseRec 2 "")))
+                  (cons 'engineering-degree (sartd:v120-field caseRec 4 ""))
+                  (cons 'weight-cog-reference (sartd:v120-field caseRec 5 ""))
+                  (cons 'reference-point (sartd:v120-field caseRec 6 ""))
+                  (cons 'generated-date (sartd:v120-field caseRec 7 ""))
+                  (cons 'json-status (sartd:v120-field caseRec 8 ""))
+                  (cons 'htrailer deck) (cons 'htrailer-source "Compact CAD exchange") (cons 'deck-height deck)
+                  (cons 'load-length (sartd:v120-number loadRec 1 0.0))
+                  (cons 'load-width (sartd:v120-number loadRec 2 0.0))
+                  (cons 'load-height (sartd:v120-number loadRec 3 0.0))
+                  (cons 'load-extreme-x (sartd:v120-number loadRec 4 0.0))
+                  (cons 'load-extreme-y (sartd:v120-number loadRec 5 0.0))
+                  (cons 'cargo-weight (sartd:v120-number loadRec 6 0.0))
+                  (cons 'cargo-cog-x (sartd:v120-number loadRec 7 0.0))
+                  (cons 'cargo-cog-y (sartd:v120-number loadRec 8 0.0))
+                  (cons 'cargo-cog-z (sartd:v120-number loadRec 9 0.0))
+                  (cons 'cog-env-x (sartd:v120-number loadRec 10 0.0))
+                  (cons 'cog-env-y (sartd:v120-number loadRec 11 0.0))
+                  (cons 'packing-weight (sartd:v120-number packRec 1 0.0))
+                  (cons 'packing-height (sartd:v120-number packRec 2 0.0))
+                  (cons 'packing-cog-x (sartd:v120-number packRec 3 0.0))
+                  (cons 'packing-cog-y (sartd:v120-number packRec 4 0.0))
+                  (cons 'packing-cog-z (sartd:v120-number packRec 5 0.0))
+                  (cons 'support-x supportX) (cons 'support-width supportWidth) (cons 'support-weight supportW)
+                  (cons 'combined-weight (sartd:v120-number resultRec 1 0.0))
+                  (cons 'combined-cog-x (sartd:v120-number resultRec 2 0.0))
+                  (cons 'combined-cog-y (sartd:v120-number resultRec 3 0.0))
+                  (cons 'combined-cog-z (sartd:v120-number resultRec 4 0.0))
+                  (cons 'export-cogx (sartd:v120-number resultRec 5 0.0))
+                  (cons 'export-cogy (sartd:v120-number resultRec 6 0.0))
+                  (cons 'gross-axle-line-capacity (if (> capacity 0.0) capacity (sartd:v120-number resultRec 7 48.0)))
+                  (cons 'longitudinal-up (sartd:v120-number resultRec 8 0.0))
+                  (cons 'transversal (sartd:v120-number resultRec 9 0.0))
+                  (cons 'vwind (sartd:v120-number resultRec 10 0.0))
+                  (cons 'accel-long (sartd:v120-number resultRec 11 0.0))
+                  (cons 'basic-tipping (sartd:v120-number resultRec 12 0.0))
+                  (cons 'dynamic-tipping (sartd:v120-number resultRec 13 0.0))
+                  (cons 'trailers trailers) (cons 'trailer-count (length trailers))
+                  (cons 'total-axles totalAx) (cons 'total-powerpacks totalPP)
+                  (cons 'trailer-y-min minY) (cons 'trailer-y-max maxY)
+                  (cons 'hydraulic-grouping hydDefs) (cons 'pinned-axles pins)
+                  (cons 'hydraulic-mode mode)))
+              (setq sartd:*cad-data* data)
+              (setenv "SARTD_CAD_LAST" path)
+              (sartd:v120-log
+                (strcat "Validated compact exchange: " (itoa (length trailers)) " trailer(s), "
+                        (itoa totalAx) " axle lines, " (itoa (length groupIds)) " hydraulic groups, "
+                        (itoa (length boundary)) " boundary points."))
+              data)))))))
+
+(defun sartd:v120-prompt-source (/ previous path)
+  (setq previous (getenv "SARTD_CAD_LAST"))
+  (if (not previous) (setq previous ""))
+  (setq path (getfiled "Select Trailer Stability compact AutoCAD case" previous "sartd" 0))
+  (if path (setenv "SARTD_CAD_LAST" path))
+  path)
+
+(defun sartd:v120-summary (data)
+  (sartd:v120-log
+    (strcat "Case=" (sartd:str (sartd:g 'case-id data))
+            ", trailers=" (itoa (length (sartd:g 'trailers data)))
+            ", hydraulic sides=" (itoa (length (sartd:g 'hydraulic-grouping data)))
+            ", boundary points=" (itoa (length (sartd:g 'cad-boundary data))) ".")))
+
+(defun sartd:v120-draw-overlays (data base / boundary points point status)
+  ; Compact BOUNDARY values are already resolved millimetres in the case datum. Draw the supplied
+  ; polygon exactly as exported: a four-point case must remain a quadrilateral and must never be
+  ; replaced by the older three-point fallback.
+  (setq boundary (sartd:g 'cad-boundary data) points nil)
+  (foreach point boundary
+    (if (and (listp point) (numberp (car point)) (numberp (cadr point)))
+      (setq points
+        (append points
+          (list (list (+ (car base) (car point)) (+ (cadr base) (cadr point))))))))
+  (if (>= (length points) 3)
+    (progn
+      (sartd:ensure-layer "SARTD-HYD-RESULT" 4)
+      (sartd:add-lwpoly points "SARTD-HYD-RESULT" T)
+      (sartd:v120-log
+        (strcat "Authoritative compact stability boundary drawn from "
+                (itoa (length points)) " supplied point(s)."))))
+  (setq status (sartd:g 'json-status data))
+  (if status
+    (sartd:add-text (strcat "RESULT: " status)
+                    (list (car base) (- (cadr base) 700.0))
+                    220.0 "SARTD-ANNOTATION"))
+  T)
+
+; Retained-data summary and redraw paths must recognise CAD data as non-Excel data.  This prevents
+; worksheet-only diagnostics from receiving nil COM sheet objects while preserving legacy JSON.
+(defun sartd:v118-print-import-summary (data)
+  (cond
+    ((sartd:g 'cad-source data) (sartd:v120-summary data))
+    ((sartd:g 'json-root data)
+      (sartd:pr
+        (strcat "JSON data retained for ModelSpace: case=" (sartd:str (sartd:g 'case-id data))
+                ", trailers=" (itoa (length (sartd:g 'trailers data)))
+                ", boundary points=" (itoa (length (sartd:g 'json-polygon data))) ".")))
+    (T (sartd:print-data-summary data))))
+
+(defun sartd:v118-draw-json-overlays-if-present (data base / result)
+  (cond
+    ((sartd:g 'cad-source data)
+      (setq result (vl-catch-all-apply 'sartd:v120-draw-overlays (list data base)))
+      (if (vl-catch-all-error-p result)
+        (progn
+          (sartd:v120-log
+            (strcat "Compact CAD result overlay could not be drawn: "
+                    (vl-catch-all-error-message result)))
+          nil)
+        T))
+    ((sartd:g 'json-root data)
+      (setq result (vl-catch-all-apply 'sartd:json-draw-result-overlays (list data base base base)))
+      (if (vl-catch-all-error-p result)
+        (progn (sartd:pr (strcat "JSON result overlays could not be drawn: " (vl-catch-all-error-message result))) nil)
+        T))
+    (T T)))
+
+(defun sartd:v120-run-cad-import (/ path data result)
+  (setq path (sartd:v120-prompt-source))
+  (if (not (and path (/= path "")))
+    (progn (sartd:pr "No compact CAD exchange was selected; the run stopped.") nil)
+    (progn
+      (setq data (sartd:v120-read-compact path))
+      (if (not data)
+        (progn (sartd:v120-log "Compact CAD import stopped before drawing.") nil)
+        (if (not (sartd:v116-ensure-block-library))
+          (progn (sartd:v120-log "Compact CAD import stopped because the AutoCAD block library is not ready.") nil)
+          (progn
+            (sartd:v50-clear-scale-cache)
+            (setq result (sartd:v118-run-data-workflow data (strcat "compact CAD case: " path)))
+            (if result (sartd:v120-log "SARTDRUN compact CAD workflow complete.")
+              (sartd:v120-log "SARTDRUN compact CAD workflow stopped before completion."))
+            result))))))
+
+(defun sartd:v120-select-run-import (/ default choice)
+  (setq default (getenv "SARTD_RUN_IMPORT"))
+  (if (not (member default '("Excel" "CAD" "JSON"))) (setq default "CAD"))
+  (initget "Excel CAD JSON")
+  (setq choice (getkword (strcat "\nSARTDRUN import source [Excel/CAD/JSON] <" default ">: ")))
+  (if (null choice) (setq choice default))
+  (setenv "SARTD_RUN_IMPORT" choice)
+  choice)
+
+(defun c:SARTDRUN (/ source)
+  (vl-load-com)
+  (setq source (sartd:v120-select-run-import))
+  (cond
+    ((= source "CAD") (sartd:v120-run-cad-import))
+    ((= source "JSON") (sartd:v118-run-json-import))
+    ((= source "Excel") (sartd:v118-run-excel-import))
+    (T (sartd:pr "No SARTDRUN import source was selected.")))
+  (princ))
+
+(defun c:SARTDCAD ()
+  ; Full compact-data shortcut: one file selection followed by the common six drawing stages.
+  (vl-load-com)
+  (sartd:v120-run-cad-import)
+  (princ))
+
+(defun c:SARTDCADDATA (/ path data)
+  ; Diagnostic-only parser. It never deletes or draws ModelSpace entities.
+  (vl-load-com)
+  (setq path (sartd:v120-prompt-source))
+  (if path
+    (progn
+      (setq data (sartd:v120-read-compact path))
+      (if data (sartd:v120-summary data) (sartd:v120-log "SARTDCADDATA validation failed."))))
+  (princ))
+
+(princ
+  (strcat
+    "\nSARENS_TRAILERDRAFTSMAN v" sartd:*version* " compact CAD exchange loaded."
+    " Use SARTDCAD for the new .sartd website export, or SARTDRUN and choose CAD."
+    " Excel and legacy JSON imports remain available."))
+(princ)

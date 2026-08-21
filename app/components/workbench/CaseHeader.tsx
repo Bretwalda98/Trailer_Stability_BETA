@@ -128,7 +128,7 @@ export function CaseHeader({
             <div className="header-menu-popover">
               {!running && <button onClick={() => { onArrangementSetup(); setMenuOpen(false); }}><IconTargetArrow size={14} /> Find a trailer arrangement</button>}
               <button onClick={() => { onSetup(); setMenuOpen(false); }}><IconEdit size={14} /> Edit case inputs</button>
-              <button onClick={() => { onExportAutoCAD(); setMenuOpen(false); }}><IconExternalLink size={14} /> AutoCAD JSON case data</button>
+              <button onClick={() => { onExportAutoCAD(); setMenuOpen(false); }}><IconExternalLink size={14} /> AutoCAD compact case data</button>
               <button onClick={() => { onExportAutoCADDxf(); setMenuOpen(false); }}><IconExternalLink size={14} /> AutoCAD direct drawing (DXF)</button>
               <button onClick={() => { onExportExcel(); setMenuOpen(false); }}><IconFileSpreadsheet size={14} /> Export Excel calculation</button>
               <button onClick={() => { onExportCaseText(); setMenuOpen(false); }}><IconFileText size={14} /> Export detailed text record</button>

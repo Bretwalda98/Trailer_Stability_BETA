@@ -129,6 +129,19 @@ export function OptimiserDrawer({
     }),
     [run.passes, candidateSort],
   );
+  const trainCountComparisons = useMemo(() => {
+    const bestByTrainCount = new Map<number, PassResult>();
+    [...run.passes]
+      .filter((pass) => pass.overallRank !== null && pass.arrangement)
+      .sort((left, right) => (left.overallRank ?? Infinity) - (right.overallRank ?? Infinity))
+      .forEach((pass) => {
+        const trainCount = pass.arrangement!.trainCount;
+        if (!bestByTrainCount.has(trainCount)) bestByTrainCount.set(trainCount, pass);
+      });
+    return [...bestByTrainCount.values()].sort(
+      (left, right) => left.arrangement!.trainCount - right.arrangement!.trainCount,
+    );
+  }, [run.passes]);
   const [selectedPassId, setSelectedPassId] = useState("");
   useEffect(() => {
     if (!ranked.length) return;
@@ -191,6 +204,26 @@ export function OptimiserDrawer({
                   <button onClick={() => downloadText(exportBeamPointsCsv(run.passes), `${run.runReference || "optimiser"}-beam.csv`)}><IconDownload size={13} /> Beam</button>
                 </div>
               </header>
+              {arrangementRun && trainCountComparisons.length > 0 && (
+                <nav className="train-count-comparisons" aria-label="Best arrangement by train count">
+                  <span>Best by train count</span>
+                  <div>
+                    {trainCountComparisons.map((pass) => (
+                      <button
+                        type="button"
+                        key={pass.id}
+                        className={selectedPassId === pass.id ? "is-selected" : ""}
+                        onClick={() => setSelectedPassId(pass.id)}
+                        title={`Select ${pass.arrangement!.trainCount}-train comparison result ${pass.id}`}
+                      >
+                        <b>{pass.arrangement!.trainCount}T</b>
+                        <span>{pass.arrangement!.totalAxleLines} AL</span>
+                        <small>#{pass.overallRank}</small>
+                      </button>
+                    ))}
+                  </div>
+                </nav>
+              )}
               <div className="table-scroll">
                 <table className="engineering-table">
                   <thead>
