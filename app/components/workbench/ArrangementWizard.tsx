@@ -25,6 +25,7 @@ import {
   collectArrangementIssues,
   longitudinalOffsetCandidates,
   minimumTotalAxleLines,
+  MINIMUM_TRAIN_CLEARANCE_M,
   recommendedPackingSupports,
   spacingCandidates,
   validAxleLineValues,
@@ -42,6 +43,7 @@ import { hydrateProjectModel } from "../../data/default-model";
 export const ARRANGEMENT_WIZARD_DRAFT_KEY = "trailer-stability-arrangement-wizard-v2";
 type StepId = "cargo" | "packing" | "trailer" | "search" | "review";
 type InitialSource = "CURRENT" | "BLANK";
+type LoadPreviewView = "PLAN" | "SIDE" | "REAR";
 
 const STEPS: Array<{ id: StepId; label: string; description: string; icon: ReactNode }> = [
   { id: "cargo", label: "Cargo & case", description: "Envelope, mass and COG", icon: <IconBox size={17} /> },
@@ -165,12 +167,81 @@ function FormSection({
   );
 }
 
+function ArrangementLoadPreview({ model, view }: { model: ProjectModel; view: LoadPreviewView }) {
+  const cargo = model.cargo;
+  const packingHeight = Math.max(0, model.packing.heightM);
+  const deckHeight = Math.max(0, model.trailerDeckHeightM);
+  const cargoLength = Math.max(0.001, cargo.lengthM);
+  const cargoWidth = Math.max(0.001, cargo.widthM);
+  const cargoHeight = Math.max(0.001, cargo.heightM);
+  const pad = 54;
+  const width = 720;
+  const height = 420;
+  const usableWidth = width - pad * 2;
+  const usableHeight = height - pad * 2;
+  const stroke = "#dbe7f3";
+  const cargoStroke = "#2f9bff";
+  const packingStroke = "#f0ad2c";
+  const supportStroke = "#32d4c7";
+
+  if (view === "PLAN") {
+    const scale = Math.min(usableWidth / cargoLength, usableHeight / cargoWidth);
+    const x = (width - cargoLength * scale) / 2;
+    const y = (height - cargoWidth * scale) / 2;
+    const cogX = x + Math.max(0, Math.min(cargoLength, cargo.cog.x)) * scale;
+    const cogY = y + (cargoWidth - Math.max(0, Math.min(cargoWidth, cargo.cog.y))) * scale;
+    return (
+      <svg className="arrangement-load-preview-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Live plan view of cargo, packing supports and COG">
+        <rect x={x} y={y} width={cargoLength * scale} height={cargoWidth * scale} fill="rgba(47,155,255,.08)" stroke={cargoStroke} strokeWidth="2" />
+        <text x={x + 10} y={y + 22} fill={stroke}>CARGO · PLAN</text>
+        {model.supports.map((support, index) => {
+          const sx = x + Math.max(0, Math.min(cargoLength, support.xM - cargo.extremeX)) * scale;
+          return <g key={support.id}><line x1={sx} y1={y} x2={sx} y2={y + cargoWidth * scale} stroke={supportStroke} strokeDasharray="5 4" /><text x={sx + 5} y={y + cargoWidth * scale - 8} fill={supportStroke}>S{index + 1}</text></g>;
+        })}
+        <circle cx={cogX} cy={cogY} r="7" fill="#050708" stroke="#ffd34e" strokeWidth="2" />
+        <line x1={cogX - 13} y1={cogY} x2={cogX + 13} y2={cogY} stroke="#ffd34e" /><line x1={cogX} y1={cogY - 13} x2={cogX} y2={cogY + 13} stroke="#ffd34e" />
+        <text x={cogX + 12} y={cogY - 12} fill="#ffd34e">COG</text>
+      </svg>
+    );
+  }
+
+  const horizontalSize = view === "SIDE" ? cargoLength : cargoWidth;
+  const totalHeight = Math.max(0.001, deckHeight + packingHeight + cargoHeight);
+  const scale = Math.min(usableWidth / horizontalSize, usableHeight / totalHeight);
+  const x = (width - horizontalSize * scale) / 2;
+  const groundY = height - pad;
+  const deckY = groundY - deckHeight * scale;
+  const packingY = deckY - packingHeight * scale;
+  const cargoY = packingY - cargoHeight * scale;
+  const cogHorizontal = view === "SIDE" ? cargo.cog.x : cargo.cog.y;
+  const cogX = x + Math.max(0, Math.min(horizontalSize, cogHorizontal)) * scale;
+  const cogY = packingY - Math.max(0, Math.min(cargoHeight, cargo.cog.z)) * scale;
+  return (
+    <svg className="arrangement-load-preview-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Live ${view === "SIDE" ? "side" : "rear"} view of cargo and packing stack`}>
+      <line x1={pad / 2} y1={groundY} x2={width - pad / 2} y2={groundY} stroke="#61707d" />
+      <rect x={x} y={deckY} width={horizontalSize * scale} height={Math.max(4, deckHeight * scale)} fill="rgba(219,231,243,.05)" stroke={stroke} />
+      {packingHeight > 0 && <rect x={x} y={packingY} width={horizontalSize * scale} height={packingHeight * scale} fill="rgba(240,173,44,.12)" stroke={packingStroke} strokeWidth="2" />}
+      <rect x={x} y={cargoY} width={horizontalSize * scale} height={cargoHeight * scale} fill="rgba(47,155,255,.08)" stroke={cargoStroke} strokeWidth="2" />
+      <text x={x + 10} y={cargoY + 22} fill={stroke}>CARGO · {view}</text>
+      {packingHeight > 0 && <text x={x + 10} y={packingY + 18} fill={packingStroke}>PACKING</text>}
+      <circle cx={cogX} cy={cogY} r="7" fill="#050708" stroke="#ffd34e" strokeWidth="2" />
+      <line x1={cogX - 13} y1={cogY} x2={cogX + 13} y2={cogY} stroke="#ffd34e" /><line x1={cogX} y1={cogY - 13} x2={cogX} y2={cogY + 13} stroke="#ffd34e" />
+      <text x={cogX + 12} y={cogY - 12} fill="#ffd34e">COG</text>
+    </svg>
+  );
+}
+
 function moduleText(modules4: number, modules5: number, modules6: number): string {
   return [
     modules6 ? `${modules6}×6` : "",
     modules5 ? `${modules5}×5` : "",
     modules4 ? `${modules4}×4` : "",
   ].filter(Boolean).join(" + ") || "—";
+}
+
+function cargoPreviewSummary(model: ProjectModel): string {
+  const cargo = model.cargo;
+  return `${cargo.lengthM.toFixed(3)} × ${cargo.widthM.toFixed(3)} × ${cargo.heightM.toFixed(3)} m · ${cargo.massT.toFixed(2)} t`;
 }
 
 function issueStep(id: string): StepId {
@@ -186,6 +257,7 @@ function blankOrCurrent(activeModel: ProjectModel, source: InitialSource): Proje
     ...model,
     arrangementOptimiser: {
       ...model.arrangementOptimiser,
+      minimumClearanceM: MINIMUM_TRAIN_CLEARANCE_M,
       searchMode: source === "BLANK" ? "MATHEMATICAL_BRANCH_BOUND" : model.arrangementOptimiser.searchMode,
       trailerDefinitionId: source === "BLANK" ? "" : model.arrangementOptimiser.trailerDefinitionId,
       ppuPosition: source === "BLANK" ? "NONE" : model.arrangementOptimiser.ppuPosition,
@@ -213,6 +285,8 @@ export function ArrangementWizard({
   const [notice, setNotice] = useState<string | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [loadPreviewView, setLoadPreviewView] = useState<LoadPreviewView>("PLAN");
+  const [automaticSupportCount, setAutomaticSupportCount] = useState(4);
 
   const settings = draftModel.arrangementOptimiser;
   const environmentalSelection = useMemo(
@@ -348,7 +422,7 @@ export function ArrangementWizard({
   });
 
   const createRecommendedSupports = () => {
-    const supports = recommendedPackingSupports(draftModel).map((support) => ({
+    const supports = recommendedPackingSupports(draftModel, 0.5, automaticSupportCount).map((support) => ({
       ...support,
       id: supportId(),
     }));
@@ -424,7 +498,8 @@ export function ArrangementWizard({
       </FormSection>
       <FormSection title="Cargo packing supports" description="Support reactions are settled after every arrangement change. At least the configured minimum must remain active.">
         <div className="arrangement-inline-actions">
-          <button type="button" onClick={createRecommendedSupports}><IconTargetArrow size={14} /> Create 4 COG-spanning supports</button>
+          <NumberField label="Equal support count" value={automaticSupportCount} min={2} max={10} step={1} valid={Number.isInteger(automaticSupportCount) && automaticSupportCount >= 2 && automaticSupportCount <= 10} onChange={(value) => setAutomaticSupportCount(Math.round(value))} />
+          <button type="button" onClick={createRecommendedSupports}><IconTargetArrow size={14} /> Create {automaticSupportCount} equal supports</button>
           <button
             type="button"
             disabled={draftModel.supports.length >= 10}
@@ -450,7 +525,7 @@ export function ArrangementWizard({
               <button type="button" className="icon-button" aria-label={`Remove support ${index + 1}`} onClick={() => setDraftModel((current) => ({ ...current, supports: current.supports.filter((item) => item.id !== support.id) }))}><IconTrash size={14} /></button>
             </div>
           ))}
-          {!draftModel.supports.length && <p className="fast-support-empty">No packing supports entered. Add them manually or create a four-support proposal that brackets the cargo-and-packing COG.</p>}
+          {!draftModel.supports.length && <p className="fast-support-empty">No packing supports entered. Add them manually or create an equal support proposal spanning the cargo-and-packing COG.</p>}
         </div>
         <div className="wizard-field-grid two">
           <NumberField label="Minimum active supports" value={draftModel.optimiser.minimumActiveSupports} min={2} max={10} step={1} valid={Number.isInteger(draftModel.optimiser.minimumActiveSupports) && draftModel.optimiser.minimumActiveSupports >= 2 && draftModel.optimiser.minimumActiveSupports <= 10} onChange={(minimumActiveSupports) => setDraftModel((current) => ({ ...current, optimiser: { ...current.optimiser, minimumActiveSupports: Math.round(minimumActiveSupports) } }))} />
@@ -592,7 +667,7 @@ export function ArrangementWizard({
       <FormSection title="Formation spacing" description="The preferred spacing is ranked first, but independent wider and narrower spacing candidates are also verified.">
         <div className="wizard-field-grid three">
           <NumberField label="Preferred centre spacing" value={settings.preferredCentreSpacingM} unit="m" min={0.1} step={0.1} valid={settings.preferredCentreSpacingM > 0} onChange={(preferredCentreSpacingM) => updateSettings({ preferredCentreSpacingM })} />
-          <NumberField label="Minimum train clearance" value={settings.minimumClearanceM} unit="m" min={0} step={0.01} onChange={(minimumClearanceM) => updateSettings({ minimumClearanceM })} />
+          <NumberField label="Minimum train clearance" value={MINIMUM_TRAIN_CLEARANCE_M} unit="m" disabled hint="Fixed engineering clearance between neighbouring trailer edges." onChange={() => undefined} />
           <NumberField label="Maximum overall width" value={settings.maximumFormationWidthM} unit="m" min={0.1} step={0.1} onChange={(maximumFormationWidthM) => updateSettings({ maximumFormationWidthM })} />
           <NumberField label="Search ceiling when width is off" value={settings.searchMaximumFormationWidthM} unit="m" min={0.1} step={0.1} valid={settings.searchMaximumFormationWidthM > 0} onChange={(searchMaximumFormationWidthM) => updateSettings({ searchMaximumFormationWidthM })} />
           <NumberField label="Spacing seed count" value={settings.spacingSamples} min={2} max={7} step={1} valid={Number.isInteger(settings.spacingSamples) && settings.spacingSamples >= 2 && settings.spacingSamples <= 7} onChange={(value) => updateSettings({ spacingSamples: Math.round(value) })} />
@@ -749,12 +824,17 @@ export function ArrangementWizard({
         </section>
         <section className="setup-wizard-preview arrangement-wizard-preview" aria-label="Mathematical arrangement plan">
           <div className="setup-wizard-preview-status"><div><span>SEARCH PLAN</span><b>{draftModel.cargo.name || "New arrangement case"}</b></div><div className="wizard-preview-status-actions"><div className={calculating ? "working" : "ready"}>{calculating && <IconLoader2 size={14} />}<span>{calculating ? "Active case updating" : "Inputs ready"}</span></div><button type="button" className="mobile-preview-toggle" onClick={() => setPreviewExpanded((current) => !current)} aria-expanded={previewExpanded} aria-label={previewExpanded ? "Return to inputs" : "Expand preview"}>{previewExpanded ? <IconArrowsMinimize size={14} /> : <IconArrowsMaximize size={14} />}<span>{previewExpanded ? "Return to inputs" : "Expand preview"}</span></button></div></div>
-          <div className="arrangement-preview-hero"><span>CAPACITY-DERIVED START</span><b>{minimumCapacityStart} <small>total AL</small></b><p>Gross load, trailer tare, selected PPU mass and the axle-utilisation limit are included before module rounding.</p></div>
+          {(step === "cargo" || step === "packing") && <div className="arrangement-load-preview">
+            <nav aria-label="Cargo preview views">{(["PLAN", "SIDE", "REAR"] as LoadPreviewView[]).map((item) => <button type="button" key={item} className={loadPreviewView === item ? "active" : ""} onClick={() => setLoadPreviewView(item)}>{item === "REAR" ? "Rear" : item === "SIDE" ? "Side" : "Plan"}</button>)}</nav>
+            <ArrangementLoadPreview model={draftModel} view={loadPreviewView} />
+            <footer><span>{cargoPreviewSummary(draftModel)}</span><span>Rear = lower X · front = higher X</span></footer>
+          </div>}
+          {step !== "cargo" && step !== "packing" && <><div className="arrangement-preview-hero"><span>CAPACITY-DERIVED START</span><b>{minimumCapacityStart} <small>total AL</small></b><p>Gross load, trailer tare, selected PPU mass and the axle-utilisation limit are included before module rounding.</p></div>
           <div className="arrangement-plan-table">
             <header><b>First buildable candidates</b><span>{settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? `${plannedSearches.toLocaleString()} bounded formation levels` : settings.searchMode === "ADAPTIVE_BOUNDED" ? `${plannedSearches.toLocaleString()} bounded seed cases` : `${plannedSearches.toLocaleString()} legacy formation searches`}</span></header>
             {planRows.map((row) => <div key={row.trainCount}><span><b>{row.trainCount}</b><small>train{row.trainCount === 1 ? "" : "s"}</small></span><span><b>{row.first?.axleLines ?? "—"} AL/train</b><small>{row.first ? moduleText(row.first.composition.modules4, row.first.composition.modules5, row.first.composition.modules6) : "No stock combination"}</small></span><span><b>{row.first ? row.first.axleLines * row.trainCount : "—"} total AL</b><small>{row.pitches} Y seed{row.pitches === 1 ? "" : "s"} · {row.formationTemplates} X template{row.formationTemplates === 1 ? "" : "s"}</small></span></div>)}
             {!planRows.length && <p className="fast-support-empty">Select a trailer and enter valid search bounds to create the plan.</p>}
-          </div>
+          </div></>}
           <div className="arrangement-preview-facts"><span><small>Payload mass</small><b>{(draftModel.cargo.massT + draftModel.packing.massT + draftModel.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0)).toFixed(2)} t</b></span><span><small>Selected trailer</small><b>{definition?.name ?? "Not selected"}</b></span><span><small>Deck height</small><b>{draftModel.trailerDeckHeightM.toFixed(3)} m</b></span><span><small>PPU</small><b>{settings.ppuPosition === "NONE" ? "None" : settings.ppuPosition === "REAR" ? "Rear" : settings.ppuPosition === "FRONT" ? "Front" : "Both ends"}</b></span><span><small>Hydraulics</small><b>{settings.hydraulicSearchMode === "BOTH" ? "3-point + 4-point" : settings.hydraulicSearchMode === "FOUR_POINT" ? "4-point only" : "3-point only"}</b></span><span><small>Formation</small><b>{settings.formationMode === "ALLOW_STAGGERED" ? "In-line + staggered" : "In-line only"}</b></span><span><small>Road check</small><b>{draftModel.roadTransport.enabled ? "Active" : "Off"}</b></span><span><small>Verification</small><b>{environmentalSelection.reduced ? "Third degree" : draftModel.engineeringDegree}</b></span></div>
           <div className="setup-wizard-preview-findings">{blocking.length ? <span className="blocking"><IconX size={13} /> {blocking.length} blocking</span> : <span className="valid"><IconCheck size={13} /> Search valid</span>}</div>
         </section>

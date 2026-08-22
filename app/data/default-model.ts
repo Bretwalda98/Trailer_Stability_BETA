@@ -190,7 +190,7 @@ export function createDefaultModel(): ProjectModel {
       maximumTrains: 6,
       maximumAxleLinesPerTrain: 44,
       preferredCentreSpacingM: 2.9,
-      minimumClearanceM: 0.05,
+      minimumClearanceM: 0.47,
       maximumFormationWidthM: 15,
       enforceMaximumFormationWidth: false,
       searchMaximumFormationWidthM: 30,
