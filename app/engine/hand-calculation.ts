@@ -149,10 +149,14 @@ export function buildHandCalculation(
     (best, axle) => axle.loadT > (best?.loadT ?? Number.NEGATIVE_INFINITY) ? axle : best,
     result.axlePoints[0],
   );
-  const groupFacts = result.groups.flatMap((group) => [
-    fact(`Hydraulic group G${group.group}`, `${n(group.loadT)} t at X ${n(group.point.x)} m, Y ${n(group.point.y)} m`),
-    fact(`G${group.group} reaction / active bogies`, `${percent(group.reactionFraction, 2)} / ${group.axleCount}`),
-  ]);
+  const groupFacts = result.groups.flatMap((group) => {
+    const ground = result.groundBearing.groups.find((item) => item.group === group.group);
+    return [
+      fact(`Hydraulic group G${group.group}`, `${n(group.loadT)} t at X ${n(group.point.x)} m, Y ${n(group.point.y)} m`),
+      fact(`G${group.group} reaction / active bogies`, `${percent(group.reactionFraction, 2)} / ${group.axleCount}`),
+      fact(`G${group.group} maximum A-D axle-line load / GBP`, `${n(ground?.maximumEnvelopeAxleLineLoadT)} t/AL / ${n(ground?.pressureTPerM2)} t/m²`),
+    ];
+  });
   const trailerFacts = result.resolvedTrailers.map((trailer) => {
     const input = model.trailers[trailer.index];
     return fact(
@@ -247,11 +251,13 @@ export function buildHandCalculation(
           ? "Four independent hydraulic group reactions satisfy vertical force and two moment equilibria. The remaining statically indeterminate degree of freedom is resolved by the engine's minimum-variance non-negative allocation, then each COG case is checked against the four-point polygon."
           : "Three hydraulic group reactions are the barycentric coordinates of the COG within the stability triangle. Multiplying each fraction by the all-inclusive mass gives the exact group load while satisfying vertical force and both plan-moment equilibria.",
         "Each group load is distributed over its active, unpinned bogies. The individual bogie capacity comes from the selected trailer catalogue; the maximum reported utilisation is the controlling axle-loading check.",
+        "Ground-bearing pressure uses the same geometric shadow-area method as the calculation sheet. Each active bogie contributes trailer width × axle pitch divided by the number of bogies on its axle line; group pressure uses the maximum A-D cargo-envelope reaction.",
       ],
       equations: [
         equation("Vertical and plan-moment equilibrium", "\\sum_iR_i=W,\\qquad \\sum_iR_ix_i=Wx_c,\\qquad \\sum_iR_iy_i=Wy_c"),
         equation("Group and bogie load", "R_i=\\lambda_i m_A,\\qquad P_{i,b}=\\frac{R_i}{n_{i,b}}"),
         equation("Axle utilisation", "U_{axle}=\\max_b\\left(\\frac{P_b}{P_{allow,b}}\\right)"),
+        equation("Ground-bearing pressure", "GBP_i=\\frac{\\max(R_{i,N},R_{i,A},R_{i,B},R_{i,C},R_{i,D})}{\\sum_b A_{shadow,b}},\\qquad A_{shadow,b}=\\frac{w_b p_b}{n_{bogies/AL,b}}"),
       ],
       facts: [
         ...groupFacts,
@@ -259,6 +265,8 @@ export function buildHandCalculation(
         fact("Controlling group", result.analysis.controllingGroup ? `G${result.analysis.controllingGroup}` : "not available"),
         fact("Peak axle utilisation", percent(Math.max(0, ...result.axlePoints.map((axle) => axle.utilisation)))),
         fact("Total axle lines used", `${n(result.metrics.axleLinesUsed.value, 0)} AL`),
+        fact("Overall neutral ground-bearing pressure", `${n(result.groundBearing.overallTPerM2)} t/m²`),
+        fact("Maximum group ground-bearing pressure", `${n(result.groundBearing.maximumGroupTPerM2)} t/m²`),
       ],
     },
     {

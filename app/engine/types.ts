@@ -464,6 +464,28 @@ export interface StabilityLoadCases {
   dynamic: number[][];
 }
 
+export interface GroundBearingGroupResult {
+  group: number;
+  activeBogies: number;
+  activeAxleLines: number;
+  neutralGroupLoadT: number;
+  maximumEnvelopeGroupLoadT: number;
+  neutralAxleLineLoadT: number | null;
+  maximumEnvelopeAxleLineLoadT: number | null;
+  maximumUtilisation: number | null;
+  contactAreaM2: number;
+  pressureTPerM2: number | null;
+}
+
+export interface GroundBearingResult {
+  totalActiveBogies: number;
+  totalActiveAxleLines: number;
+  totalContactAreaM2: number;
+  overallTPerM2: number | null;
+  maximumGroupTPerM2: number | null;
+  groups: GroundBearingGroupResult[];
+}
+
 export interface TrailerOverlap {
   firstTrailerId: string;
   firstTrailerIndex: number;
@@ -547,6 +569,7 @@ export interface CalculationResult {
   stabilityReferences: StabilityReferenceChecks;
   analysis: StabilityAnalysisSummary;
   stabilityLoads: StabilityLoadCases;
+  groundBearing: GroundBearingResult;
   resolvedTrailers: Array<{
     id: string;
     index: number;

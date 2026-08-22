@@ -1,5 +1,6 @@
 import { calculateProject } from "./core";
 import { currentEngineeringValues, ENGINEERING_REFERENCE } from "./engineering-reference";
+import { hydraulicPressureOutputs } from "./hydraulic-output";
 import type { CalculationResult, ProjectModel } from "./types";
 
 export const AUTOCAD_EXPORT_KEY_ID = "TS-CAD-KEY-1";
@@ -25,13 +26,13 @@ export const AUTOCAD_EXPORT_KEY = {
     { code: "c", name: "case", fields: { id: "case/cargo identifier", cr: "client reference", or: "owner reference", er: "engineering degree", wr: "weight/COG reference", rp: "datum/reference point", ox: "longitudinal orientation" } },
     { code: "cg", name: "cargo", fields: { n: "name", l: "lengthM", w: "widthM", h: "heightM", ex: "extremeX", ey: "extremeY", m: "massT", x: "COG x", y: "COG y", z: "COG z", exn: "envelopeX", eyn: "envelopeY", sa: "side wind area", sc: "side drag coefficient", sh: "side wind application height", fa: "front wind area", fc: "front drag coefficient", fh: "front wind application height" } },
     { code: "pk", name: "packing", fields: { en: "enabled", m: "massT", h: "heightM", x: "COG x", y: "COG y", z: "COG z", fp: "visual footprint" } },
-    { code: "tr", name: "trailers", fields: { id: "stable trailer id", n: "catalogue name", al: "axle lines", sf: "single-file", x: "resolved start X", y: "resolved centre Y", xr: "input X", yr: "input Y", pr: "placement reference", ox: "X offset", oy: "Y offset", rb: "rear PPU", ff: "front PPU", w: "catalogue width", ap: "axle pitch", ah: "axle capacity", dh: "deck/neutral height", tw: "tyre width", wd: "wheel diameter", pl: "rear PPU length", fl: "front PPU length" } },
+    { code: "tr", name: "trailers", fields: { id: "stable trailer id", n: "catalogue name", al: "axle lines", sf: "single-file", x: "resolved start X", y: "resolved centre Y", xr: "input X", yr: "input Y", pr: "placement reference", ox: "X offset", oy: "Y offset", rb: "rear PPU", ff: "front PPU", w: "catalogue width", ap: "axle pitch", ah: "axle capacity", aw: "axle-line self weight", pw: "PPU self weight per selected end", dh: "deck/neutral height", tw: "tyre width", wd: "wheel diameter", pl: "rear PPU length", fl: "front PPU length" } },
     { code: "hy", name: "hydraulics", fields: { md: "three/four point mode", g: "group definitions and centres", sp: "split after axle line", pi: "pinned axle lines" } },
     { code: "su", name: "supports", fields: { id: "support id", x: "X position", w: "width", al: "allowed", ac: "active input", ra: "settled active", rt: "reaction", dr: "disable reason" } },
     { code: "en", name: "environment", fields: { rls: "route longitudinal slope", rts: "route transverse slope", rlsr: "residual longitudinal slope", rtsr: "residual transverse slope", cf: "combination factor", ws: "wind speed", la: "longitudinal acceleration", ta: "transverse acceleration" } },
     { code: "sp", name: "spine beam", fields: { at: "analysed trailer", lc: "load case", ms: "mesh size" } },
     { code: "cat", name: "catalogue", fields: { all: "catalogue records used by the case" } },
-    { code: "r", name: "calculation result", fields: { st: "status", fc: "fail class", fd: "fail detail", tm: "total mass", lc: "load COG", cc: "combined COG", gp: "hydraulic groups", ax: "axle points", sx: "spine axle points", ss: "settled supports", ov: "overlap pairs", gq: "grouping quality", pg: "stability polygon", cp: "basic/slope/dynamic case points", sr: "stability references", an: "controlling analysis", rt: "road transport result", bm: "beam metrics", mt: "all metric values", ws: "warnings", ms: "calculation milliseconds", rv: "resolved trailer geometry used by the authoritative result" } },
+    { code: "r", name: "calculation result", fields: { st: "status", fc: "fail class", fd: "fail detail", tm: "total mass", lc: "load COG", cc: "combined COG", gp: "hydraulic groups", ax: "axle points", sx: "spine axle points", ss: "settled supports", ov: "overlap pairs", gq: "grouping quality", pg: "stability polygon", cp: "basic/slope/dynamic case points", sr: "stability references", an: "controlling analysis", rt: "road transport result", bm: "beam metrics", mt: "all metric values", gb: "ground-bearing summary and per-group values", hp: "neutral and A-D hydraulic pressure cases", sm: "drawing-table mass and loading summary", ws: "warnings", ms: "calculation milliseconds", rv: "resolved trailer geometry used by the authoritative result" } },
     { code: "eng", name: "engineering reference", fields: { iv: "current input/output values", methods: "calculation methods and equations" } },
   ],
 } as const;
@@ -52,6 +53,25 @@ export function buildAutocadExport(
   const result = authoritativeResult ?? calculateProject(model);
   const resolvedByIndex = new Map(result.resolvedTrailers.map((item) => [item.index, item]));
   const selectedDefinitions = model.trailers.map((trailer) => model.catalogue.find((item) => item.id === trailer.definitionId)).filter(Boolean);
+  const hydraulicPressures = hydraulicPressureOutputs(model, result);
+  const resolvedMasses = result.resolvedTrailers.map((resolved) => {
+    const input = model.trailers[resolved.index];
+    const definition = model.catalogue.find((item) => item.id === input?.definitionId);
+    return {
+      trailerSelfWeightT: definition && input ? definition.axleWeightT * input.axleLines : 0,
+      powerpackWeightT: definition && input
+        ? (Number(input.ppuLeft) + Number(input.ppuRight)) * (definition.ppuWeightT ?? 0)
+        : 0,
+    };
+  });
+  const maximumAxleLineLoadT = result.groundBearing.groups.reduce(
+    (maximum, group) => Math.max(maximum, group.maximumEnvelopeAxleLineLoadT ?? 0),
+    0,
+  );
+  const maximumUtilisation = result.groundBearing.groups.reduce(
+    (maximum, group) => Math.max(maximum, group.maximumUtilisation ?? 0),
+    0,
+  );
 
   return {
     format: AUTOCAD_EXPORT_KEY.format,
@@ -117,6 +137,8 @@ export function buildAutocadExport(
           w: definition?.trailerWidthM ?? null,
           ap: definition?.axleSpacingM ?? null,
           ah: definition?.axleCapacityT ?? null,
+          aw: definition?.axleWeightT ?? null,
+          pw: definition?.ppuWeightT ?? null,
           dh: definition?.neutralHeightM ?? null,
           tw: definition?.tyreWidthM ?? null,
           wd: definition?.wheelDiameterM ?? null,
@@ -166,6 +188,47 @@ export function buildAutocadExport(
         rt: result.roadTransport,
         bm: result.beam,
         mt: result.metrics,
+        gb: {
+          ab: result.groundBearing.totalActiveBogies,
+          al: result.groundBearing.totalActiveAxleLines,
+          ca: result.groundBearing.totalContactAreaM2,
+          o: result.groundBearing.overallTPerM2,
+          mx: result.groundBearing.maximumGroupTPerM2,
+          g: result.groundBearing.groups.map((group) => ({
+            g: group.group,
+            b: group.activeBogies,
+            al: group.activeAxleLines,
+            nl: group.neutralGroupLoadT,
+            ml: group.maximumEnvelopeGroupLoadT,
+            na: group.neutralAxleLineLoadT,
+            ma: group.maximumEnvelopeAxleLineLoadT,
+            u: group.maximumUtilisation,
+            ca: group.contactAreaM2,
+            p: group.pressureTPerM2,
+          })),
+        },
+        hp: hydraulicPressures.map((pressure) => ({
+          g: pressure.group,
+          d: pressure.referenceDefinitionId,
+          mx: pressure.mixedHydraulicProperties,
+          n: pressure.neutralBar,
+          a: pressure.aBar,
+          b: pressure.bBar,
+          c: pressure.cBar,
+          e: pressure.dBar,
+        })),
+        sm: {
+          tsw: resolvedMasses.reduce((sum, item) => sum + item.trailerSelfWeightT, 0),
+          ppw: resolvedMasses.reduce((sum, item) => sum + item.powerpackWeightT, 0),
+          ab: result.groundBearing.totalActiveBogies,
+          nal: result.groundBearing.totalActiveAxleLines > 0
+            ? result.totalMassT / result.groundBearing.totalActiveAxleLines
+            : null,
+          mal: maximumAxleLineLoadT,
+          mu: maximumUtilisation,
+          gbp: result.groundBearing.overallTPerM2,
+          aw: selectedDefinitions[0]?.axleWeightT ?? null,
+        },
         ws: result.warnings,
         ms: result.calculationMs,
         // Keep the geometry after placement resolution. The compact `tr` section

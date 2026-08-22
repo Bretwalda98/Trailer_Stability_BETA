@@ -1,4 +1,5 @@
 import { calculateProject } from "./core";
+import { hydraulicPressureOutputs } from "./hydraulic-output";
 import type { CalculationResult, HydraulicGrouping, ProjectModel } from "./types";
 
 export const AUTOCAD_COMPACT_FORMAT = "SARTD-CAD";
@@ -47,14 +48,9 @@ function cornerGroups(grouping: HydraulicGrouping): {
   return { rearLeft: first, rearRight: first, frontLeft: last, frontRight: last };
 }
 
-function hydraulicPressureBar(loadT: number, bogieCount: number, factor: number | null, massBelowCylinderT: number | null): number {
-  if (!(bogieCount > 0) || factor === null || !(factor > 0)) return 0;
-  return Math.max(0, loadT / bogieCount - Math.max(0, massBelowCylinderT ?? 0)) * factor;
-}
-
 /**
  * Builds the deliberately small, line-oriented interchange consumed directly
- * by SARENS_TRAILERDRAFTSMAN v1.20. It mirrors the drafting engine's retained
+ * by SARENS_TRAILERDRAFTSMAN v1.22. It mirrors the drafting engine's retained
  * data object and omits browser-only state, diagrams and catalogue rows that
  * the AutoLISP renderer never reads.
  *
@@ -91,7 +87,9 @@ export function buildAutocadCompactExport(
       model.cargo.massT,
       (model.cargo.extremeX + model.cargo.cog.x) * 1000,
       (model.cargo.extremeY + model.cargo.cog.y) * 1000,
-      (model.trailerDeckHeightM + model.packing.heightM + model.cargo.cog.z) * 1000,
+      // Match the calculation-sheet datum: cargo COG Z is relative to the
+      // cargo bottom. AutoCAD adds deck height and packing height once.
+      model.cargo.cog.z * 1000,
       model.cargo.envelopeX * 1000,
       model.cargo.envelopeY * 1000,
     ),
@@ -112,6 +110,8 @@ export function buildAutocadCompactExport(
 
   let totalPowerpacks = 0;
   let totalAxleLines = 0;
+  let trailerSelfWeightT = 0;
+  let totalPowerpackWeightT = 0;
   result.resolvedTrailers.forEach((resolved, outputIndex) => {
     const input = model.trailers[resolved.index];
     const definition = input && model.catalogue.find((item) => item.id === input.definitionId);
@@ -123,6 +123,8 @@ export function buildAutocadCompactExport(
     const frontPpuWeight = input.ppuRight ? definition.ppuWeightT ?? 0 : 0;
     totalPowerpacks += Number(input.ppuLeft) + Number(input.ppuRight);
     totalAxleLines += input.axleLines;
+    trailerSelfWeightT += definition.axleWeightT * input.axleLines;
+    totalPowerpackWeightT += rearPpuWeight + frontPpuWeight;
     lines.push(line(
       "TRAILER",
       trailerIndex,
@@ -182,41 +184,70 @@ export function buildAutocadCompactExport(
     ));
   });
 
-  const pressureDefinition = model.catalogue.find((item) => item.id === model.trailers[result.resolvedTrailers[0]?.index]?.definitionId);
+  const pressureOutputs = new Map(hydraulicPressureOutputs(model, result).map((item) => [item.group, item]));
+  const groundBearingGroups = new Map(result.groundBearing.groups.map((item) => [item.group, item]));
   result.groups.forEach((group, groupIndex) => {
-    const groupAxles = result.axlePoints.filter((axle) => axle.group === group.group);
     const neutralLoadT = result.stabilityLoads.neutral[groupIndex] ?? group.loadT;
-    const caseLoadsT = Array.from({ length: 4 }, (_, caseIndex) =>
-      result.stabilityLoads.dynamic[caseIndex]?.[groupIndex] ?? neutralLoadT);
-    const maximumAxleLoadT = groupAxles.length ? Math.max(...groupAxles.map((axle) => axle.loadT)) : 0;
-    const maximumUtilisation = groupAxles.length ? Math.max(...groupAxles.map((axle) => axle.utilisation)) : 0;
+    const pressure = pressureOutputs.get(group.group);
+    const groundBearing = groundBearingGroups.get(group.group);
     lines.push(line(
       "GROUP",
       group.group,
       group.axleCount,
       neutralLoadT,
-      hydraulicPressureBar(neutralLoadT, group.axleCount, pressureDefinition?.factor ?? null, pressureDefinition?.massBelowCylinderT ?? null),
-      ...caseLoadsT.map((loadT) => hydraulicPressureBar(loadT, group.axleCount, pressureDefinition?.factor ?? null, pressureDefinition?.massBelowCylinderT ?? null)),
-      maximumAxleLoadT,
-      maximumUtilisation * 100,
+      pressure?.neutralBar ?? 0,
+      pressure?.aBar ?? 0,
+      pressure?.bBar ?? 0,
+      pressure?.cBar ?? 0,
+      pressure?.dBar ?? 0,
+      groundBearing?.maximumEnvelopeAxleLineLoadT ?? 0,
+      (groundBearing?.maximumUtilisation ?? 0) * 100,
+      groundBearing?.neutralAxleLineLoadT ?? 0,
+      groundBearing?.maximumEnvelopeAxleLineLoadT ?? 0,
+      groundBearing?.pressureTPerM2 ?? 0,
+      groundBearing?.activeAxleLines ?? 0,
+      groundBearing?.contactAreaM2 ?? 0,
     ));
   });
+
+  const maximumAxleLineLoadT = result.groundBearing.groups.reduce(
+    (maximum, group) => Math.max(maximum, group.maximumEnvelopeAxleLineLoadT ?? 0),
+    0,
+  );
+  const maximumUtilisation = result.groundBearing.groups.reduce(
+    (maximum, group) => Math.max(maximum, group.maximumUtilisation ?? 0),
+    0,
+  );
+  const firstResolved = result.resolvedTrailers[0];
+  const firstInput = model.trailers[firstResolved.index];
+  const firstDefinition = model.catalogue.find((item) => item.id === firstInput.definitionId);
+  lines.push(line(
+    "SUMMARY",
+    trailerSelfWeightT,
+    totalPowerpackWeightT,
+    result.groundBearing.totalActiveBogies,
+    result.groundBearing.totalActiveAxleLines > 0
+      ? result.totalMassT / result.groundBearing.totalActiveAxleLines
+      : 0,
+    maximumAxleLineLoadT,
+    maximumUtilisation * 100,
+    result.groundBearing.overallTPerM2 ?? 0,
+    result.groundBearing.maximumGroupTPerM2 ?? 0,
+    firstDefinition?.axleWeightT ?? 0,
+  ));
 
   result.stabilityPolygon.forEach((point, index) => {
     lines.push(line("BOUNDARY", index + 1, point.x * 1000, point.y * 1000));
   });
 
-  const firstResolved = result.resolvedTrailers[0];
-  const firstInput = model.trailers[firstResolved.index];
-  const firstDefinition = model.catalogue.find((item) => item.id === firstInput.definitionId);
   lines.push(line(
     "RESULT",
     result.totalMassT,
     result.combinedCog.x * 1000,
     result.combinedCog.y * 1000,
     result.combinedCog.z * 1000,
-    result.combinedCog.x,
-    result.combinedCog.y,
+    model.cargo.envelopeX,
+    model.cargo.envelopeY,
     firstDefinition?.axleCapacityT ?? 0,
     model.environment.routeLongitudinalSlopeDeg,
     model.environment.routeTransverseSlopeDeg,

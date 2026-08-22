@@ -9,6 +9,7 @@ import type {
   CargoSupport,
   EngineeringDegree,
   GroupResult,
+  GroundBearingResult,
   HydraulicGroupingQuality,
   HydraulicGrouping,
   MetricValue,
@@ -676,6 +677,76 @@ function applyLoadsToAxles(
   };
 }
 
+function groundBearingResult(
+  trailers: ResolvedTrailer[],
+  axles: AxlePoint[],
+  groups: GroupResult[],
+  basicLoads: number[][],
+  totalMassT: number,
+): GroundBearingResult {
+  const trailerByIndex = new Map(trailers.map((trailer) => [trailer.index, trailer]));
+  const activeAxles = axles.filter((axle) => !axle.pinned);
+
+  const axleLineShare = (axle: AxlePoint): number => {
+    const trailer = trailerByIndex.get(axle.trailerIndex);
+    return trailer?.input.singleFile ? 1 : 0.5;
+  };
+  const contactArea = (axle: AxlePoint): number => {
+    const trailer = trailerByIndex.get(axle.trailerIndex);
+    if (!trailer) return 0;
+    return Math.max(0, trailer.definition.trailerWidthM) *
+      Math.max(0, trailer.definition.axleSpacingM) *
+      axleLineShare(axle);
+  };
+
+  const groupResults = groups.map((group, groupIndex) => {
+    const members = activeAxles.filter((axle) => axle.group === group.group);
+    const activeAxleLines = members.reduce((sum, axle) => sum + axleLineShare(axle), 0);
+    const groupContactAreaM2 = members.reduce((sum, axle) => sum + contactArea(axle), 0);
+    const neutralGroupLoadT = basicLoads[0]?.[groupIndex] ?? group.loadT;
+    const caseLoads = basicLoads
+      .map((loads) => loads[groupIndex])
+      .filter((load): load is number => Number.isFinite(load));
+    const maximumEnvelopeGroupLoadT = caseLoads.length
+      ? Math.max(...caseLoads)
+      : neutralGroupLoadT;
+    const maximumUtilisation = members.length && caseLoads.length
+      ? Math.max(...caseLoads.flatMap((loadT) => members.map((axle) =>
+          axle.capacityT > EPS ? (loadT / members.length) / axle.capacityT : Number.POSITIVE_INFINITY,
+        )))
+      : null;
+
+    return {
+      group: group.group,
+      activeBogies: members.length,
+      activeAxleLines,
+      neutralGroupLoadT,
+      maximumEnvelopeGroupLoadT,
+      neutralAxleLineLoadT: activeAxleLines > EPS ? neutralGroupLoadT / activeAxleLines : null,
+      maximumEnvelopeAxleLineLoadT: activeAxleLines > EPS ? maximumEnvelopeGroupLoadT / activeAxleLines : null,
+      maximumUtilisation: maximumUtilisation !== null && Number.isFinite(maximumUtilisation)
+        ? maximumUtilisation
+        : null,
+      contactAreaM2: groupContactAreaM2,
+      pressureTPerM2: groupContactAreaM2 > EPS ? maximumEnvelopeGroupLoadT / groupContactAreaM2 : null,
+    };
+  });
+
+  const totalActiveAxleLines = activeAxles.reduce((sum, axle) => sum + axleLineShare(axle), 0);
+  const totalContactAreaM2 = activeAxles.reduce((sum, axle) => sum + contactArea(axle), 0);
+  const pressures = groupResults
+    .map((group) => group.pressureTPerM2)
+    .filter((pressure): pressure is number => pressure !== null && Number.isFinite(pressure));
+  return {
+    totalActiveBogies: activeAxles.length,
+    totalActiveAxleLines,
+    totalContactAreaM2,
+    overallTPerM2: totalContactAreaM2 > EPS ? totalMassT / totalContactAreaM2 : null,
+    maximumGroupTPerM2: pressures.length ? Math.max(...pressures) : null,
+    groups: groupResults,
+  };
+}
+
 interface SpineSystem {
   result: ReturnType<typeof solveContinuousBeam>;
   trailerStartM: number;
@@ -1202,6 +1273,14 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
       },
       analysis: emptyAnalysis(baseLoad.point),
       stabilityLoads: { neutral: [], basic: [], slope: [], dynamic: [] },
+      groundBearing: {
+        totalActiveBogies: 0,
+        totalActiveAxleLines: 0,
+        totalContactAreaM2: 0,
+        overallTPerM2: null,
+        maximumGroupTPerM2: null,
+        groups: [],
+      },
       resolvedTrailers: [],
       beam: emptyBeamMetrics(),
       metrics: {
@@ -1330,6 +1409,13 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
     group.loadT = neutral?.loads[index] ?? 0;
     group.reactionFraction = neutral?.state.fractions[index] ?? 0;
   });
+  const groundBearing = groundBearingResult(
+    resolved.trailers,
+    axleBase,
+    groups,
+    basicCases.map((item) => item.loads),
+    resolved.mass,
+  );
   const supportSettle = stabilityProbeOnly
     ? {
         supportResults: model.supports.slice(0, 10).map((support) => ({
@@ -1647,6 +1733,7 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
       slope: slopeCases.map((item) => [...item.loads]),
       dynamic: dynamicCases.map((item) => [...item.loads]),
     },
+    groundBearing,
     resolvedTrailers: resolved.trailers.map((item) => ({
       id: item.input.id,
       index: item.index,

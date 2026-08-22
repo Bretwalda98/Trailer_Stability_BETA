@@ -17,7 +17,8 @@ $required = @(
   "V118_EXCEL_SINGLE_SELECTION_PASS",
   "V118_JSON_SINGLE_SELECTION_PASS",
   "V118_SARTDRUN_JSON_ROUTE_PASS",
-  "V118_SARTDRUN_EXCEL_ROUTE_PASS"
+  "V118_SARTDRUN_EXCEL_ROUTE_PASS",
+  "V120_SARTDRUN_CAD_ROUTE_PASS"
 )
 
 foreach ($marker in $required) {
@@ -33,7 +34,7 @@ foreach ($marker in $required) {
   JsonParses = 1
   JsonPaperSpaceData = "PASS"
   CommonWorkflow = "PASS"
-  Routes = "Excel, JSON"
+  Routes = "Excel, CAD, JSON"
 } | Format-List
 
-Write-Host "SARTDRUN v1.18 single-selection and source-routing checks passed."
+Write-Host "SARTDRUN v1.22 single-selection, four-point data, and source-routing checks passed."

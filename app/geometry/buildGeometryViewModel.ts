@@ -1008,7 +1008,6 @@ export function buildGeometryViewModel(
       "Packing footprint dimensions are not defined by the current ProjectModel.",
       "Support transverse extents are not defined; only longitudinal position and spread width are authoritative.",
       "Pinned-axle COG is not exposed by the native engine.",
-      "Ground-bearing pressure is not currently calculated by the native engine.",
       "Beam slope is not exposed by the native engine.",
       "Separate wind and acceleration group-load contributions are not exposed; the combined dynamic increment is available.",
     ],

@@ -128,7 +128,7 @@ Status is the state at this audit checkpoint, before the new workspace implement
 | All-inclusive combined COG | workbook `L158:M158`; `result.combinedCog` | Single chart marker | Primary COG layer and inspector value | Partial |
 | Neutral group loads | rows `262:266`; `result.groups[].loadT/reactionFraction` | Metric/axle chart only | Group contribution/load table beside hydraulic view | Partial |
 | Basic static capacity | rows `262:266`, summary `F503`; `metrics.basicUtil` | Metric card and axle chart | Persistent result inspector plus controlling geometry | Partial |
-| Ground-bearing pressure | rows `268:281` | Not calculated or displayed | GBP calculation/result table and pressure footprint | **Blocked: no native engine output** |
+| Ground-bearing pressure | rows `268:281` | Native overall and per-group GBP in engineering details/report and CAD outputs | GBP calculation/result table and pressure footprint | Implemented from active trailer width × axle pitch shadow areas; group demand uses maximum A-D envelope reaction. |
 | Route and residual slopes | `D291:E293`; `model.environment` | Editable | End/side slope construction and load-case inspector | Partial |
 | Static tipping construction | rows `295:297`; slope charts 10, 11, 17, 18 | One simplified stability chart | Dedicated static/slope modes, edge construction and angles | Partial |
 | Slope-adjusted group/axle loads | rows `299:306`; slope result points and axle metrics | Final percentage only | Per-case group/axle table and highlighted worst group | Partial |
@@ -180,7 +180,7 @@ The current website does not fully reproduce any of the workbook’s 26 charts a
 
 1. **No browser calculation Web Worker exists.** The UI currently computes synchronously in `useMemo`; the only `worker/index.ts` is the server runtime. A small worker orchestration layer is required, with synchronous fallback only for unsupported environments and tests. Engine formulas remain untouched.
 2. **Some acceptance data is not in `CalculationResult`.** Separate slope, wind and acceleration shifts; critical tipping edge; per-component group loads; several requested COG variants; and controlling case/group identifiers are calculated internally or not exposed. Add output fields only where values already exist inside `core.ts`; do not reimplement formulas in React.
-3. **Ground-bearing pressure is workbook-only.** No matching native-engine output was found. It cannot be presented as calculated data without first implementing and independently verifying that engineering feature. The new UI must mark it unavailable instead of inventing a value.
+3. **Ground-bearing pressure is calculated natively.** Overall neutral GBP uses all-inclusive mass divided by total active trailer shadow area. Per-group GBP uses the maximum A-D static-envelope reaction divided by that group's active shadow area, including each selected trailer's own width and axle pitch.
 4. **Some physical geometry is underspecified.** Supports have longitudinal position/width but no transverse footprint; packing has bulk mass/COG/height but no beam-by-beam geometry. End/plan views must use explicit “extent not defined” states where the model lacks dimensions.
 5. **No Git repository is available.** Commit sequence, hashes, branch and push cannot be produced from the supplied directory until repository context is provided or initialisation is authorised.
 

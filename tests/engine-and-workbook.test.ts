@@ -148,6 +148,18 @@ async function main(): Promise<void> {
   assert.equal(fourPointResult.stabilityReferences.cargoOnlyPass, false);
   assert.equal(fourPointResult.stabilityReferences.combinedCogPassOnly, true);
   assert.ok(fourPointResult.warnings.some((warning) => warning.startsWith("COMBINED COG PASS ONLY:")));
+  assert.equal(fourPointResult.groundBearing.groups.length, 4);
+  assert.ok(fourPointResult.groundBearing.groups.every((group) =>
+    group.activeBogies > 0 && group.activeAxleLines > 0 && (group.pressureTPerM2 ?? 0) > 0));
+
+  const packingDatumModel = structuredClone(model);
+  packingDatumModel.trailerDeckHeightM = 1.5;
+  packingDatumModel.packing.heightM = 0.6;
+  packingDatumModel.packing.cog.z = 0.3;
+  packingDatumModel.cargo.cog.z = 2;
+  const packingDatumResult = calculateProject(packingDatumModel);
+  assert.equal(packingDatumResult.componentCogs.packing.z, 1.8);
+  assert.equal(packingDatumResult.componentCogs.cargo.z, 4.1);
 
   const cadExport = buildAutocadExport(model, calculateProject(model), "2026-08-13T00:00:00.000Z");
   assert.equal(cadExport.format, "TRAILER-STABILITY-CAD-DATA");
@@ -155,6 +167,18 @@ async function main(): Promise<void> {
   assert.equal(cadExport.data.c && typeof cadExport.data.c, "object");
   assert.equal((cadExport.data.en as { ws: number }).ws, model.environment.windSpeedMps);
   assert.equal((cadExport.data.r as { st: string }).st, calculateProject(model).status);
+  const cadResultData = cadExport.data.r as {
+    gb: { g: Array<{ g: number; p: number }>; o: number };
+    hp: Array<{ g: number; n: number; a: number; b: number; c: number; e: number }>;
+    sm: { tsw: number; ppw: number; ab: number; gbp: number };
+  };
+  assert.equal(cadResultData.gb.g.length, calculateProject(model).groups.length);
+  assert.ok(cadResultData.gb.o > 0);
+  assert.equal(cadResultData.hp.length, calculateProject(model).groups.length);
+  assert.ok(cadResultData.sm.tsw > 0);
+  assert.ok(cadResultData.sm.ppw > 0);
+  assert.equal(cadResultData.sm.ab, calculateProject(model).groundBearing.totalActiveBogies);
+  assert.equal(cadResultData.sm.gbp, calculateProject(model).groundBearing.overallTPerM2);
   const cadResolvedTrailers = (cadExport.data.r as { rv: Array<{ startXM: number; centreYM: number; lengthM: number; widthM: number }> }).rv;
   assert.equal(cadResolvedTrailers.length, model.trailers.length);
   assert.ok(cadResolvedTrailers.every((trailer) => trailer.lengthM > 0 && trailer.widthM > 0 && Number.isFinite(trailer.startXM) && Number.isFinite(trailer.centreYM)));
@@ -172,6 +196,8 @@ async function main(): Promise<void> {
   assert.equal(compactCadLines.filter((item) => item.startsWith("HYDRAULIC|")).length, compactResult.resolvedTrailers.length);
   assert.equal(compactCadLines.filter((item) => item.startsWith("GROUP|")).length, compactResult.groups.length);
   assert.equal(compactCadLines.filter((item) => item.startsWith("BOUNDARY|")).length, compactResult.stabilityPolygon.length);
+  const loadFields = compactCadLines.find((item) => item.startsWith("LOAD|"))!.split("|");
+  assert.equal(Number(loadFields[9]), model.cargo.cog.z * 1000);
   const firstGroupFields = compactCadLines.find((item) => item.startsWith("GROUP|"))!.split("|");
   const pressureDefinition = model.catalogue.find((item) => item.id === model.trailers[compactResult.resolvedTrailers[0].index].definitionId)!;
   assert.ok(pressureDefinition.massBelowCylinderT !== null && pressureDefinition.factor !== null);
@@ -180,6 +206,25 @@ async function main(): Promise<void> {
     compactResult.stabilityLoads.neutral[0] / compactResult.groups[0].axleCount - pressureDefinition.massBelowCylinderT,
   ) * pressureDefinition.factor;
   assert.ok(Math.abs(Number(firstGroupFields[4]) - expectedWorkbookPressure) < 1e-6);
+  const expectedCaseAPressure = Math.max(
+    0,
+    compactResult.stabilityLoads.basic[1][0] / compactResult.groups[0].axleCount - pressureDefinition.massBelowCylinderT,
+  ) * pressureDefinition.factor;
+  assert.ok(Math.abs(Number(firstGroupFields[5]) - expectedCaseAPressure) < 1e-6);
+  assert.ok(Math.abs(Number(firstGroupFields[9]) - compactResult.groundBearing.groups[0].maximumEnvelopeAxleLineLoadT!) < 1e-6);
+  assert.ok(Math.abs(Number(firstGroupFields[11]) - compactResult.groundBearing.groups[0].neutralAxleLineLoadT!) < 1e-6);
+  assert.ok(Math.abs(Number(firstGroupFields[13]) - compactResult.groundBearing.groups[0].pressureTPerM2!) < 1e-6);
+  const summaryFields = compactCadLines.find((item) => item.startsWith("SUMMARY|"))!.split("|");
+  assert.equal(Number(summaryFields[3]), compactResult.groundBearing.totalActiveBogies);
+  assert.ok(Math.abs(Number(summaryFields[7]) - compactResult.groundBearing.overallTPerM2!) < 1e-6);
+  const firstDefinition = model.catalogue.find((item) => item.id === model.trailers[0].definitionId)!;
+  const expectedOverallGbp = compactResult.totalMassT /
+    (compactResult.groundBearing.totalActiveBogies * firstDefinition.trailerWidthM * firstDefinition.axleSpacingM / 2);
+  assert.ok(Math.abs(compactResult.groundBearing.overallTPerM2! - expectedOverallGbp) < 1e-10);
+
+  const fourPointCompactCad = buildAutocadCompactExport(fourPointModel, fourPointResult, "2026-08-21T09:30:00.000Z");
+  assert.equal(fourPointCompactCad.split(/\r?\n/).filter((item) => item.startsWith("GROUP|")).length, 4);
+  assert.equal(fourPointCompactCad.split(/\r?\n/).filter((item) => item.startsWith("BOUNDARY|")).length, 4);
   assert.match(compactCadLines.at(-1) ?? "", /^END\|/);
   assert.doesNotMatch(compactCad, /[{}\[\]"]/);
   const caseText = buildCaseTextExport(model, calculateProject(model), "2026-08-14T12:00:00.000Z");

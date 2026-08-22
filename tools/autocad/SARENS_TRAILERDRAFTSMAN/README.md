@@ -1,12 +1,12 @@
-# SARENS_TRAILERDRAFTSMAN v1.21
+# SARENS_TRAILERDRAFTSMAN v1.22
 
-SARENS_TRAILERDRAFTSMAN creates the complete trailer-arrangement drawing in AutoCAD. Version 1.21 populates the official hydraulic/loading tables from compact web exports and suppresses duplicate free-standing result overlays while retaining all established import routes.
+SARENS_TRAILERDRAFTSMAN creates the complete trailer-arrangement drawing in AutoCAD. Version 1.22 carries the website's resolved three-/four-point hydraulic results into the official loading tables, including neutral and A-D pressures, per-group utilisation, and ground-bearing pressure (GBP).
 
 The preferred web workflow uses one numbered `.sartd` file. It contains only resolved drawing inputs: case references, cargo and packing geometry, trailer positions and dimensions, PPU states, hydraulic routing, pinned axle lines, supports, the authoritative stability boundary, and summary results. AutoLISP parses it directly; no key file, JSON parser, PowerShell conversion, or browser bridge is required.
 
 ## Package contents
 
-- `SARENS_TRAILERDRAFTSMAN_v1.1.lsp` — AutoLISP release 1.21.
+- `SARENS_TRAILERDRAFTSMAN_v1.1.lsp` — AutoLISP release 1.22.
 - `Autocad Blocks\SARENS_TRAILERDRAFTSMAN_BLOCK_LIBRARY.dwg` — blocks and Sarens/T.EN layouts.
 - `SARTD-CAD-FORMAT.md` — controlled compact exchange contract.
 - `SARTD_Excel_Active.ps1` — compatibility helper for live calculation-file import.
@@ -17,13 +17,13 @@ Keep the LSP, helpers, documentation, and complete `Autocad Blocks` folder toget
 
 ## Installation
 
-1. Extract the full v1.21 archive to a stable local or network folder.
+1. Extract the full v1.22 archive to a stable local or network folder.
 2. Add that folder to AutoCAD **Trusted Locations** if required.
 3. Run `APPLOAD` and load `SARENS_TRAILERDRAFTSMAN_v1.1.lsp`.
 4. Optionally add the LSP to the Startup Suite.
 5. If prompted, select `SARENS_TRAILERDRAFTSMAN_BLOCK_LIBRARY.dwg`. The path is remembered.
 
-The final load message must report `v1.21 compact CAD exchange loaded`.
+The final load message must report `v1.22 compact CAD exchange loaded`.
 
 ## Preferred website workflow
 
@@ -60,7 +60,9 @@ Run `SARTDRUN` to select one of three sources:
 - Trailer width, length, axle count, pitch, deck height, PPU geometry, and resolved X/Y positions come from the selected case.
 - Three-point and four-point hydraulic routing are supported.
 - The supplied three-/four-point boundary is retained for validation and official annotations; no duplicate cyan polygon or free-standing result text is drawn.
-- Hydraulic group counts, loads, utilisation and neutral/A–D pressure cases populate the official paper-space tables.
+- Hydraulic group counts, loads, utilisation and neutral/A-D pressure cases populate the official paper-space tables.
+- Overall and per-group GBP are read from the exported calculation result; Group 4 uses its own selected trailer width and axle pitch rather than a scaled Group 3 placeholder.
+- Cargo COG Z is relative to the cargo bottom. AutoCAD places the deck first, the packing on the deck, and the cargo on the packing without adding either height twice.
 - Missing header, case, load, packing, deck, trailer, hydraulic, result, or end records stop safely before drawing.
 - Errors are appended beside the selected file as `<case>.sartd.lisp.log`.
 
@@ -84,17 +86,18 @@ To clear stored paths manually:
 
 ## Troubleshooting
 
-- If `SARTDRUN` does not offer `Excel/CAD/JSON`, reload the v1.21 LSP.
+- If `SARTDRUN` does not offer `Excel/CAD/JSON`, reload the v1.22 LSP.
 - If `SARTDCAD` does not open a picker, an older LSP definition is still loaded.
 - If blocks or layouts are missing, run `SARTDBLOCKS` and select the bundled library DWG.
 - If a compact case is rejected, read the adjacent `.lisp.log`; it identifies the record and validation failure.
 - If AutoCAD refuses the LSP, add the extracted package folder to Trusted Locations.
 
-## Verification supplied with v1.21
+## Verification supplied with v1.22
 
 - AutoCAD Core Console parser/contract test for a resolved four-point compact case.
 - Full AutoCAD ModelSpace smoke test asserts generated arrangement entities and no duplicate `SARTD-HYD-RESULT` overlay.
 - Four-point parser assertion retains all four authoritative boundary points and four group-metric records.
+- Compact and JSON regressions verify trailer/PPU masses, cargo COG datum, Group 4 GBP, COG envelope, and neutral/A-D hydraulic pressures without a worksheet lookup.
 - Legacy JSON validation, source-routing, and drawing regressions retained.
 - Website typecheck, engineering tests, production build, and exchange-format tests.
 

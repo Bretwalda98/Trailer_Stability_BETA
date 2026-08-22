@@ -394,11 +394,18 @@ export function buildEngineeringDetailRows(
       valueType: "unavailable",
       status: "N/A",
     }),
-    row("ground-bearing", "Ground-bearing pressure", "Ground-bearing pressure", "Not currently calculated by the native engine", "", "Unavailable", {
-      valueType: "unavailable",
-      status: "N/A",
-    }),
+    row("ground-bearing-overall", "Ground-bearing pressure", "Overall neutral ground-bearing pressure", result.groundBearing.overallTPerM2, "t/m²", "Engine groundBearing.overallTPerM2"),
+    row("ground-bearing-maximum", "Ground-bearing pressure", "Maximum hydraulic-group ground-bearing pressure", result.groundBearing.maximumGroupTPerM2, "t/m²", "Engine groundBearing.maximumGroupTPerM2"),
+    row("ground-bearing-area", "Ground-bearing pressure", "Total active shadow area", result.groundBearing.totalContactAreaM2, "m²", "Engine groundBearing.totalContactAreaM2"),
   );
+
+  result.groundBearing.groups.forEach((group) => {
+    rows.push(
+      row(`ground-bearing-g${group.group}`, "Ground-bearing pressure", `Group ${group.group} maximum pressure`, group.pressureTPerM2, "t/m²", `Engine groundBearing.groups G${group.group}`),
+      row(`ground-bearing-g${group.group}-neutral-al`, "Ground-bearing pressure", `Group ${group.group} neutral gross axle-line load`, group.neutralAxleLineLoadT, "t", `Engine groundBearing.groups G${group.group}`),
+      row(`ground-bearing-g${group.group}-max-al`, "Ground-bearing pressure", `Group ${group.group} maximum A-D gross axle-line load`, group.maximumEnvelopeAxleLineLoadT, "t", `Engine groundBearing.groups G${group.group}`),
+    );
+  });
 
   rows.push(
     row(

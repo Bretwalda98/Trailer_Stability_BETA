@@ -15,7 +15,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { assetPath } from "../../site-path";
 
-export const HELP_GUIDE_REVISION = "Professional workbench revision 0.9.2 · reviewed 21 August 2026";
+export const HELP_GUIDE_REVISION = "Professional workbench revision 0.9.3 · reviewed 22 August 2026";
 
 const GUIDE_SECTIONS = [
   {
@@ -166,6 +166,7 @@ const GUIDE_SECTIONS = [
       "Axle reactions satisfy total force and both horizontal moments. Pinned axle lines, support settlement and minimum active-support rules are applied before a case can pass.",
       "Road traction capacity is the lower of surface adhesion and the mechanical driven-bogie limit; braking is checked independently with its own adhesion and mechanical limits.",
       "Spine-beam shear, bending, deflection and local bending are calculated from settled support reactions and the selected load case.",
+      "Ground-bearing pressure uses the basic neutral and A-D hydraulic load cases. Each active bogie contributes the selected trailer width × axle pitch × 0.5 contact shadow; single-file rows use the full width × pitch area.",
       "Open Engineering details for the current numeric values, or open Hand calculation from Results for rendered equations, explanations, PDF and LaTeX source.",
     ],
   },
@@ -279,7 +280,7 @@ export function HelpGuide({
             <aside className="help-download-note">
               <IconFileImport size={16} />
               <span>
-                AutoCAD reader: <a href={assetPath("/autocad/SARENS_TRAILERDRAFTSMAN_v1.20_FULL_PACKAGE.zip")} download>download the tested v1.20 full package</a>. Its SHA-256 checksum is supplied beside the archive.
+                AutoCAD reader: <a href={assetPath("/autocad/SARENS_TRAILERDRAFTSMAN_v1.22_FULL_PACKAGE.zip")} download>download the tested v1.22 full package</a>. Its SHA-256 checksum is supplied beside the archive.
               </span>
             </aside>
           )}

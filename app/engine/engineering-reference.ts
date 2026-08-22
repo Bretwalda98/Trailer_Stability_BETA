@@ -35,6 +35,7 @@ export const ENGINEERING_REFERENCE = {
     { id: "stability-reaction", title: "Hydraulic reaction equilibrium", formula: "ΣR = W; Σ(Rx) = W × COGx; Σ(Ry) = W × COGy", detail: "Three-point and four-point systems solve the reaction fractions over their convex stability polygon. Negative or undefined reactions are not credited as active support." },
     { id: "stability-angle", title: "Tipping angle", formula: "angle = atan(distance from COG projection to controlling edge / COG height)", detail: "The minimum angle over the active polygon edges and each required basic, slope and dynamic perimeter case controls the result." },
     { id: "axle-load", title: "Axle and bogie load", formula: "axle load = group reaction × axle share, with tare and pinned-axle rules applied", detail: "Pinned axle lines carry their configured tare contribution while the remaining reactions are distributed across the unpinned axle lines." },
+    { id: "ground-bearing", title: "Ground-bearing pressure", formula: "GBP = group gross load / Σ(active bogie shadow area); bogie shadow area = trailer width × axle pitch / bogies per axle line", detail: "The overall value uses neutral all-inclusive mass over the complete active shadow area. Each group value uses its maximum A-D cargo-envelope reaction and the actual width/pitch of every selected trailer represented in that group." },
     { id: "traction", title: "Road traction", formula: "capacity = min(μ × driven normal force, driven bogies × 60 kN); demand = rolling + uphill grade + acceleration", detail: "The active surface friction limits adhesion. The module pattern and PPU limit determine which driven bogies are credited." },
     { id: "braking", title: "Road braking", formula: "capacity = min(μ × braked normal force, braked bogies × 55 kN); demand = downhill grade + braking − rolling", detail: "Braking is checked independently from traction and both utilisations must be at or below 100% when road analysis is enabled." },
     { id: "beam", title: "Spine beam", formula: "continuous beam equilibrium with the selected mesh and settled support reactions", detail: "The engine records shear, bending moment, maximum absolute deflection, local bending and their utilisation values." },
@@ -45,6 +46,7 @@ export const ENGINEERING_REFERENCE = {
     { id: "structure", values: "shear, bending, deflection and local bending extrema/utilisations", meaning: "Spine-beam structural outputs." },
     { id: "road", values: "friction, rolling resistance, force demands, adhesion/mechanical capacities and utilisations", meaning: "Optional road movement outputs." },
     { id: "geometry", values: "resolved trailer positions, axle points, hydraulic groups, polygon, supports and overlap pairs", meaning: "Machine-readable arrangement geometry and diagnostics." },
+    { id: "ground-bearing", values: "overall neutral pressure, per-group maximum A-D pressure, active contact area and equivalent axle-line counts", meaning: "Workbook-compatible loading pressure over the selected trailers' geometric shadow areas." },
   ],
 } as const;
 
@@ -77,6 +79,7 @@ export function currentEngineeringValues(model: ProjectModel, result: Calculatio
       analysis: result.analysis,
       beam: result.beam,
       roadTransport: result.roadTransport,
+      groundBearing: result.groundBearing,
     },
   };
 }

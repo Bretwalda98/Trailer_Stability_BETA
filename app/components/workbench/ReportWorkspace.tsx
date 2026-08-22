@@ -106,6 +106,21 @@ export function ReportWorkspace({
             <div><dt>Calculation time</dt><dd>{result.calculationMs.toFixed(2)} ms</dd></div>
           </dl>
         </section>
+        <section>
+          <header><b>Ground-bearing pressure</b></header>
+          <dl>
+            <div><dt>Overall neutral pressure</dt><dd>{formatEngineering(result.groundBearing.overallTPerM2, "t/m²")}</dd></div>
+            <div><dt>Maximum group pressure</dt><dd>{formatEngineering(result.groundBearing.maximumGroupTPerM2, "t/m²")}</dd></div>
+            <div><dt>Active shadow area</dt><dd>{formatEngineering(result.groundBearing.totalContactAreaM2, "m²")}</dd></div>
+            <div><dt>Active bogies / axle lines</dt><dd>{result.groundBearing.totalActiveBogies} / {formatEngineering(result.groundBearing.totalActiveAxleLines, "AL")}</dd></div>
+            {result.groundBearing.groups.map((group) => (
+              <div key={group.group}>
+                <dt>Group {group.group}</dt>
+                <dd>{formatEngineering(group.pressureTPerM2, "t/m²")} · max {formatEngineering(group.maximumEnvelopeAxleLineLoadT, "t/AL")}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
         {result.roadTransport?.enabled && (
           <section>
             <header><b>Road transport analysis</b></header>

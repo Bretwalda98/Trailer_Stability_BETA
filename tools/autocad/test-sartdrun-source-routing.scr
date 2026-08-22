@@ -9,7 +9,14 @@
          (= (cdr (assoc "PROJECT" sartd:test-json-attrs)) "AUTOCAD-FOUR-POINT")
          (= (cdr (assoc "CLIENT" sartd:test-json-attrs)) "TEST")
          (= (cdr (assoc "TOTALNUMBEROFAXLELINES" sartd:test-json-attrs)) "4")
-         (= (cdr (assoc "TOTALNUMBEROFPOWERPACKS" sartd:test-json-attrs)) "2"))
+         (= (cdr (assoc "TOTALNUMBEROFPOWERPACKS" sartd:test-json-attrs)) "2")
+         (= (cdr (assoc "TRAILERSELFWEIGHT" sartd:test-json-attrs)) "18.0")
+         (= (cdr (assoc "TOTALPOWERPACKSELFWEIGHT" sartd:test-json-attrs)) "12.4")
+         (= (cdr (assoc "POWERPACKSELFWEIGHT" sartd:test-json-attrs)) "6.2")
+         (= (cdr (assoc "TOTALNUMBEROFACTIVEBOGIESGROUP4" sartd:test-json-attrs)) "2")
+         (= (cdr (assoc "GROUNDBEARINGPRESSUREGROUP4" sartd:test-json-attrs)) "7.7")
+         (= (cdr (assoc "DGROUP4" sartd:test-json-attrs)) "142")
+         (= (cdr (assoc "COGXPOS" sartd:test-json-attrs)) "+/-0.24"))
   (princ "\nV118_JSON_PAPERSPACE_DATA_PASS")
   (princ "\nV118_JSON_PAPERSPACE_DATA_FAIL"))
 
@@ -70,7 +77,7 @@
 
 ; The final SARTDRUN command must route to the selected source.
 (setq sartd:test-route nil)
-(defun sartd:v118-select-run-import () "JSON")
+(defun sartd:v120-select-run-import () "JSON")
 (defun sartd:v118-run-json-import () (setq sartd:test-route "JSON") T)
 (defun sartd:v118-run-excel-import () (setq sartd:test-route "Excel") T)
 (c:SARTDRUN)
@@ -79,10 +86,18 @@
   (princ "\nV118_SARTDRUN_JSON_ROUTE_FAIL"))
 
 (setq sartd:test-route nil)
-(defun sartd:v118-select-run-import () "Excel")
+(defun sartd:v120-select-run-import () "Excel")
 (c:SARTDRUN)
 (if (= sartd:test-route "Excel")
   (princ "\nV118_SARTDRUN_EXCEL_ROUTE_PASS")
   (princ "\nV118_SARTDRUN_EXCEL_ROUTE_FAIL"))
+
+(setq sartd:test-route nil)
+(defun sartd:v120-select-run-import () "CAD")
+(defun sartd:v120-run-cad-import () (setq sartd:test-route "CAD") T)
+(c:SARTDRUN)
+(if (= sartd:test-route "CAD")
+  (princ "\nV120_SARTDRUN_CAD_ROUTE_PASS")
+  (princ "\nV120_SARTDRUN_CAD_ROUTE_FAIL"))
 
 (princ)
