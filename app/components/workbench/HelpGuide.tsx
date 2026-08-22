@@ -26,7 +26,7 @@ const GUIDE_SECTIONS = [
     intro: "Every new case starts in the arrangement-search wizard. Existing cases can be opened from a saved project JSON file.",
     steps: [
       "Choose New arrangement search to start blank, Open case to load a file, or Continue case on this device to resume local work.",
-      "Work through Cargo & case, Packing & supports, Trailer & PPU, Search limits, then Check & run.",
+      "Work through Cargo & case, Packing & supports, Trailer & PPU, Search limits, then Check & run. Cargo and packing steps include live Plan, Side and Rear previews.",
       "A new case contains no trailer formation. The search builds geometry only after the required inputs are entered and a result is applied.",
       "Resolve each blocking finding before moving on. Warnings remain visible and do not silently change engineering inputs.",
       "Select Run arrangement search on the final step. Progress, ranked candidates and the complete activity log open below the workbench.",
@@ -78,6 +78,8 @@ const GUIDE_SECTIONS = [
       "Longitudinal convention: the left/lower-X end is REAR; the right/higher-X end is FRONT. Axle line 1 starts at the rear.",
       "Absolute placement edits X and Y directly. Relative placement stores offsets while showing resolved coordinates.",
       "Choose three- or four-point hydraulics. Every selected group must be populated as a local cluster and form a non-degenerate convex stability boundary.",
+      "Enter an automatic support count from 2 to 10, then create equally spaced supports; each support remains editable before the run.",
+      "The arrangement search always enforces a 0.470 m clear gap between neighbouring trailer edges.",
       "Use Individual X stagger in the trailer editor when parallel trains must not share the same rear/front line.",
     ],
   },

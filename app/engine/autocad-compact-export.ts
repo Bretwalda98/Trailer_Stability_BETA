@@ -47,6 +47,11 @@ function cornerGroups(grouping: HydraulicGrouping): {
   return { rearLeft: first, rearRight: first, frontLeft: last, frontRight: last };
 }
 
+function hydraulicPressureBar(loadT: number, bogieCount: number, factor: number | null, massBelowCylinderT: number | null): number {
+  if (!(bogieCount > 0) || factor === null || !(factor > 0)) return 0;
+  return Math.max(0, loadT / bogieCount - Math.max(0, massBelowCylinderT ?? 0)) * factor;
+}
+
 /**
  * Builds the deliberately small, line-oriented interchange consumed directly
  * by SARENS_TRAILERDRAFTSMAN v1.20. It mirrors the drafting engine's retained
@@ -174,6 +179,26 @@ export function buildAutocadCompactExport(
       support.allowed,
       settled?.active ?? false,
       settled?.reactionT ?? support.optionalWeightT ?? 0,
+    ));
+  });
+
+  const pressureDefinition = model.catalogue.find((item) => item.id === model.trailers[result.resolvedTrailers[0]?.index]?.definitionId);
+  result.groups.forEach((group, groupIndex) => {
+    const groupAxles = result.axlePoints.filter((axle) => axle.group === group.group);
+    const neutralLoadT = result.stabilityLoads.neutral[groupIndex] ?? group.loadT;
+    const caseLoadsT = Array.from({ length: 4 }, (_, caseIndex) =>
+      result.stabilityLoads.dynamic[caseIndex]?.[groupIndex] ?? neutralLoadT);
+    const maximumAxleLoadT = groupAxles.length ? Math.max(...groupAxles.map((axle) => axle.loadT)) : 0;
+    const maximumUtilisation = groupAxles.length ? Math.max(...groupAxles.map((axle) => axle.utilisation)) : 0;
+    lines.push(line(
+      "GROUP",
+      group.group,
+      group.axleCount,
+      neutralLoadT,
+      hydraulicPressureBar(neutralLoadT, group.axleCount, pressureDefinition?.factor ?? null, pressureDefinition?.massBelowCylinderT ?? null),
+      ...caseLoadsT.map((loadT) => hydraulicPressureBar(loadT, group.axleCount, pressureDefinition?.factor ?? null, pressureDefinition?.massBelowCylinderT ?? null)),
+      maximumAxleLoadT,
+      maximumUtilisation * 100,
     ));
   });
 

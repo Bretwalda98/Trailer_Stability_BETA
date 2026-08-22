@@ -29,6 +29,7 @@ import {
   effectiveMaximumFormationWidth,
   formationPitchBounds,
   mathematicalPitchSeeds,
+  MINIMUM_TRAIN_CLEARANCE_M,
   minimumTotalAxleLines,
   longitudinalOffsetCandidates,
   moduleCompositions,
@@ -163,12 +164,22 @@ async function main(): Promise<void> {
   assert.match(directDxf, /TS_TRAILERS/);
   assert.match(directDxf, /Trailer Stability/);
   assert.match(directDxf, /0\nEOF\n$/);
-  const compactCad = buildAutocadCompactExport(model, calculateProject(model), "2026-08-21T09:30:00.000Z");
+  const compactResult = calculateProject(model);
+  const compactCad = buildAutocadCompactExport(model, compactResult, "2026-08-21T09:30:00.000Z");
   const compactCadLines = compactCad.trim().split(/\r?\n/);
   assert.equal(compactCadLines[0], `${AUTOCAD_COMPACT_FORMAT}|1|MM-T-KN-DEG|REAR-LOW-X`);
-  assert.equal(compactCadLines.filter((item) => item.startsWith("TRAILER|")).length, calculateProject(model).resolvedTrailers.length);
-  assert.equal(compactCadLines.filter((item) => item.startsWith("HYDRAULIC|")).length, calculateProject(model).resolvedTrailers.length);
-  assert.equal(compactCadLines.filter((item) => item.startsWith("BOUNDARY|")).length, calculateProject(model).stabilityPolygon.length);
+  assert.equal(compactCadLines.filter((item) => item.startsWith("TRAILER|")).length, compactResult.resolvedTrailers.length);
+  assert.equal(compactCadLines.filter((item) => item.startsWith("HYDRAULIC|")).length, compactResult.resolvedTrailers.length);
+  assert.equal(compactCadLines.filter((item) => item.startsWith("GROUP|")).length, compactResult.groups.length);
+  assert.equal(compactCadLines.filter((item) => item.startsWith("BOUNDARY|")).length, compactResult.stabilityPolygon.length);
+  const firstGroupFields = compactCadLines.find((item) => item.startsWith("GROUP|"))!.split("|");
+  const pressureDefinition = model.catalogue.find((item) => item.id === model.trailers[compactResult.resolvedTrailers[0].index].definitionId)!;
+  assert.ok(pressureDefinition.massBelowCylinderT !== null && pressureDefinition.factor !== null);
+  const expectedWorkbookPressure = Math.max(
+    0,
+    compactResult.stabilityLoads.neutral[0] / compactResult.groups[0].axleCount - pressureDefinition.massBelowCylinderT,
+  ) * pressureDefinition.factor;
+  assert.ok(Math.abs(Number(firstGroupFields[4]) - expectedWorkbookPressure) < 1e-6);
   assert.match(compactCadLines.at(-1) ?? "", /^END\|/);
   assert.doesNotMatch(compactCad, /[{}\[\]"]/);
   const caseText = buildCaseTextExport(model, calculateProject(model), "2026-08-14T12:00:00.000Z");
@@ -246,6 +257,7 @@ async function main(): Promise<void> {
   assert.equal(model.cargo.envelopeX, model.cargo.lengthM * 0.02);
   assert.equal(model.cargo.envelopeY, model.cargo.widthM * 0.02);
   assert.equal(model.arrangementOptimiser.preferredCentreSpacingM, 2.9);
+  assert.equal(model.arrangementOptimiser.minimumClearanceM, MINIMUM_TRAIN_CLEARANCE_M);
   assert.equal(model.arrangementOptimiser.searchMode, "MATHEMATICAL_BRANCH_BOUND");
   assert.equal(model.arrangementOptimiser.enforceMaximumFormationWidth, false);
   assert.equal(model.arrangementOptimiser.searchMaximumFormationWidthM, 30);
@@ -277,18 +289,19 @@ async function main(): Promise<void> {
     (item) => item.id === arrangementSettings.trailerDefinitionId,
   )!;
   const preferredPitches = spacingCandidates(selectedArrangementDefinition, arrangementSettings, 2);
-  assert.equal(preferredPitches[0], 2.9);
-  assert.ok(preferredPitches.includes(2.9));
+  assert.ok(Math.abs(preferredPitches[0] - 2.9) < 1e-9);
+  assert.ok(preferredPitches.some((value) => Math.abs(value - 2.9) < 1e-9));
   assert.ok(preferredPitches.some((value) => Math.abs(value - 2.9) > 1e-9));
   const pitchBounds = formationPitchBounds(selectedArrangementDefinition, arrangementSettings, 2);
   assert.ok(pitchBounds);
-  assert.equal(pitchBounds.preferredPitchM, 2.9);
+  assert.ok(Math.abs(pitchBounds.minimumPitchM - (selectedArrangementDefinition.trailerWidthM + MINIMUM_TRAIN_CLEARANCE_M)) < 1e-9);
+  assert.ok(Math.abs(pitchBounds.preferredPitchM - 2.9) < 1e-9);
   assert.equal(pitchBounds.effectiveMaximumFormationWidthM, 30);
   assert.equal(effectiveMaximumFormationWidth(arrangementSettings, 9), Number.POSITIVE_INFINITY);
-  assert.deepEqual(
-    mathematicalPitchSeeds(selectedArrangementDefinition, arrangementSettings, 2),
-    [pitchBounds.preferredPitchM, pitchBounds.maximumPitchM, pitchBounds.minimumPitchM],
-  );
+  const pitchSeeds = mathematicalPitchSeeds(selectedArrangementDefinition, arrangementSettings, 2);
+  assert.equal(pitchSeeds.length, 2);
+  assert.ok(Math.abs(pitchSeeds[0] - pitchBounds.preferredPitchM) < 1e-9);
+  assert.ok(Math.abs(pitchSeeds[1] - pitchBounds.maximumPitchM) < 1e-9);
   const cargoLimitedSettings = {
     ...arrangementSettings,
     limitFormationWidthToCargo: true,
@@ -408,6 +421,9 @@ async function main(): Promise<void> {
     !collectArrangementIssues(offsetSupportModel, offsetSupportModel.arrangementOptimiser)
       .some((item) => item.id === "support-cog-bracketing"),
   );
+  const sixRecommendedSupports = recommendedPackingSupports(offsetSupportModel, 0.5, 6);
+  assert.equal(sixRecommendedSupports.length, 6);
+  assert.ok(sixRecommendedSupports.every((support, index, supports) => index === 0 || support.xM > supports[index - 1].xM));
 
   const compactArrangementSearch = createDefaultModel();
   compactArrangementSearch.cargo.massT = 20;

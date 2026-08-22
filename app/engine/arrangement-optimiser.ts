@@ -17,6 +17,7 @@ import {
   minimumAxleLinesPerTrainForSupports,
   minimumTotalAxleLines,
   longitudinalOffsetCandidates,
+  MINIMUM_TRAIN_CLEARANCE_M,
   spacingCandidates,
   validAxleLineValues,
 } from "./arrangement";
@@ -1105,7 +1106,7 @@ export async function runArrangementOptimiser(
       const minimumPitch =
         winningTrainCount === 1
           ? 0
-          : definition.trailerWidthM + Math.max(0, settings.minimumClearanceM);
+          : definition.trailerWidthM + MINIMUM_TRAIN_CLEARANCE_M;
       const maximumPitch =
         winningTrainCount === 1
           ? 0

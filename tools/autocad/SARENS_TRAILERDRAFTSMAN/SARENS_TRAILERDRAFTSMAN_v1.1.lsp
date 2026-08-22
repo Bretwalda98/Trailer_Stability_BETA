@@ -3115,6 +3115,20 @@ Select SARENS_Trailer_Data_Annotation_blocks.dwg.")
           (sartd:fmt0 v))
         "-"))))
 
+(defun sartd:v121-group-metric (data group key / records record value)
+  (setq records (sartd:g 'cad-group-metrics data) record nil)
+  (foreach item records
+    (if (= (sartd:int (cdr (assoc 'group item)) 0) group) (setq record item)))
+  (if record (cdr (assoc key record)) nil))
+
+(defun sartd:v121-group-fixed (data group key decimals / value)
+  (setq value (sartd:v121-group-metric data group key))
+  (if (numberp value) (sartd:fmtfixed value decimals) "-"))
+
+(defun sartd:v121-group-int (data group key / value)
+  (setq value (sartd:v121-group-metric data group key))
+  (if (numberp value) (itoa (fix value)) "-"))
+
 (defun sartd:attr-map (data / trailers first brand model equipment cargo packing totalW ex sh ppWeight ppCount powpack m caseId clientRef ownerRef documentRef generatedDate)
   ; v0.8.3.1: attribute values now follow SARENS_Trailerdataimport cell mapping/formatting.
   ; Keys are normalised to match tags with/without underscores.
@@ -3220,34 +3234,34 @@ Select SARENS_Trailer_Data_Annotation_blocks.dwg.")
       (cons "TOTALWEIGHT"                       (if ex (sartd:ex-fixed ex "C18" 1) (sartd:fmt1 totalW)))
 
       (cons "TOTALNUMBEROFACTIVEBOGIESTOTAL"   (sartd:ex-int ex "C9"))
-      (cons "TOTALNUMBEROFACTIVEBOGIESGROUP1"  (sartd:ex-int ex "D9"))
-      (cons "TOTALNUMBEROFACTIVEBOGIESGROUP2"  (sartd:ex-int ex "F9"))
-      (cons "TOTALNUMBEROFACTIVEBOGIESGROUP3"  (sartd:ex-int ex "H9"))
-      (cons "TOTALNUMBEROFACTIVEBOGIESGROUP4"  "-")
+      (cons "TOTALNUMBEROFACTIVEBOGIESGROUP1"  (if ex (sartd:ex-int ex "D9") (sartd:v121-group-int data 1 'bogies)))
+      (cons "TOTALNUMBEROFACTIVEBOGIESGROUP2"  (if ex (sartd:ex-int ex "F9") (sartd:v121-group-int data 2 'bogies)))
+      (cons "TOTALNUMBEROFACTIVEBOGIESGROUP3"  (if ex (sartd:ex-int ex "H9") (sartd:v121-group-int data 3 'bogies)))
+      (cons "TOTALNUMBEROFACTIVEBOGIESGROUP4"  (if ex "-" (sartd:v121-group-int data 4 'bogies)))
 
       (cons "TOTALLOADONGROUPTOTAL"            (sartd:ex-fixed ex "C18" 1))
-      (cons "TOTALLOADONGROUPGROUP1"           (sartd:ex-fixed ex "D18" 1))
-      (cons "TOTALLOADONGROUPGROUP2"           (sartd:ex-fixed ex "F18" 1))
-      (cons "TOTALLOADONGROUPGROUP3"           (sartd:ex-fixed ex "H18" 1))
-      (cons "TOTALLOADONGROUPGROUP4"           "-")
+      (cons "TOTALLOADONGROUPGROUP1"           (if ex (sartd:ex-fixed ex "D18" 1) (sartd:v121-group-fixed data 1 'neutral-load 1)))
+      (cons "TOTALLOADONGROUPGROUP2"           (if ex (sartd:ex-fixed ex "F18" 1) (sartd:v121-group-fixed data 2 'neutral-load 1)))
+      (cons "TOTALLOADONGROUPGROUP3"           (if ex (sartd:ex-fixed ex "H18" 1) (sartd:v121-group-fixed data 3 'neutral-load 1)))
+      (cons "TOTALLOADONGROUPGROUP4"           (if ex "-" (sartd:v121-group-fixed data 4 'neutral-load 1)))
 
       (cons "AXLELINELOADFROMNEUTRALCOGTOTAL"  (sartd:ex-fixed ex "C23" 1))
-      (cons "AXLELINELOADFROMNEUTRALCOGGROUP1" (sartd:ex-fixed ex "D23" 1))
-      (cons "AXLELINELOADFROMNEUTRALCOGGROUP2" (sartd:ex-fixed ex "F23" 1))
-      (cons "AXLELINELOADFROMNEUTRALCOGGROUP3" (sartd:ex-fixed ex "H23" 1))
-      (cons "AXLELINELOADFROMNEUTRALCOGGROUP4" "-")
+      (cons "AXLELINELOADFROMNEUTRALCOGGROUP1" (if ex (sartd:ex-fixed ex "D23" 1) (sartd:v121-group-fixed data 1 'maximum-axle-load 1)))
+      (cons "AXLELINELOADFROMNEUTRALCOGGROUP2" (if ex (sartd:ex-fixed ex "F23" 1) (sartd:v121-group-fixed data 2 'maximum-axle-load 1)))
+      (cons "AXLELINELOADFROMNEUTRALCOGGROUP3" (if ex (sartd:ex-fixed ex "H23" 1) (sartd:v121-group-fixed data 3 'maximum-axle-load 1)))
+      (cons "AXLELINELOADFROMNEUTRALCOGGROUP4" (if ex "-" (sartd:v121-group-fixed data 4 'maximum-axle-load 1)))
 
       (cons "MAXAXLELINELOADCOGENVELOPETOTAL"  (if ex (sartd:max-cells-display-fixed ex '("E23" "G23" "I23") 1) "-"))
-      (cons "MAXAXLELINELOADCOGENVELOPEGROUP1" (sartd:ex-fixed ex "E23" 1))
-      (cons "MAXAXLELINELOADCOGENVELOPEGROUP2" (sartd:ex-fixed ex "G23" 1))
-      (cons "MAXAXLELINELOADCOGENVELOPEGROUP3" (sartd:ex-fixed ex "I23" 1))
-      (cons "MAXAXLELINELOADCOGENVELOPEGROUP4" "-")
+      (cons "MAXAXLELINELOADCOGENVELOPEGROUP1" (if ex (sartd:ex-fixed ex "E23" 1) (sartd:v121-group-fixed data 1 'maximum-axle-load 1)))
+      (cons "MAXAXLELINELOADCOGENVELOPEGROUP2" (if ex (sartd:ex-fixed ex "G23" 1) (sartd:v121-group-fixed data 2 'maximum-axle-load 1)))
+      (cons "MAXAXLELINELOADCOGENVELOPEGROUP3" (if ex (sartd:ex-fixed ex "I23" 1) (sartd:v121-group-fixed data 3 'maximum-axle-load 1)))
+      (cons "MAXAXLELINELOADCOGENVELOPEGROUP4" (if ex "-" (sartd:v121-group-fixed data 4 'maximum-axle-load 1)))
 
       (cons "MAXCAPACITYUTILISATIONTOTAL"      (if ex (sartd:max-cells-display-fixed ex '("E25" "G25" "I25") 1) "-"))
-      (cons "MAXCAPACITYUTILISATIONGROUP1"     (sartd:ex-fixed ex "E25" 1))
-      (cons "MAXCAPACITYUTILISATIONGROUP2"     (sartd:ex-fixed ex "G25" 1))
-      (cons "MAXCAPACITYUTILISATIONGROUP3"     (sartd:ex-fixed ex "I25" 1))
-      (cons "MAXCAPACITYUTILISATIONGROUP4"     "-")
+      (cons "MAXCAPACITYUTILISATIONGROUP1"     (if ex (sartd:ex-fixed ex "E25" 1) (sartd:v121-group-fixed data 1 'maximum-utilisation 1)))
+      (cons "MAXCAPACITYUTILISATIONGROUP2"     (if ex (sartd:ex-fixed ex "G25" 1) (sartd:v121-group-fixed data 2 'maximum-utilisation 1)))
+      (cons "MAXCAPACITYUTILISATIONGROUP3"     (if ex (sartd:ex-fixed ex "I25" 1) (sartd:v121-group-fixed data 3 'maximum-utilisation 1)))
+      (cons "MAXCAPACITYUTILISATIONGROUP4"     (if ex "-" (sartd:v121-group-fixed data 4 'maximum-utilisation 1)))
 
       (cons "GROUNDBEARINGPRESSURETOTAL"       (sartd:ex-fixed ex "C26" 1))
       (cons "GROUNDBEARINGPRESSUREGROUP1"      (sartd:ex-fixed ex "D26" 1))
@@ -3285,30 +3299,30 @@ Select SARENS_Trailer_Data_Annotation_blocks.dwg.")
       (cons "ACCELLONG"       (sartd:fmt1 (sartd:g 'accel-long data)))
 
       ; Hydraulic Suspension Pressures (bar) - exact Trailerdataimport mapping
-      (cons "NEUTRALGROUP1" (sartd:hydro-cell ex 43 1))
-      (cons "NEUTRALGROUP2" (sartd:hydro-cell ex 43 2))
-      (cons "NEUTRALGROUP3" (sartd:hydro-cell ex 43 3))
-      (cons "NEUTRALGROUP4" "-")
+      (cons "NEUTRALGROUP1" (if ex (sartd:hydro-cell ex 43 1) (sartd:v121-group-fixed data 1 'neutral-pressure 0)))
+      (cons "NEUTRALGROUP2" (if ex (sartd:hydro-cell ex 43 2) (sartd:v121-group-fixed data 2 'neutral-pressure 0)))
+      (cons "NEUTRALGROUP3" (if ex (sartd:hydro-cell ex 43 3) (sartd:v121-group-fixed data 3 'neutral-pressure 0)))
+      (cons "NEUTRALGROUP4" (if ex "-" (sartd:v121-group-fixed data 4 'neutral-pressure 0)))
 
-      (cons "AGROUP1" (sartd:hydro-cell ex 44 1))
-      (cons "AGROUP2" (sartd:hydro-cell ex 44 2))
-      (cons "AGROUP3" (sartd:hydro-cell ex 44 3))
-      (cons "AGROUP4" "-")
+      (cons "AGROUP1" (if ex (sartd:hydro-cell ex 44 1) (sartd:v121-group-fixed data 1 'pressure-a 0)))
+      (cons "AGROUP2" (if ex (sartd:hydro-cell ex 44 2) (sartd:v121-group-fixed data 2 'pressure-a 0)))
+      (cons "AGROUP3" (if ex (sartd:hydro-cell ex 44 3) (sartd:v121-group-fixed data 3 'pressure-a 0)))
+      (cons "AGROUP4" (if ex "-" (sartd:v121-group-fixed data 4 'pressure-a 0)))
 
-      (cons "BGROUP1" (sartd:hydro-cell ex 45 1))
-      (cons "BGROUP2" (sartd:hydro-cell ex 45 2))
-      (cons "BGROUP3" (sartd:hydro-cell ex 45 3))
-      (cons "BGROUP4" "-")
+      (cons "BGROUP1" (if ex (sartd:hydro-cell ex 45 1) (sartd:v121-group-fixed data 1 'pressure-b 0)))
+      (cons "BGROUP2" (if ex (sartd:hydro-cell ex 45 2) (sartd:v121-group-fixed data 2 'pressure-b 0)))
+      (cons "BGROUP3" (if ex (sartd:hydro-cell ex 45 3) (sartd:v121-group-fixed data 3 'pressure-b 0)))
+      (cons "BGROUP4" (if ex "-" (sartd:v121-group-fixed data 4 'pressure-b 0)))
 
-      (cons "CGROUP1" (sartd:hydro-cell ex 46 1))
-      (cons "CGROUP2" (sartd:hydro-cell ex 46 2))
-      (cons "CGROUP3" (sartd:hydro-cell ex 46 3))
-      (cons "CGROUP4" "-")
+      (cons "CGROUP1" (if ex (sartd:hydro-cell ex 46 1) (sartd:v121-group-fixed data 1 'pressure-c 0)))
+      (cons "CGROUP2" (if ex (sartd:hydro-cell ex 46 2) (sartd:v121-group-fixed data 2 'pressure-c 0)))
+      (cons "CGROUP3" (if ex (sartd:hydro-cell ex 46 3) (sartd:v121-group-fixed data 3 'pressure-c 0)))
+      (cons "CGROUP4" (if ex "-" (sartd:v121-group-fixed data 4 'pressure-c 0)))
 
-      (cons "DGROUP1" (sartd:hydro-cell ex 47 1))
-      (cons "DGROUP2" (sartd:hydro-cell ex 47 2))
-      (cons "DGROUP3" (sartd:hydro-cell ex 47 3))
-      (cons "DGROUP4" "-")
+      (cons "DGROUP1" (if ex (sartd:hydro-cell ex 47 1) (sartd:v121-group-fixed data 1 'pressure-d 0)))
+      (cons "DGROUP2" (if ex (sartd:hydro-cell ex 47 2) (sartd:v121-group-fixed data 2 'pressure-d 0)))
+      (cons "DGROUP3" (if ex (sartd:hydro-cell ex 47 3) (sartd:v121-group-fixed data 3 'pressure-d 0)))
+      (cons "DGROUP4" (if ex "-" (sartd:v121-group-fixed data 4 'pressure-d 0)))
 
       ; Drawing/load dimension convenience attributes
       (cons "LOADLENGTH" (sartd:fmt0 (sartd:g 'load-length data)))
@@ -4021,6 +4035,7 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
 
 (defun sartd:v118-run-model-from-data (data / base space result)
   (vl-load-com)
+  (setq sartd:*last-model-error* nil)
   (sartd:setup-layers)
   (sartd:go-modelspace)
   (sartd:v118-print-import-summary data)
@@ -4033,7 +4048,8 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
   (setq sartd:*space-override* nil)
   (if (vl-catch-all-error-p result)
     (progn
-      (sartd:pr (strcat "ModelSpace arrangement failed: " (vl-catch-all-error-message result)))
+      (setq sartd:*last-model-error* (vl-catch-all-error-message result))
+      (sartd:pr (strcat "ModelSpace arrangement failed: " sartd:*last-model-error*))
       nil)
     (progn
       (sartd:scale-generated-dims (sartd:current-view-scale))
@@ -14772,24 +14788,14 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
     (if (sartd:json-object-p p)
       (list (sartd:j-mm p "x" 0.0) (sartd:j-mm p "y" 0.0)) nil)))
 
-(defun sartd:json-draw-result-overlays (data planBase sideBase endBase / poly pts p x y text status cases)
-  ; Draw the authoritative result geometry after the legacy arrangement.  This intentionally uses
-  ; a polygon with its supplied point count; it never manufactures a triangle for four-point data.
-  (setq poly (sartd:g 'json-polygon data) pts nil)
-  (foreach p poly
-    (setq p (sartd:json-point-mm p))
-    (if p (setq pts (append pts (list (list (+ (car planBase) (car p)) (+ (cadr planBase) (cadr p)))))))
-  (if (>= (length pts) 3)
-    (progn
-      (sartd:add-lwpoly pts "SARTD-HYD-RESULT" T)
-      (sartd:pr (strcat "Authoritative stability boundary drawn from " (itoa (length pts)) " supplied result point(s)."))))
-  (setq status (sartd:g 'json-status data))
-  (if status (sartd:add-text (strcat "RESULT: " status) (list (car planBase) (- (cadr planBase) 700.0)) 220.0 "SARTD-ANNOTATION"))
+(defun sartd:json-draw-result-overlays (data planBase sideBase endBase / p x y)
+  ; The official paper-space blocks carry the status and stability values. Do not create a second
+  ; free-standing boundary polygon or RESULT text in ModelSpace/PaperSpace.
   (foreach p (sartd:g 'json-supports data)
     (setq x (sartd:j-mm p "x" 0.0) y (sartd:j-mm p "w" 400.0))
     (sartd:add-line (list (+ (car sideBase) x) (cadr sideBase))
                    (list (+ (car sideBase) x) (+ (cadr sideBase) 800.0))
-                   "SARTD-SUPPORT-STATUS")))
+                   "SARTD-SUPPORT-STATUS"))
   T)
 
 (defun sartd:json-source-path (/ path default)
@@ -15850,14 +15856,14 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
 (princ)
 
 ; =================================================================================================
-; v1.20 COMPACT WEBSITE CAD EXCHANGE
+; v1.21 COMPACT WEBSITE CAD EXCHANGE
 ; -------------------------------------------------------------------------------------------------
 ; The browser now exports only the values consumed by the established Excel-derived drawing data
 ; object.  The SARTD-CAD line format is parsed directly by AutoLISP: no JSON reader, key file or
 ; PowerShell conversion is involved.  JSON commands remain available for legacy case files.
 ; =================================================================================================
 
-(setq sartd:*version* "1.20")
+(setq sartd:*version* "1.21")
 (setq sartd:*cad-source* nil)
 (setq sartd:*cad-data* nil)
 
@@ -15964,10 +15970,23 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
           (cons 'side-name "BOTTOM") (cons 'side-factor 0.0)
           (cons 'group-before rr) (cons 'group-after fr) (cons 'split-after split))))
 
+(defun sartd:v121-group-record (fields)
+  (list
+    (cons 'group (sartd:v120-integer fields 1 0))
+    (cons 'bogies (sartd:v120-integer fields 2 0))
+    (cons 'neutral-load (sartd:v120-number fields 3 0.0))
+    (cons 'neutral-pressure (sartd:v120-number fields 4 0.0))
+    (cons 'pressure-a (sartd:v120-number fields 5 0.0))
+    (cons 'pressure-b (sartd:v120-number fields 6 0.0))
+    (cons 'pressure-c (sartd:v120-number fields 7 0.0))
+    (cons 'pressure-d (sartd:v120-number fields 8 0.0))
+    (cons 'maximum-axle-load (sartd:v120-number fields 9 0.0))
+    (cons 'maximum-utilisation (sartd:v120-number fields 10 0.0))))
+
 (defun sartd:v120-read-compact (path / handle raw lineNo fields tag header caseRec loadRec packRec deck trailers
                                       hydDefs pins supportX supportW supportWidth boundary resultRec endRec mode
                                       groupIds groups record index pinValues errors totalAx totalPP trailer minY maxY
-                                      capacity data)
+                                      capacity groupMetrics data)
   (setq sartd:*cad-source* path sartd:*cad-data* nil)
   (if (not (and path (/= path "") (findfile path)))
     (progn (sartd:v120-log "The selected compact CAD exchange file does not exist.") nil)
@@ -15978,7 +15997,7 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
         (progn
           (setq lineNo 0 header nil caseRec nil loadRec nil packRec nil deck 0.0 trailers nil
                 hydDefs nil pins nil supportX nil supportW nil supportWidth nil boundary nil resultRec nil
-                endRec nil mode nil groupIds nil errors nil capacity 0.0)
+                endRec nil mode nil groupIds nil groupMetrics nil errors nil capacity 0.0)
           (while (setq raw (read-line handle))
             (setq lineNo (1+ lineNo))
             (if (/= (vl-string-trim " \t\r\n" raw) "")
@@ -16012,6 +16031,8 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
                     (setq supportX (append supportX (list (sartd:v120-number fields 2 0.0))))
                     (setq supportWidth (append supportWidth (list (sartd:v120-number fields 3 0.0))))
                     (setq supportW (append supportW (list (sartd:v120-number fields 6 0.0)))))
+                  ((= tag "GROUP")
+                    (setq groupMetrics (append groupMetrics (list (sartd:v121-group-record fields)))))
                   ((= tag "BOUNDARY")
                     (setq boundary (append boundary (list (list (sartd:v120-number fields 2 0.0)
                                                                   (sartd:v120-number fields 3 0.0))))))
@@ -16099,6 +16120,7 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
                   (cons 'total-axles totalAx) (cons 'total-powerpacks totalPP)
                   (cons 'trailer-y-min minY) (cons 'trailer-y-max maxY)
                   (cons 'hydraulic-grouping hydDefs) (cons 'pinned-axles pins)
+                  (cons 'cad-group-metrics groupMetrics)
                   (cons 'hydraulic-mode mode)))
               (setq sartd:*cad-data* data)
               (setenv "SARTD_CAD_LAST" path)
@@ -16122,28 +16144,10 @@ Pick MODELSPACE PLAN view origin / Excel load 0,0 point: ")))
             ", hydraulic sides=" (itoa (length (sartd:g 'hydraulic-grouping data)))
             ", boundary points=" (itoa (length (sartd:g 'cad-boundary data))) ".")))
 
-(defun sartd:v120-draw-overlays (data base / boundary points point status)
-  ; Compact BOUNDARY values are already resolved millimetres in the case datum. Draw the supplied
-  ; polygon exactly as exported: a four-point case must remain a quadrilateral and must never be
-  ; replaced by the older three-point fallback.
-  (setq boundary (sartd:g 'cad-boundary data) points nil)
-  (foreach point boundary
-    (if (and (listp point) (numberp (car point)) (numberp (cadr point)))
-      (setq points
-        (append points
-          (list (list (+ (car base) (car point)) (+ (cadr base) (cadr point))))))))
-  (if (>= (length points) 3)
-    (progn
-      (sartd:ensure-layer "SARTD-HYD-RESULT" 4)
-      (sartd:add-lwpoly points "SARTD-HYD-RESULT" T)
-      (sartd:v120-log
-        (strcat "Authoritative compact stability boundary drawn from "
-                (itoa (length points)) " supplied point(s)."))))
-  (setq status (sartd:g 'json-status data))
-  (if status
-    (sartd:add-text (strcat "RESULT: " status)
-                    (list (car base) (- (cadr base) 700.0))
-                    220.0 "SARTD-ANNOTATION"))
+(defun sartd:v120-draw-overlays (data base)
+  ; Result values populate the official annotation blocks. Deliberately draw no independent cyan
+  ; stability polygon and no free-standing RESULT text.
+  (sartd:v120-log "Standalone result overlays suppressed; official drawing annotations retained.")
   T)
 
 ; Retained-data summary and redraw paths must recognise CAD data as non-Excel data.  This prevents

@@ -6,14 +6,18 @@
 (setq sartd:test-cad-draw (if sartd:test-cad-data (vl-catch-all-apply 'sartd:v118-run-model-from-data (list sartd:test-cad-data)) nil))
 (setq sartd:test-cad-entities (ssget "_X" '((8 . "SARTD-*"))))
 (setq sartd:test-cad-boundary (ssget "_X" '((8 . "SARTD-HYD-RESULT"))))
-(setq sartd:test-cad-pass (and sartd:test-cad-draw (not (vl-catch-all-error-p sartd:test-cad-draw)) sartd:test-cad-entities (> (sslength sartd:test-cad-entities) 0) sartd:test-cad-boundary (> (sslength sartd:test-cad-boundary) 0)))
+(setq sartd:test-cad-pass (and sartd:test-cad-draw (not (vl-catch-all-error-p sartd:test-cad-draw)) sartd:test-cad-entities (> (sslength sartd:test-cad-entities) 0) (null sartd:test-cad-boundary)))
 (setq sartd:test-result-handle (open sartd:test-result-path "w"))
 (if sartd:test-result-handle
   (progn
     (write-line (if sartd:test-cad-pass "SARTD-CAD-FULL-DRAW-PASS" "SARTD-CAD-FULL-DRAW-FAIL") sartd:test-result-handle)
     (write-line (strcat "ENTITY-COUNT=" (itoa (if sartd:test-cad-entities (sslength sartd:test-cad-entities) 0))) sartd:test-result-handle)
     (write-line (strcat "BOUNDARY-COUNT=" (itoa (if sartd:test-cad-boundary (sslength sartd:test-cad-boundary) 0))) sartd:test-result-handle)
+    (write-line (strcat "DATA=" (if sartd:test-cad-data "YES" "NO")) sartd:test-result-handle)
+    (write-line (strcat "DRAW=" (if sartd:test-cad-draw "YES" "NO")) sartd:test-result-handle)
     (if (vl-catch-all-error-p sartd:test-cad-draw)
       (write-line (strcat "ERROR=" (vl-catch-all-error-message sartd:test-cad-draw)) sartd:test-result-handle))
+    (if sartd:*last-model-error*
+      (write-line (strcat "MODEL-ERROR=" sartd:*last-model-error*) sartd:test-result-handle))
     (close sartd:test-result-handle)))
 (command "_.QUIT" "_N")

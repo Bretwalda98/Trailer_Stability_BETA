@@ -32,6 +32,8 @@ export interface FormationPitchBounds {
 }
 
 const EPS = 1e-9;
+/** Fixed clear gap required between neighbouring trailer trains. */
+export const MINIMUM_TRAIN_CLEARANCE_M = 0.47;
 
 function integer(value: number, minimum: number, maximum: number): number {
   if (!Number.isFinite(value)) return minimum;
@@ -225,7 +227,7 @@ export function formationPitchBounds(
       effectiveMaximumFormationWidthM: effectiveMaximumWidth,
     };
   }
-  const minimumPitchM = definition.trailerWidthM + Math.max(0, settings.minimumClearanceM);
+  const minimumPitchM = definition.trailerWidthM + MINIMUM_TRAIN_CLEARANCE_M;
   const maximumPitchM =
     (effectiveMaximumWidth - definition.trailerWidthM) /
     (trains - 1);
@@ -347,31 +349,25 @@ export function payloadCogX(model: ProjectModel): number {
 }
 
 /**
- * Produces a transparent, user-editable four-support starting layout. Two
- * supports are placed on each side of the declared payload COG instead of
- * blindly dividing the cargo length. This prevents a strongly offset COG from
- * leaving every proposed support on one side of the applied load.
+ * Produces a transparent, user-editable, equally spaced support layout. The
+ * first and last supports sit inside the cargo extremes, so every generated
+ * count brackets any valid cargo-and-packing COG.
  */
 export function recommendedPackingSupports(
   model: ProjectModel,
   supportWidthM = 0.5,
+  supportCount = 4,
 ): CargoSupport[] {
   const lengthM = Math.max(0, model.cargo.lengthM);
   const widthM = Math.max(0.001, Math.min(supportWidthM, Math.max(0.001, lengthM / 5)));
   const minimumX = model.cargo.extremeX + widthM / 2;
   const maximumX = model.cargo.extremeX + lengthM - widthM / 2;
   const centreX = (minimumX + maximumX) / 2;
-  const boundedCogX = Math.max(minimumX, Math.min(maximumX, payloadCogX(model)));
-  const leftSpan = Math.max(0, boundedCogX - minimumX);
-  const rightSpan = Math.max(0, maximumX - boundedCogX);
+  const count = Math.max(2, Math.min(10, Math.round(supportCount)));
   const proposed = maximumX > minimumX
-    ? [
-        minimumX + 0.3 * leftSpan,
-        minimumX + 0.72 * leftSpan,
-        boundedCogX + 0.35 * rightSpan,
-        boundedCogX + 0.85 * rightSpan,
-      ]
-    : [centreX, centreX, centreX, centreX];
+    ? Array.from({ length: count }, (_, index) =>
+        minimumX + (index / Math.max(1, count - 1)) * (maximumX - minimumX))
+    : Array.from({ length: count }, () => centreX);
   return proposed.map((xM, index) => ({
     id: `recommended-support-${index + 1}`,
     xM,
@@ -645,14 +641,13 @@ export function collectArrangementIssues(
   }
   if (
     !(settings.maximumFormationWidthM > 0) ||
-    !(settings.searchMaximumFormationWidthM > 0) ||
-    !(settings.minimumClearanceM >= 0)
+    !(settings.searchMaximumFormationWidthM > 0)
   ) {
     issues.push({
       id: "formation-width",
       severity: "blocking",
       title: "Formation-width limits are invalid",
-      detail: "Enter positive hard/search width values and a non-negative trailer clearance.",
+      detail: `Enter positive hard/search width values. The inter-train clearance is fixed at ${MINIMUM_TRAIN_CLEARANCE_M.toFixed(2)} m.`,
     });
   }
   if (!(settings.spacingToleranceM > 0)) {
@@ -776,7 +771,7 @@ export function collectArrangementIssues(
     const widestMinimum =
       definition.trailerWidthM +
       Math.max(0, settings.minimumTrains - 1) *
-        (definition.trailerWidthM + Math.max(0, settings.minimumClearanceM));
+        (definition.trailerWidthM + MINIMUM_TRAIN_CLEARANCE_M);
     if (Number.isFinite(effectiveMaximumWidth) && widestMinimum > effectiveMaximumWidth + EPS) {
       issues.push({
         id: "minimum-formation-width",

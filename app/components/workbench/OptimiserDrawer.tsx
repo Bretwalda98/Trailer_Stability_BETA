@@ -150,6 +150,17 @@ export function OptimiserDrawer({
   const selected = ranked.find((pass) => pass.id === selectedPassId) ?? null;
   const running = run.state === "RUNNING" || run.state === "PLANNING";
   const [copiedLog, setCopiedLog] = useState<"visible" | "full" | null>(null);
+  const [candidateMenu, setCandidateMenu] = useState<{ passId: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!candidateMenu) return;
+    const close = () => setCandidateMenu(null);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [candidateMenu]);
   const visibleTerminalEvents = run.events.slice(0, MAX_VISIBLE_TERMINAL_EVENTS).reverse();
   const visibleTerminalText = diagnosticText(visibleTerminalEvents);
   const fullTerminalText = diagnosticText(run.events);
@@ -190,6 +201,7 @@ export function OptimiserDrawer({
               <span><small>VALID</small><b>{ranked.length}</b></span>
               <span><small>BEST</small><b>{ranked[0]?.id ?? "—"}</b></span>
               {running && <button className="stop-action" onClick={onCancel}><IconPlayerStop size={14} /> Cancel</button>}
+              {!running && selected && <button className="primary-action optimiser-apply-selected" onClick={() => onApply(selected)}><IconTargetArrow size={14} /> Apply selected</button>}
               {!running && canUndo && <button className="secondary-action" onClick={onUndo}><IconArrowBackUp size={14} /> Undo applied result</button>}
             </div>
           </div>
@@ -236,7 +248,25 @@ export function OptimiserDrawer({
                   </thead>
                   <tbody>
                     {ranked.map((pass) => (
-                      <tr key={pass.id} className={selectedPassId === pass.id ? "is-selected" : ""} onClick={() => setSelectedPassId(pass.id)}>
+                      <tr
+                        key={pass.id}
+                        className={selectedPassId === pass.id ? "is-selected" : ""}
+                        tabIndex={0}
+                        onClick={() => setSelectedPassId(pass.id)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          setSelectedPassId(pass.id);
+                          setCandidateMenu({ passId: pass.id, x: event.clientX, y: event.clientY });
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                            event.preventDefault();
+                            const bounds = event.currentTarget.getBoundingClientRect();
+                            setSelectedPassId(pass.id);
+                            setCandidateMenu({ passId: pass.id, x: bounds.left + 24, y: bounds.top + 24 });
+                          }
+                        }}
+                      >
                         <td>{pass.overallRank}</td>
                         <td>{pass.id}</td>
                         {arrangementRun ? (
@@ -302,6 +332,14 @@ export function OptimiserDrawer({
               ) : <p>Select a ranked valid pass to compare it with the starting configuration.</p>}
             </aside>
           </div>
+
+          {candidateMenu && (() => {
+            const pass = ranked.find((item) => item.id === candidateMenu.passId);
+            return pass ? <div className="candidate-context-menu" role="menu" style={{ left: candidateMenu.x, top: candidateMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
+              <header><span>ARRANGEMENT</span><b>{pass.id}</b></header>
+              <button type="button" role="menuitem" onClick={() => { setCandidateMenu(null); onApply(pass); }}><IconTargetArrow size={15} /> Apply this result</button>
+            </div> : null;
+          })()}
 
           <div className="optimiser-log terminal-log">
             <header>
