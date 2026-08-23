@@ -2,6 +2,8 @@
 
 import {
   IconAlertTriangle,
+  IconArrowDown,
+  IconArrowUp,
   IconArrowsMaximize,
   IconArrowsMinimize,
   IconBox,
@@ -36,10 +38,16 @@ import {
   validAxleLineValues,
 } from "../../engine/arrangement";
 import { quickArrangementRecommendations } from "../../engine/arrangement-recommendations";
+import {
+  ARRANGEMENT_OBJECTIVE_LABELS,
+  DEFAULT_ARRANGEMENT_OBJECTIVE_ORDER,
+  objectiveOrderSummary,
+} from "../../engine/arrangement-objectives";
 import { ROAD_SURFACES } from "../../engine/road-transport";
 import { createBlankSetupModel } from "../../engine/setup";
 import type {
   ArrangementOptimiserSettings,
+  ArrangementRankingObjective,
   PackingInput,
   ProjectModel,
 } from "../../engine/types";
@@ -47,6 +55,7 @@ import { applyAutomaticCargoWindInputs, derivedCargoWindInputs } from "../../eng
 import { hydrateProjectModel } from "../../data/default-model";
 
 export const ARRANGEMENT_WIZARD_DRAFT_KEY = "trailer-stability-arrangement-wizard-v2";
+const ARRANGEMENT_OBJECTIVE_PRESETS_KEY = "trailer-stability-arrangement-objective-presets-v1";
 type StepId = "cargo" | "packing" | "trailer" | "search" | "review";
 type InitialSource = "CURRENT" | "BLANK";
 type LoadPreviewView = "PLAN" | "SIDE" | "REAR";
@@ -275,6 +284,25 @@ function supportId(): string {
   return `support-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function readSavedObjectivePresets(): Array<{ name: string; order: ArrangementRankingObjective[] }> {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = localStorage.getItem(ARRANGEMENT_OBJECTIVE_PRESETS_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (preset): preset is { name: string; order: ArrangementRankingObjective[] } =>
+        typeof preset === "object" &&
+        preset !== null &&
+        typeof (preset as { name?: unknown }).name === "string" &&
+        Array.isArray((preset as { order?: unknown }).order),
+    );
+  } catch {
+    return [];
+  }
+}
+
 export function ArrangementWizard({
   activeModel,
   calculating,
@@ -293,6 +321,8 @@ export function ArrangementWizard({
   const [previewExpanded, setPreviewExpanded] = useState(false);
   const [loadPreviewView, setLoadPreviewView] = useState<LoadPreviewView>("PLAN");
   const [automaticSupportCount, setAutomaticSupportCount] = useState(4);
+  const [objectivePresetName, setObjectivePresetName] = useState("");
+  const [savedObjectivePresets, setSavedObjectivePresets] = useState(readSavedObjectivePresets);
 
   const settings = draftModel.arrangementOptimiser;
   const environmentalSelection = useMemo(
@@ -807,20 +837,46 @@ export function ArrangementWizard({
     <>
       <FormSection title="Mathematical arrangement preflight">
         {blocking.length ? (
-          <div className="wizard-issue-list">{blocking.map((issue) => <div key={issue.id} className="blocking"><IconX size={14} /><span><b>{issue.title}</b><small>{issue.detail}</small></span></div>)}</div>
+          <div className="wizard-issue-list">{blocking.map((issue) => <div key={issue.id} className="wizard-issue blocking"><IconX size={14} /><span><b>{issue.title}</b><small>{issue.detail}</small></span></div>)}</div>
         ) : (
           <div className="arrangement-ready"><IconCheck size={18} /><span><b>Ready to search for the minimum SPMT arrangement</b><small>Every retained case still runs the complete engineering and iterative support-settling calculation.</small></span></div>
         )}
       </FormSection>
-      <FormSection title="Hard objective order">
-        <div className="arrangement-objectives">
-          <span><i>1</i><b>Engineering PASS</b><small>All active checks and minimum supports</small></span>
-          <span><i>2</i><b>Minimum trains</b><small>First feasible train-count level</small></span>
-          <span><i>3</i><b>Minimum total AL</b><small>First buildable axle-count level</small></span>
-          <span><i>4</i><b>Safety and support reserve</b><small>More active supports, stability margin and lower utilisation</small></span>
-          <span><i>5</i><b>Physical quality</b><small>Lower deflection, stronger hydraulic altitude and balanced group loading</small></span>
-          <span><i>6</i><b>Spacing and rating</b><small>Closest to {settings.preferredCentreSpacingM.toFixed(2)} m, then current engineering weighting</small></span>
+      <FormSection title="Ranking objective order" description="Engineering PASS and the minimum active-support rule are fixed hard constraints. Reorder only the soft objectives used between valid arrangements.">
+        <div className="arrangement-hard-constraints"><span><b>Hard constraint 1</b> Engineering PASS</span><span><b>Hard constraint 2</b> At least {draftModel.optimiser.minimumActiveSupports} active supports</span></div>
+        <ol className="arrangement-objective-editor">
+          {settings.objectiveOrder.map((objective, index) => {
+            const definition = ARRANGEMENT_OBJECTIVE_LABELS[objective];
+            const move = (offset: number) => {
+              const destination = index + offset;
+              if (destination < 0 || destination >= settings.objectiveOrder.length) return;
+              const order = [...settings.objectiveOrder];
+              [order[index], order[destination]] = [order[destination], order[index]];
+              updateSettings({ objectiveOrder: order, objectivePresetName: "Custom (unsaved)" });
+            };
+            return <li key={objective}>
+              <i>{index + 1}</i><span><b>{definition.label}</b><small>{definition.detail}</small></span>
+              <div><button type="button" onClick={() => move(-1)} disabled={index === 0} aria-label={`Move ${definition.label} earlier`}><IconArrowUp size={14} /></button><button type="button" onClick={() => move(1)} disabled={index === settings.objectiveOrder.length - 1} aria-label={`Move ${definition.label} later`}><IconArrowDown size={14} /></button></div>
+            </li>;
+          })}
+        </ol>
+        <div className="objective-preset-controls">
+          <button type="button" onClick={() => updateSettings({ objectivePresetName: "Engineering default", objectiveOrder: [...DEFAULT_ARRANGEMENT_OBJECTIVE_ORDER] })}>Restore engineering default</button>
+          <label><span>Preset name</span><input value={objectivePresetName} onChange={(event) => setObjectivePresetName(event.target.value)} placeholder="e.g. Minimum fleet" /></label>
+          <button type="button" disabled={!objectivePresetName.trim()} onClick={() => {
+            const preset = { name: objectivePresetName.trim(), order: [...settings.objectiveOrder] };
+            const next = [...savedObjectivePresets.filter((item) => item.name !== preset.name), preset];
+            setSavedObjectivePresets(next);
+            localStorage.setItem(ARRANGEMENT_OBJECTIVE_PRESETS_KEY, JSON.stringify(next));
+            updateSettings({ objectivePresetName: preset.name });
+            setObjectivePresetName("");
+          }}>Save custom preset</button>
+          {savedObjectivePresets.length > 0 && <label><span>Saved presets</span><select value="" onChange={(event) => {
+            const preset = savedObjectivePresets.find((item) => item.name === event.target.value);
+            if (preset) updateSettings({ objectivePresetName: preset.name, objectiveOrder: [...preset.order] });
+          }}><option value="">Choose preset…</option>{savedObjectivePresets.map((preset) => <option key={preset.name} value={preset.name}>{preset.name}</option>)}</select></label>}
         </div>
+        <p className="objective-order-summary"><b>Run summary · {settings.objectivePresetName}</b><span>{objectiveOrderSummary(settings.objectiveOrder)}</span></p>
       </FormSection>
     </>
   );
@@ -868,7 +924,7 @@ export function ArrangementWizard({
           <div className="setup-wizard-form-heading"><span>STEP {stepIndex + 1} / {STEPS.length}</span><h2>{currentStep.label}</h2><p>{currentStep.description}</p></div>
           {notice && <div className="wizard-notice"><IconAlertTriangle size={15} /><span>{notice}</span><button type="button" className="icon-button" onClick={() => setNotice(null)}><IconX size={13} /></button></div>}
           {form}
-          {step !== "review" && stepIssues.length > 0 && <FormSection title="Step preflight"><div className="wizard-issue-list">{stepIssues.map((issue) => <div key={issue.id} className={issue.severity}><IconAlertTriangle size={14} /><span><b>{issue.title}</b><small>{issue.detail}</small></span></div>)}</div></FormSection>}
+          {step !== "review" && stepIssues.length > 0 && <FormSection title="Step preflight"><div className="wizard-issue-list">{stepIssues.map((issue) => <div key={issue.id} className={`wizard-issue ${issue.severity}`}><IconAlertTriangle size={14} /><span><b>{issue.title}</b><small>{issue.detail}</small></span></div>)}</div></FormSection>}
         </section>
         <section className="setup-wizard-preview arrangement-wizard-preview" aria-label="Mathematical arrangement plan">
           <div className="setup-wizard-preview-status"><div><span>SEARCH PLAN</span><b>{draftModel.cargo.name || "New arrangement case"}</b></div><div className="wizard-preview-status-actions"><div className={calculating ? "working" : "ready"}>{calculating && <IconLoader2 size={14} />}<span>{calculating ? "Active case updating" : "Inputs ready"}</span></div><button type="button" className="mobile-preview-toggle" onClick={() => setPreviewExpanded((current) => !current)} aria-expanded={previewExpanded} aria-label={previewExpanded ? "Return to inputs" : "Expand preview"}>{previewExpanded ? <IconArrowsMinimize size={14} /> : <IconArrowsMaximize size={14} />}<span>{previewExpanded ? "Return to inputs" : "Expand preview"}</span></button></div></div>

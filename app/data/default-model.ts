@@ -1,5 +1,6 @@
 import { builtinTrailerCatalogue } from "./trailers";
 import { applyAutomaticCargoCogEnvelopeInputs } from "../engine/cargo-envelope";
+import { DEFAULT_ARRANGEMENT_OBJECTIVE_ORDER } from "../engine/arrangement-objectives";
 import type { OptimiserWeights, ProjectModel } from "../engine/types";
 import {
   LONGITUDINAL_ORIENTATION_ID,
@@ -207,6 +208,8 @@ export function createDefaultModel(): ProjectModel {
       searchWindSpeedMps: 15,
       searchLongitudinalAccelerationMps2: 0.5,
       searchTransverseAccelerationMps2: 0.2,
+      objectivePresetName: "Engineering default",
+      objectiveOrder: [...DEFAULT_ARRANGEMENT_OBJECTIVE_ORDER],
     },
     catalogue: builtinTrailerCatalogue.map((item) => ({ ...item })),
     analysedTrailer: 1,
@@ -324,6 +327,18 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
     arrangementOptimiser: {
       ...base.arrangementOptimiser,
       ...arrangementOptimiser,
+      objectivePresetName:
+        typeof arrangementOptimiser.objectivePresetName === "string" && arrangementOptimiser.objectivePresetName.trim()
+          ? arrangementOptimiser.objectivePresetName.trim()
+          : base.arrangementOptimiser.objectivePresetName,
+      objectiveOrder: Array.isArray(arrangementOptimiser.objectiveOrder)
+        ? [
+            ...arrangementOptimiser.objectiveOrder.filter((item): item is ProjectModel["arrangementOptimiser"]["objectiveOrder"][number] =>
+              base.arrangementOptimiser.objectiveOrder.includes(item as ProjectModel["arrangementOptimiser"]["objectiveOrder"][number]),
+            ),
+            ...base.arrangementOptimiser.objectiveOrder.filter((item) => !arrangementOptimiser.objectiveOrder?.includes(item)),
+          ]
+        : [...base.arrangementOptimiser.objectiveOrder],
     },
     trailers: Array.isArray(source.trailers)
       ? trailerItems.map((item, index) => ({

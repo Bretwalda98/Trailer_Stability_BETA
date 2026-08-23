@@ -42,6 +42,11 @@ import {
   validAxleLineValues,
 } from "../app/engine/arrangement";
 import { quickArrangementRecommendations } from "../app/engine/arrangement-recommendations";
+import { arrangementComparisons } from "../app/engine/arrangement-comparison";
+import {
+  optimiserDiagnosticJson,
+  optimiserDiagnosticMarkdown,
+} from "../app/engine/optimiser-diagnostics";
 import { ROAD_SURFACES } from "../app/engine/road-transport";
 import {
   deriveHydraulicYPitchBound,
@@ -78,6 +83,7 @@ import {
   stepCanContinue,
 } from "../app/engine/setup";
 import { derivedCargoWindInputs } from "../app/engine/wind";
+import type { ProjectModel } from "../app/engine/types";
 import {
   exportVerificationWorkbook,
   importWorkbook,
@@ -945,6 +951,35 @@ async function main(): Promise<void> {
   rankArrangementPasses([combinedOnlyCandidate, cargoOnlyCandidate], compactArrangementSearch);
   assert.equal(cargoOnlyCandidate.overallRank, 1, "A cargo-only pass is preferred at equal train and axle counts.");
   assert.equal(combinedOnlyCandidate.overallRank, 2);
+
+  const trainFirstModel = structuredClone(compactArrangementSearch);
+  trainFirstModel.arrangementOptimiser.objectivePresetName = "Minimum fleet";
+  trainFirstModel.arrangementOptimiser.objectiveOrder = [
+    "MIN_TRAINS",
+    "MIN_TOTAL_AXLE_LINES",
+    ...trainFirstModel.arrangementOptimiser.objectiveOrder.filter((objective) => objective !== "MIN_TRAINS" && objective !== "MIN_TOTAL_AXLE_LINES"),
+  ];
+  rankArrangementPasses([oneTrainMoreAxles, fewerAxlesAcrossTrains], trainFirstModel);
+  assert.equal(oneTrainMoreAxles.overallRank, 1, "A saved train-first objective order must be authoritative between exact PASS candidates.");
+  const comparisons = arrangementComparisons([oneTrainMoreAxles, fewerAxlesAcrossTrains], trainFirstModel);
+  assert.equal(comparisons.length, 3);
+  assert.equal(comparisons.find((item) => item.kind === "AL_FIRST")?.pass.id, fewerAxlesAcrossTrains.id);
+  assert.equal(comparisons.find((item) => item.kind === "TRAIN_FIRST")?.pass.id, oneTrainMoreAxles.id);
+  const failedComparison = structuredClone(oneTrainMoreAxles);
+  failedComparison.id = "FAILED-CANNOT-RANK";
+  failedComparison.result.status = "NOK_FAIL";
+  failedComparison.arrangement!.totalAxleLines = 4;
+  assert.ok(arrangementComparisons([failedComparison, fewerAxlesAcrossTrains], trainFirstModel).every((item) => item.pass.id !== failedComparison.id), "Engineering failures must never enter Pareto comparisons.");
+
+  const diagnosticMarkdown = optimiserDiagnosticMarkdown(comparisonRun, comparisonSearch);
+  const diagnosticJson = JSON.parse(optimiserDiagnosticJson(comparisonRun, comparisonSearch)) as { format: string; startModel: ProjectModel; run: typeof comparisonRun };
+  assert.match(diagnosticMarkdown, /# Arrangement search audit/);
+  assert.match(diagnosticMarkdown, /## Chronological activity/);
+  assert.match(diagnosticMarkdown, /Objective order:/);
+  assert.equal(diagnosticJson.format, "trailer-stability-optimiser-audit");
+  assert.equal(diagnosticJson.run.events.length, comparisonRun.events.length);
+  assert.equal(diagnosticJson.run.passes.length, comparisonRun.passes.length);
+  assert.equal(diagnosticJson.startModel.supports.length, comparisonSearch.supports.length);
 
   const largeCargoSearch = createDefaultModel();
   largeCargoSearch.cargo = {

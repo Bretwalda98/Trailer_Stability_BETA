@@ -40,9 +40,12 @@ type CaseRecord = {
   state: string;
   durationMs: number;
   passCount: number;
+  plannedCandidateUpperBound: number | null;
+  validPassCount: number;
   failedPassCount: number;
   statusCounts: Record<string, number>;
   best: Record<string, unknown> | null;
+  rankedCandidates: Array<Record<string, unknown>>;
   recommendation: string;
   keyEvents: Array<{ stage: string; message: string; detail: string; level: string }>;
   warnings: string[];
@@ -172,6 +175,7 @@ function specs(): CaseSpec[] {
     { id: "C34_WIDE_SUPPORTS", description: "Widely distributed supports", dimensions: [18, 8, 8], massT: 500, cog: [9, 4, 4], supportLayout: "wide", maximumTrains: 6 },
     { id: "C35_THIRD_DEGREE_REDUCED", description: "Reduced search actions requiring third-degree check", dimensions: [18, 8, 8], massT: 500, cog: [9, 4, 4], windMps: 10, longAccel: 0.3, transverseAccel: 0.1, maximumTrains: 6 },
     { id: "C36_ADVERSE_ALL", description: "Large, heavy, tall and laterally difficult case", dimensions: [25, 16, 16], massT: 650, cog: [21, 14, 13], packingMassT: 100, packingHeightM: 2, packingCogZ: 1, windMps: 25, longAccel: 1.2, transverseAccel: 0.8, slopeDeg: 3, hydraulicSystemMode: "FOUR_POINT", supportLayout: "narrow", ppuPosition: "BOTH", maximumTrains: 6 },
+    { id: "C37_MAXIMUM_RANGES", description: "Maximum 12-train and 99-AL/train configured search horizon", dimensions: [10, 4, 3], massT: 80, cog: [5, 2, 1.5], minimumTrains: 1, maximumTrains: 12, maximumAxleLinesPerTrain: 99, hydraulicSystemMode: "FOUR_POINT" },
   ];
 }
 
@@ -187,6 +191,7 @@ function makeRecord(spec: CaseSpec, run: Awaited<ReturnType<typeof runArrangemen
   const recommendation = bestArrangement
     ? `${bestArrangement.trainCount} train(s), ${bestArrangement.axleLinesPerTrain} AL/train, ${bestArrangement.totalAxleLines} AL total, ${bestArrangement.pitchM.toFixed(3)} m centre pitch, ${bestArrangement.formationMode.toLowerCase()} formation${bestArrangement.longitudinalSpanM > 0 ? `, ${bestArrangement.longitudinalSpanM.toFixed(3)} m longitudinal stagger` : ""}.`
     : "No valid automatic arrangement found within the configured search bounds.";
+  const plannedCandidateUpperBound = Number(run.events.find((event) => event.message === "Arrangement search planned")?.detail.match(/; (\d+) upper formation evaluations/)?.[1] ?? NaN);
   return {
     id: spec.id,
     description: spec.description,
@@ -194,6 +199,8 @@ function makeRecord(spec: CaseSpec, run: Awaited<ReturnType<typeof runArrangemen
     state: run.state,
     durationMs: Math.round(durationMs * 100) / 100,
     passCount: run.passes.length,
+    plannedCandidateUpperBound: Number.isFinite(plannedCandidateUpperBound) ? plannedCandidateUpperBound : null,
+    validPassCount: run.passes.filter((pass) => pass.result.status === "PASS").length,
     failedPassCount: run.passes.filter((pass) => pass.result.status !== "PASS").length,
     statusCounts,
     best: best && bestArrangement ? {
@@ -211,6 +218,20 @@ function makeRecord(spec: CaseSpec, run: Awaited<ReturnType<typeof runArrangemen
       combinedCogRequired: best.result.stabilityReferences.combinedCogRequired,
       combinedCogPassOnly: best.result.stabilityReferences.combinedCogPassOnly,
     } : null,
+    rankedCandidates: run.passes
+      .filter((pass) => pass.overallRank !== null && pass.arrangement)
+      .sort((left, right) => left.overallRank! - right.overallRank!)
+      .map((pass) => ({
+        rank: pass.overallRank,
+        passId: pass.id,
+        trains: pass.arrangement!.trainCount,
+        axleLinesPerTrain: pass.arrangement!.axleLinesPerTrain,
+        totalAxleLines: pass.arrangement!.totalAxleLines,
+        hydraulicSystemMode: pass.arrangement!.hydraulicSystemMode,
+        pitchM: pass.arrangement!.pitchM,
+        widthM: pass.arrangement!.overallWidthM,
+        rating: pass.rating,
+      })),
     recommendation,
     keyEvents: run.events
       .filter((event) => ["Minimum arrangement selected", "No valid arrangement", "Maximum axle formation failed necessary gates", "Hydraulic Y-span bound rejected formation", "Train count rejected by capacity or stock bound", "Minimum axle-line boundary solved", "Winning formation fully verified"].includes(event.message))
@@ -223,7 +244,7 @@ function makeRecord(spec: CaseSpec, run: Awaited<ReturnType<typeof runArrangemen
 async function main(): Promise<void> {
   const started = performance.now();
   const records: CaseRecord[] = [];
-  const outputDir = path.join(process.cwd(), "outputs", "math-search-review-2026-08-11");
+  const outputDir = path.join(process.cwd(), "outputs", "math-search-review-2026-08-23");
   const caseDir = path.join(outputDir, "cases");
   await mkdir(caseDir, { recursive: true });
   for (const spec of specs()) {
@@ -267,10 +288,10 @@ async function main(): Promise<void> {
   );
   const csvEscape = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
   const csvRows = [
-    ["id", "description", "state", "durationMs", "passCount", "failedPassCount", "statusCounts", "recommendation", "bestTrainCount", "bestAxleLinesPerTrain", "bestTotalAxleLines", "bestPitchM", "bestFormationMode", "bestRating", "bestStatus", "cargoOnlyPass", "combinedCogRequired", "combinedCogPassOnly", "keyEvents"],
+    ["id", "description", "state", "durationMs", "plannedCandidateUpperBound", "passCount", "validPassCount", "failedPassCount", "statusCounts", "recommendation", "bestTrainCount", "bestAxleLinesPerTrain", "bestTotalAxleLines", "bestPitchM", "bestFormationMode", "bestRating", "bestStatus", "cargoOnlyPass", "combinedCogRequired", "combinedCogPassOnly", "rankedCandidates", "keyEvents"],
     ...records.map((record) => {
       const arrangement = (record.best?.arrangement ?? {}) as Record<string, unknown>;
-      return [record.id, record.description, record.state, record.durationMs, record.passCount, record.failedPassCount, JSON.stringify(record.statusCounts), record.recommendation, arrangement.trainCount ?? "", arrangement.axleLinesPerTrain ?? "", arrangement.totalAxleLines ?? "", arrangement.pitchM ?? "", arrangement.formationMode ?? "", record.best?.rating ?? "", record.best?.resultStatus ?? "", record.best?.cargoOnlyPass ?? "", record.best?.combinedCogRequired ?? "", record.best?.combinedCogPassOnly ?? "", JSON.stringify(record.keyEvents)];
+      return [record.id, record.description, record.state, record.durationMs, record.plannedCandidateUpperBound ?? "", record.passCount, record.validPassCount, record.failedPassCount, JSON.stringify(record.statusCounts), record.recommendation, arrangement.trainCount ?? "", arrangement.axleLinesPerTrain ?? "", arrangement.totalAxleLines ?? "", arrangement.pitchM ?? "", arrangement.formationMode ?? "", record.best?.rating ?? "", record.best?.resultStatus ?? "", record.best?.cargoOnlyPass ?? "", record.best?.combinedCogRequired ?? "", record.best?.combinedCogPassOnly ?? "", JSON.stringify(record.rankedCandidates), JSON.stringify(record.keyEvents)];
     }),
   ];
   await writeFile(path.join(outputDir, "math-search-review.csv"), csvRows.map((row) => row.map(csvEscape).join(",")).join("\n"), "utf8");

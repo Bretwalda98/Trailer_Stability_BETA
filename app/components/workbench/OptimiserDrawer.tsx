@@ -17,6 +17,12 @@ import {
 } from "../../engine/optimiser";
 import type { OptimiserRun, PassResult, ProjectModel } from "../../engine/types";
 import { downloadText } from "../../engine/download";
+import { arrangementComparisons } from "../../engine/arrangement-comparison";
+import {
+  diagnosticEventSummary,
+  optimiserDiagnosticJson,
+  optimiserDiagnosticMarkdown,
+} from "../../engine/optimiser-diagnostics";
 import { formatDuration } from "../../geometry/format";
 
 const MAX_VISIBLE_TERMINAL_EVENTS = 240;
@@ -142,14 +148,21 @@ export function OptimiserDrawer({
       (left, right) => left.arrangement!.trainCount - right.arrangement!.trainCount,
     );
   }, [run.passes]);
+  const paretoComparisons = useMemo(
+    () => arrangementRun && startModel ? arrangementComparisons(run.passes, startModel) : [],
+    [arrangementRun, run.passes, startModel],
+  );
   const [selectedPassId, setSelectedPassId] = useState("");
-  useEffect(() => {
-    if (!ranked.length) return;
-    if (!ranked.some((pass) => pass.id === selectedPassId)) setSelectedPassId(ranked[0].id);
-  }, [ranked, selectedPassId]);
-  const selected = ranked.find((pass) => pass.id === selectedPassId) ?? null;
+  const effectiveSelectedPassId = ranked.some((pass) => pass.id === selectedPassId)
+    ? selectedPassId
+    : (ranked[0]?.id ?? "");
+  const selected = ranked.find((pass) => pass.id === effectiveSelectedPassId) ?? null;
   const running = run.state === "RUNNING" || run.state === "PLANNING";
   const [copiedLog, setCopiedLog] = useState<"visible" | "full" | null>(null);
+  const [logSearch, setLogSearch] = useState("");
+  const [logLevel, setLogLevel] = useState<"ALL" | OptimiserRun["events"][number]["level"]>("ALL");
+  const [logPhase, setLogPhase] = useState("ALL");
+  const [failuresOnly, setFailuresOnly] = useState(false);
   const [candidateMenu, setCandidateMenu] = useState<{ passId: string; x: number; y: number } | null>(null);
   useEffect(() => {
     if (!candidateMenu) return;
@@ -161,9 +174,17 @@ export function OptimiserDrawer({
       window.removeEventListener("blur", close);
     };
   }, [candidateMenu]);
-  const visibleTerminalEvents = run.events.slice(0, MAX_VISIBLE_TERMINAL_EVENTS).reverse();
+  const logPhases = [...new Set(run.events.map((event) => event.phase))];
+  const filteredTerminalEvents = run.events.filter((event) => {
+    const summary = diagnosticEventSummary(event);
+    const matchesText = !logSearch.trim() || `${event.caseReference} ${event.stage} ${event.message} ${event.detail}`.toLowerCase().includes(logSearch.trim().toLowerCase());
+    return matchesText && (logLevel === "ALL" || event.level === logLevel) && (logPhase === "ALL" || event.phase === logPhase) && (!failuresOnly || summary.failed);
+  });
+  const visibleTerminalEvents = filteredTerminalEvents.slice(0, MAX_VISIBLE_TERMINAL_EVENTS).reverse();
   const visibleTerminalText = diagnosticText(visibleTerminalEvents);
   const fullTerminalText = diagnosticText(run.events);
+  const diagnosticMarkdown = optimiserDiagnosticMarkdown(run, startModel);
+  const diagnosticJson = optimiserDiagnosticJson(run, startModel);
   const copyTerminal = async (scope: "visible" | "full") => {
     await copyDiagnosticText(scope === "visible" ? visibleTerminalText : fullTerminalText);
     setCopiedLog(scope);
@@ -216,6 +237,28 @@ export function OptimiserDrawer({
                   <button onClick={() => downloadText(exportBeamPointsCsv(run.passes), `${run.runReference || "optimiser"}-beam.csv`)}><IconDownload size={13} /> Beam</button>
                 </div>
               </header>
+              {paretoComparisons.length > 0 && (
+                <section className="pareto-comparison" aria-labelledby="pareto-comparison-title">
+                  <header><span><b id="pareto-comparison-title">Arrangement trade-offs</b><small>Only exact engineering PASS candidates are eligible</small></span><em>Selected objective order: {startModel?.arrangementOptimiser.objectivePresetName}</em></header>
+                  <div>
+                    {paretoComparisons.map((comparison) => (
+                      <button type="button" key={comparison.kind} className={`${effectiveSelectedPassId === comparison.pass.id ? "is-selected " : ""}${comparison.dominated ? "is-dominated" : "is-pareto"}`} onClick={() => setSelectedPassId(comparison.pass.id)}>
+                        <span><b>{comparison.label}</b><small>{comparison.pass.id}</small></span>
+                        <strong>{comparison.metrics.totalAxleLines} AL · {comparison.metrics.trains} train{comparison.metrics.trains === 1 ? "" : "s"}</strong>
+                        <dl>
+                          <div><dt>Pitch / width</dt><dd>{comparison.metrics.spacingM.toFixed(2)} / {comparison.metrics.widthM.toFixed(2)} m</dd></div>
+                          <div><dt>Peak util.</dt><dd>{(comparison.metrics.peakUtilisation * 100).toFixed(1)}%</dd></div>
+                          <div><dt>Stability margin</dt><dd>{comparison.metrics.stabilityMarginDeg.toFixed(2)}°</dd></div>
+                          <div><dt>Support reserve</dt><dd>+{comparison.metrics.supportReserve}</dd></div>
+                          <div><dt>Deflection</dt><dd>{comparison.metrics.deflectionMm.toFixed(2)} mm</dd></div>
+                          <div><dt>Rating</dt><dd>{comparison.metrics.rating.toFixed(3)}</dd></div>
+                        </dl>
+                        <small className="pareto-status">{comparison.dominated ? `Dominated by ${comparison.dominatedBy.slice(0, 2).join(", ")}` : "Pareto candidate"}</small>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
               {arrangementRun && trainCountComparisons.length > 0 && (
                 <nav className="train-count-comparisons" aria-label="Best arrangement by train count">
                   <span>Best by train count</span>
@@ -224,7 +267,7 @@ export function OptimiserDrawer({
                       <button
                         type="button"
                         key={pass.id}
-                        className={selectedPassId === pass.id ? "is-selected" : ""}
+                        className={effectiveSelectedPassId === pass.id ? "is-selected" : ""}
                         onClick={() => setSelectedPassId(pass.id)}
                         title={`Select ${pass.arrangement!.trainCount}-train comparison result ${pass.id}`}
                       >
@@ -250,7 +293,7 @@ export function OptimiserDrawer({
                     {ranked.map((pass) => (
                       <tr
                         key={pass.id}
-                        className={selectedPassId === pass.id ? "is-selected" : ""}
+                        className={effectiveSelectedPassId === pass.id ? "is-selected" : ""}
                         tabIndex={0}
                         onClick={() => setSelectedPassId(pass.id)}
                         onContextMenu={(event) => {
@@ -343,20 +386,33 @@ export function OptimiserDrawer({
 
           <div className="optimiser-log terminal-log">
             <header>
-              <div className="terminal-heading"><b>Search activity</b><span>Showing {visibleTerminalEvents.length} of {run.events.length} recorded events</span></div>
+              <div className="terminal-heading"><b>Search activity</b><span>Showing {visibleTerminalEvents.length} of {filteredTerminalEvents.length} matching · {run.events.length} recorded</span></div>
               <div className="terminal-actions">
                 <button onClick={() => void copyTerminal("visible")} disabled={!visibleTerminalText}><IconCopy size={13} /> {copiedLog === "visible" ? "Copied" : "Copy visible"}</button>
                 <button onClick={() => void copyTerminal("full")} disabled={!fullTerminalText}><IconCopy size={13} /> {copiedLog === "full" ? "Copied" : "Copy complete log"}</button>
-                <button onClick={() => downloadText(fullTerminalText, `${run.runReference || "optimiser"}-diagnostic.log`, "text/plain;charset=utf-8")} disabled={!fullTerminalText}><IconDownload size={13} /> Save log</button>
+                <button onClick={() => downloadText(diagnosticMarkdown, `${run.runReference || "optimiser"}-audit.md`, "text/markdown;charset=utf-8")} disabled={!run.events.length}><IconDownload size={13} /> Audit Markdown</button>
+                <button onClick={() => downloadText(diagnosticJson, `${run.runReference || "optimiser"}-audit.json`, "application/json;charset=utf-8")} disabled={!run.events.length}><IconDownload size={13} /> Lossless JSON</button>
               </div>
             </header>
+            <div className="terminal-filters" aria-label="Search activity filters">
+              <label><span>Find</span><input type="search" value={logSearch} onChange={(event) => setLogSearch(event.target.value)} placeholder="Case, stage, metric or reason" /></label>
+              <label><span>Level</span><select value={logLevel} onChange={(event) => setLogLevel(event.target.value as typeof logLevel)}><option value="ALL">All levels</option>{(["INFO", "PASS", "WARN", "ERROR", "BEST"] as const).map((level) => <option key={level} value={level}>{level}</option>)}</select></label>
+              <label><span>Phase</span><select value={logPhase} onChange={(event) => setLogPhase(event.target.value)}><option value="ALL">All phases</option>{logPhases.map((phase) => <option key={phase} value={phase}>{phase}</option>)}</select></label>
+              <label className="terminal-failure-toggle"><input type="checkbox" checked={failuresOnly} onChange={(event) => setFailuresOnly(event.target.checked)} /><span>Failures only</span></label>
+            </div>
             <div className="terminal-output" role="log" aria-live="polite" aria-label="Detailed arrangement-search activity log">
-              {visibleTerminalEvents.map((event) => (
-                <pre key={event.id} className={`terminal-entry terminal-${event.level.toLowerCase()}`}>{terminalEventText(event)}</pre>
-              ))}
+              {visibleTerminalEvents.map((event) => {
+                const summary = diagnosticEventSummary(event);
+                return <article key={event.id} className={`terminal-entry terminal-${event.level.toLowerCase()}${summary.failed ? " terminal-failed" : ""}`}>
+                  <header><span>[{formatDuration(event.elapsedMs)}] <b>{event.level}</b> · {event.phase}/{event.stage}</span><em>{event.caseReference || "RUN"}</em></header>
+                  <p>{event.message}</p>
+                  {summary.failedConstraint && <strong>Failed constraint · {summary.failedConstraint}</strong>}
+                  {event.detail && <pre>{event.detail}</pre>}
+                </article>;
+              })}
               {!visibleTerminalEvents.length && <pre className="terminal-empty">No search activity has been recorded.</pre>}
             </div>
-            <footer className="terminal-footer">The display is limited to the latest {MAX_VISIBLE_TERMINAL_EVENTS} events for responsiveness. Copy complete log includes the full chronological run.</footer>
+            <footer className="terminal-footer">The display is limited to the latest {MAX_VISIBLE_TERMINAL_EVENTS} matching events. Markdown is human-readable; JSON retains the full starting model, candidates, metrics, support transitions and chronology.</footer>
           </div>
         </div>
       )}

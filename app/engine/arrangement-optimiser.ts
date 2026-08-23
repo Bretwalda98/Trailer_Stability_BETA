@@ -25,6 +25,7 @@ import { createEmptyRun, rankPasses, runOptimiser } from "./optimiser";
 import type {
   ActivityEvent,
   ArrangementDescriptor,
+  ArrangementRankingObjective,
   HydraulicSystemMode,
   OptimiserRun,
   PassResult,
@@ -192,35 +193,40 @@ export function rankArrangementPasses(passes: PassResult[], model: ProjectModel)
       groupBalance,
     };
   };
+  const compareObjective = (
+    objective: ArrangementRankingObjective,
+    left: PassResult,
+    right: PassResult,
+    leftQuality: ReturnType<typeof arrangementQuality>,
+    rightQuality: ReturnType<typeof arrangementQuality>,
+  ): number => {
+    const leftArrangement = left.arrangement!;
+    const rightArrangement = right.arrangement!;
+    switch (objective) {
+      case "MIN_TOTAL_AXLE_LINES": return leftArrangement.totalAxleLines - rightArrangement.totalAxleLines;
+      case "MIN_TRAINS": return leftArrangement.trainCount - rightArrangement.trainCount;
+      case "CARGO_ONLY_STABILITY": return leftQuality.cargoOnlyPassPriority - rightQuality.cargoOnlyPassPriority;
+      case "SUPPORT_RESERVE": return rightQuality.supportReserve - leftQuality.supportReserve;
+      case "STABILITY_MARGIN": return rightQuality.stabilityMargin - leftQuality.stabilityMargin;
+      case "PEAK_UTILISATION": return leftQuality.peakUtilisation - rightQuality.peakUtilisation;
+      case "DEFLECTION": return leftQuality.deflection - rightQuality.deflection;
+      case "HYDRAULIC_QUALITY": return rightQuality.hydraulicAltitude - leftQuality.hydraulicAltitude;
+      case "GROUP_LOAD_BALANCE": return leftQuality.groupBalance - rightQuality.groupBalance;
+      case "PREFERRED_SPACING": return Math.abs(leftArrangement.pitchM - preferredPitch) - Math.abs(rightArrangement.pitchM - preferredPitch);
+      case "RATING": return (left.rating ?? Infinity) - (right.rating ?? Infinity);
+    }
+  };
+  const objectiveOrder = model.arrangementOptimiser.objectiveOrder;
   const ordered = passes
     .filter((pass) => pass.result.status === "PASS" && pass.arrangement && pass.rating !== null)
     .sort((left, right) => {
-      const leftArrangement = left.arrangement!;
-      const rightArrangement = right.arrangement!;
       const leftQuality = arrangementQuality(left);
       const rightQuality = arrangementQuality(right);
-      return (
-        leftArrangement.totalAxleLines - rightArrangement.totalAxleLines ||
-        // Total axle lines are the primary economic constraint. A two-train
-        // 8-AL formation must beat a one-train 12-AL formation. Train count
-        // is only a tie-breaker when both formations use the same total AL.
-        leftArrangement.trainCount - rightArrangement.trainCount ||
-        leftQuality.cargoOnlyPassPriority - rightQuality.cargoOnlyPassPriority ||
-        // Once the economic objectives and cargo-only preference are equal,
-        // use the operator's standard pitch before spending extra formation
-        // width merely to increase an already-passing stability margin.
-        Math.abs(leftArrangement.pitchM - preferredPitch) -
-          Math.abs(rightArrangement.pitchM - preferredPitch) ||
-        rightQuality.supportReserve - leftQuality.supportReserve ||
-        rightQuality.stabilityMargin - leftQuality.stabilityMargin ||
-        leftQuality.peakUtilisation - rightQuality.peakUtilisation ||
-        leftQuality.deflection - rightQuality.deflection ||
-        rightQuality.hydraulicAltitude - leftQuality.hydraulicAltitude ||
-        leftQuality.groupBalance - rightQuality.groupBalance ||
-        leftArrangement.longitudinalSpanM - rightArrangement.longitudinalSpanM ||
-        (left.rating ?? Infinity) - (right.rating ?? Infinity) ||
-        left.sequence - right.sequence
-      );
+      for (const objective of objectiveOrder) {
+        const comparison = compareObjective(objective, left, right, leftQuality, rightQuality);
+        if (comparison !== 0 && Number.isFinite(comparison)) return comparison;
+      }
+      return left.arrangement!.longitudinalSpanM - right.arrangement!.longitudinalSpanM || left.sequence - right.sequence;
     });
   for (const pass of passes) {
     if (pass.result.status === "PASS") pass.overallRank = null;
@@ -450,6 +456,13 @@ export async function runArrangementOptimiser(
     comparisonTrainCountTarget > 1
       ? `The search will retain an exact passing arrangement for at least ${comparisonTrainCountTarget} permitted train counts where feasible. Total axle lines remain the primary ranking objective; train count is only the secondary tie-breaker.`
       : "Only one train count is permitted by the configured search limits.",
+  );
+  addEvent(
+    run,
+    started,
+    "Planning",
+    "Ranking objectives locked for this run",
+    `Preset=${settings.objectivePresetName}; hard constraints=engineering PASS and minimum active supports; soft order=${settings.objectiveOrder.join(" > ")}.`,
   );
   if (settings.allowReducedEnvironmentalActions) {
     addEvent(
@@ -749,7 +762,9 @@ export async function runArrangementOptimiser(
           .filter((pass) => pass.result.status === "PASS" && pass.arrangement)
           .map((pass) => pass.arrangement!.trainCount),
       );
+      const totalAxleLinesIsPrimary = settings.objectiveOrder[0] === "MIN_TOTAL_AXLE_LINES";
       const dominatedByCurrentBest = Boolean(
+        totalAxleLinesIsPrimary &&
         currentArrangement &&
           (
             smallestBuildableTotalAL > currentArrangement.totalAxleLines ||
