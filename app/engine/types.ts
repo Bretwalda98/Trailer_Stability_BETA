@@ -253,6 +253,19 @@ export type ArrangementSearchMode =
   | "ADAPTIVE_BOUNDED"
   | "LEGACY_GRID";
 
+export type ArrangementRankingObjective =
+  | "MIN_TOTAL_AXLE_LINES"
+  | "MIN_TRAINS"
+  | "CARGO_ONLY_STABILITY"
+  | "SUPPORT_RESERVE"
+  | "STABILITY_MARGIN"
+  | "PEAK_UTILISATION"
+  | "DEFLECTION"
+  | "HYDRAULIC_QUALITY"
+  | "GROUP_LOAD_BALANCE"
+  | "PREFERRED_SPACING"
+  | "RATING";
+
 export interface ArrangementOptimiserSettings {
   searchMode: ArrangementSearchMode;
   trailerDefinitionId: string;
@@ -289,6 +302,8 @@ export interface ArrangementOptimiserSettings {
   searchWindSpeedMps: number;
   searchLongitudinalAccelerationMps2: number;
   searchTransverseAccelerationMps2: number;
+  objectivePresetName: string;
+  objectiveOrder: ArrangementRankingObjective[];
 }
 
 export interface ArrangementDescriptor {

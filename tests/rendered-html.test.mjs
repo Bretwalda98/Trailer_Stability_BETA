@@ -55,7 +55,7 @@ test("server-renders the standalone engineering workbench", async () => {
 });
 
 test("keeps phone, offline, interactive drawing and compact AutoCAD capabilities wired", async () => {
-  const [page, layout, manifest, workbench, optimiserDrawer, engineeringViewport, handCalculation, engineHook, worker, planView, endView, sideView, css, professionalCss, serviceWorker, setupWizard, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine] = await Promise.all([
+  const [page, layout, manifest, workbench, optimiserDrawer, engineeringViewport, handCalculation, engineHook, worker, planView, endView, sideView, css, professionalCss, serviceWorker, setupWizard, arrangementWizard, arrangementEngine, arrangementOptimiser, windEngine, envelopeEngine, resultPanels, comparisonEngine, diagnosticsEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
@@ -77,6 +77,9 @@ test("keeps phone, offline, interactive drawing and compact AutoCAD capabilities
     readFile(new URL("../app/engine/arrangement-optimiser.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/engine/wind.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/engine/cargo-envelope.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/workbench/EngineeringResultPanels.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/engine/arrangement-comparison.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/engine/optimiser-diagnostics.ts", import.meta.url), "utf8"),
   ]);
   assert.match(page, /<TrailerWorkbench \/>/);
   assert.match(layout, /Trailer Stability \| SPMT Engineering Workbench/);
@@ -132,6 +135,11 @@ test("keeps phone, offline, interactive drawing and compact AutoCAD capabilities
   assert.match(workbench, /ArrangementWizard/);
   assert.match(optimiserDrawer, /Search activity/);
   assert.match(optimiserDrawer, /Copy complete log/);
+  assert.match(optimiserDrawer, /Arrangement trade-offs/);
+  assert.match(optimiserDrawer, /Pareto/);
+  assert.match(optimiserDrawer, /Audit Markdown/);
+  assert.match(optimiserDrawer, /Lossless JSON/);
+  assert.match(optimiserDrawer, /Failures only/);
   assert.match(arrangementWizard, /ARRANGEMENT SEARCH/);
   assert.match(arrangementWizard, /Run arrangement search/);
   assert.match(arrangementWizard, /Mathematical branch/);
@@ -140,6 +148,9 @@ test("keeps phone, offline, interactive drawing and compact AutoCAD capabilities
   assert.match(arrangementWizard, /Preferred centre spacing/);
   assert.match(arrangementWizard, /Enforce maximum overall width/);
   assert.match(arrangementWizard, /Search ceiling when width is off/);
+  assert.match(arrangementWizard, /Ranking objective order/);
+  assert.match(arrangementWizard, /Restore engineering default/);
+  assert.match(arrangementWizard, /Save custom preset/);
   assert.match(arrangementEngine, /settings\.preferredCentreSpacingM/);
   assert.match(arrangementEngine, /mathematicalPitchSeeds/);
   assert.match(arrangementEngine, /modules4 \* 4 \+ modules5 \* 5 \+ modules6 \* 6/);
@@ -149,4 +160,13 @@ test("keeps phone, offline, interactive drawing and compact AutoCAD capabilities
   assert.match(windEngine, /lengthM \* heightM/);
   assert.match(windEngine, /widthM \* heightM/);
   assert.match(envelopeEngine, /CARGO_COG_ENVELOPE_FACTOR = 0\.02/);
+  assert.match(resultPanels, /Hydraulic suspension/);
+  assert.match(resultPanels, /Road traction and transport/);
+  assert.match(resultPanels, /Cargo only/);
+  assert.match(resultPanels, /All-inclusive combined COG/);
+  assert.match(comparisonEngine, /AL-first/);
+  assert.match(comparisonEngine, /Train-first/);
+  assert.match(comparisonEngine, /dominatedBy/);
+  assert.match(diagnosticsEngine, /trailer-stability-optimiser-audit/);
+  assert.match(diagnosticsEngine, /Chronological activity/);
 });

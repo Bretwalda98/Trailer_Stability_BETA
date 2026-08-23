@@ -18,6 +18,7 @@ import type {
   VisualEntityBase,
 } from "../../geometry/types";
 import type { WorkspaceId } from "./types";
+import { EngineeringResultPanels } from "./EngineeringResultPanels";
 
 interface ResultsInspectorProps {
   model: ProjectModel;
@@ -462,6 +463,7 @@ export function ResultsInspector({
             <div><dt>Maximum climb</dt><dd>{result.roadTransport.maximumClimbGradeDeg === null ? "N/A" : formatEngineering(result.roadTransport.maximumClimbGradeDeg, "°")}</dd></div>
           </dl>
         )}
+        <EngineeringResultPanels model={model} result={result} />
       </section>
 
       <section className="inspector-section selected-section">
