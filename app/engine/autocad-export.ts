@@ -1,4 +1,5 @@
 import { calculateProject } from "./core";
+import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
 import { currentEngineeringValues, ENGINEERING_REFERENCE } from "./engineering-reference";
 import { hydraulicPressureOutputs } from "./hydraulic-output";
 import type { CalculationResult, ProjectModel } from "./types";
@@ -50,6 +51,7 @@ export function buildAutocadExport(
   authoritativeResult?: CalculationResult,
   generatedAt = new Date().toISOString(),
 ): AutocadExportDocument {
+  model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   const result = authoritativeResult ?? calculateProject(model);
   const resolvedByIndex = new Map(result.resolvedTrailers.map((item) => [item.index, item]));
   const selectedDefinitions = model.trailers.map((trailer) => model.catalogue.find((item) => item.id === trailer.definitionId)).filter(Boolean);

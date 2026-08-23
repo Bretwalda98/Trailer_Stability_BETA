@@ -30,6 +30,7 @@ import {
 import { createDefaultModel, hydrateProjectModel } from "../../data/default-model";
 import {
   applyAutomaticCargoCogEnvelopeInputs,
+  cargoCogEnvelopeGuidance,
   derivedCargoCogEnvelopeInputs,
 } from "../../engine/cargo-envelope";
 import {
@@ -384,6 +385,10 @@ export function SetupWizard({
     () => collectSetupIssues(draftModel, engine.result),
     [draftModel, engine.result],
   );
+  const cogEnvelopeGuidance = useMemo(
+    () => cargoCogEnvelopeGuidance(draftModel.cargo),
+    [draftModel.cargo],
+  );
   const stepIssues = issuesForStep(issues, step);
   const stepIndex = SETUP_STEPS.findIndex((item) => item.id === step);
   const blockingCount = issues.filter((item) => item.severity === "blocking").length;
@@ -670,11 +675,17 @@ export function SetupWizard({
         </div>
       </FormSection>
       <FormSection title="Cargo COG and uncertainty envelope">
+        {cogEnvelopeGuidance.warnings.length > 0 && (
+          <div className="wizard-notice warning">
+            <IconAlertTriangle size={15} />
+            <span>{cogEnvelopeGuidance.warnings.join(" ")}</span>
+          </div>
+        )}
         <div className="wizard-toggle-grid">
           <ToggleField
             label="Auto-calculate COG envelope"
             checked={draftModel.cargo.autoCogEnvelopeFromCargo}
-            hint="Default: X is 2% of cargo length; Y is 2% of cargo width."
+            hint="Default: 2.5% of cargo length/width, with a 0.100 m automatic minimum. The advised manual minimum is 2%."
             onChange={(autoCogEnvelopeFromCargo) => updateCargo({
               autoCogEnvelopeFromCargo,
               ...(autoCogEnvelopeFromCargo ? derivedCargoCogEnvelopeInputs(draftModel.cargo) : {}),
@@ -685,8 +696,8 @@ export function SetupWizard({
           <NumberField label="COG X" value={draftModel.cargo.cog.x} unit="m" highlight={() => setSelectedId("cog:cargo")} onChange={(x) => updateCargo({ cog: { ...draftModel.cargo.cog, x } })} />
           <NumberField label="COG Y" value={draftModel.cargo.cog.y} unit="m" highlight={() => setSelectedId("cog:cargo")} onChange={(y) => updateCargo({ cog: { ...draftModel.cargo.cog, y } })} />
           <NumberField label="COG Z" value={draftModel.cargo.cog.z} unit="m" highlight={() => setSelectedId("cog:cargo")} onChange={(z) => updateCargo({ cog: { ...draftModel.cargo.cog, z } })} />
-          <NumberField label="Envelope X ±" value={draftModel.cargo.envelopeX} unit="m" min={0} disabled={draftModel.cargo.autoCogEnvelopeFromCargo} validation={draftModel.cargo.envelopeX >= 0 ? "valid" : "invalid"} hint={draftModel.cargo.autoCogEnvelopeFromCargo ? "2% of cargo length" : "Manual X uncertainty"} highlight={() => setSelectedId("envelope:cargo")} onChange={(envelopeX) => updateCargo({ envelopeX })} />
-          <NumberField label="Envelope Y ±" value={draftModel.cargo.envelopeY} unit="m" min={0} disabled={draftModel.cargo.autoCogEnvelopeFromCargo} validation={draftModel.cargo.envelopeY >= 0 ? "valid" : "invalid"} hint={draftModel.cargo.autoCogEnvelopeFromCargo ? "2% of cargo width" : "Manual Y uncertainty"} highlight={() => setSelectedId("envelope:cargo")} onChange={(envelopeY) => updateCargo({ envelopeY })} />
+          <NumberField label="Envelope X ±" value={draftModel.cargo.envelopeX} unit="m" min={0} disabled={draftModel.cargo.autoCogEnvelopeFromCargo} validation={draftModel.cargo.envelopeX >= 0 && (draftModel.cargo.autoCogEnvelopeFromCargo || (!cogEnvelopeGuidance.x.belowAdvisedMinimum && !cogEnvelopeGuidance.x.belowAbsoluteMinimum)) ? "valid" : "invalid"} hint={draftModel.cargo.autoCogEnvelopeFromCargo ? `2.5% of length; automatic value ${cogEnvelopeGuidance.x.automaticM.toFixed(3)} m` : `Manual override; advised 2% = ${cogEnvelopeGuidance.x.advisedMinimumM.toFixed(3)} m; under 0.100 m not advised`} highlight={() => setSelectedId("envelope:cargo")} onChange={(envelopeX) => updateCargo({ envelopeX })} />
+          <NumberField label="Envelope Y ±" value={draftModel.cargo.envelopeY} unit="m" min={0} disabled={draftModel.cargo.autoCogEnvelopeFromCargo} validation={draftModel.cargo.envelopeY >= 0 && (draftModel.cargo.autoCogEnvelopeFromCargo || (!cogEnvelopeGuidance.y.belowAdvisedMinimum && !cogEnvelopeGuidance.y.belowAbsoluteMinimum)) ? "valid" : "invalid"} hint={draftModel.cargo.autoCogEnvelopeFromCargo ? `2.5% of width; automatic value ${cogEnvelopeGuidance.y.automaticM.toFixed(3)} m` : `Manual override; advised 2% = ${cogEnvelopeGuidance.y.advisedMinimumM.toFixed(3)} m; under 0.100 m not advised`} highlight={() => setSelectedId("envelope:cargo")} onChange={(envelopeY) => updateCargo({ envelopeY })} />
         </div>
       </FormSection>
       <details className="wizard-advanced" open>

@@ -19,7 +19,10 @@ import {
   engineeringLimitsFor,
   validateCatalogue,
 } from "../app/engine/core";
-import { derivedCargoCogEnvelopeInputs } from "../app/engine/cargo-envelope";
+import {
+  cargoCogEnvelopeGuidance,
+  derivedCargoCogEnvelopeInputs,
+} from "../app/engine/cargo-envelope";
 import {
   applyArrangementDescriptor,
   applyArrangementEnvironmentalActions,
@@ -80,6 +83,7 @@ import { AUTOCAD_COMPACT_FORMAT, buildAutocadCompactExport } from "../app/engine
 import { buildAutocadDxfExport } from "../app/engine/autocad-dxf-export";
 import { buildCaseTextExport } from "../app/engine/case-text-export";
 import { buildHandCalculation } from "../app/engine/hand-calculation";
+import { updateModelField } from "../app/components/workbench/model-update";
 
 function arrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -393,11 +397,80 @@ async function main(): Promise<void> {
   assert.equal(model.cargo.autoWindFromCargo, true);
   assert.equal(model.cargo.autoCogEnvelopeFromCargo, true);
   assert.deepEqual(derivedCargoCogEnvelopeInputs(model.cargo), {
-    envelopeX: model.cargo.lengthM * 0.02,
-    envelopeY: model.cargo.widthM * 0.02,
+    envelopeX: model.cargo.lengthM * 0.025,
+    envelopeY: model.cargo.widthM * 0.025,
   });
-  assert.equal(model.cargo.envelopeX, model.cargo.lengthM * 0.02);
-  assert.equal(model.cargo.envelopeY, model.cargo.widthM * 0.02);
+  assert.equal(model.cargo.envelopeX, model.cargo.lengthM * 0.025);
+  assert.equal(model.cargo.envelopeY, model.cargo.widthM * 0.025);
+
+  const smallEnvelopeCargo = {
+    ...model.cargo,
+    lengthM: 3.99,
+    widthM: 4,
+    envelopeX: 0,
+    envelopeY: 0,
+  };
+  assert.deepEqual(derivedCargoCogEnvelopeInputs(smallEnvelopeCargo), {
+    envelopeX: 0.1,
+    envelopeY: 0.1,
+  });
+  const smallEnvelopeGuidance = cargoCogEnvelopeGuidance({
+    ...smallEnvelopeCargo,
+    ...derivedCargoCogEnvelopeInputs(smallEnvelopeCargo),
+  });
+  assert.equal(smallEnvelopeGuidance.x.automaticMinimumApplied, true);
+  assert.equal(smallEnvelopeGuidance.y.automaticMinimumApplied, false);
+  assert.equal(smallEnvelopeGuidance.warnings.length, 1);
+  assert.match(smallEnvelopeGuidance.warnings[0], /0\.100 m minimum/);
+
+  const largeEnvelopeCargo = {
+    ...model.cargo,
+    lengthM: 30,
+    widthM: 40,
+    envelopeX: 0,
+    envelopeY: 0,
+  };
+  assert.deepEqual(derivedCargoCogEnvelopeInputs(largeEnvelopeCargo), {
+    envelopeX: 0.75,
+    envelopeY: 1,
+  });
+  const manualBelowAdvised = {
+    ...largeEnvelopeCargo,
+    autoCogEnvelopeFromCargo: false,
+    envelopeX: 0.59,
+    envelopeY: 0.79,
+  };
+  assert.equal(cargoCogEnvelopeGuidance(manualBelowAdvised).warnings.length, 2);
+  const manualEnvelopeModel = structuredClone(model);
+  manualEnvelopeModel.cargo = manualBelowAdvised;
+  assert.ok(collectSetupIssues(manualEnvelopeModel, calculateProject(manualEnvelopeModel)).some((item) => item.id.startsWith("cargo-envelope-guidance-") && item.severity === "warning"));
+  assert.ok(collectArrangementIssues(manualEnvelopeModel, manualEnvelopeModel.arrangementOptimiser).some((item) => item.id.startsWith("cargo-envelope-guidance-") && item.severity === "warning"));
+
+  const manualBelowAbsolute = structuredClone(manualEnvelopeModel);
+  manualBelowAbsolute.cargo.envelopeX = 0.05;
+  manualBelowAbsolute.cargo.envelopeY = 0.09;
+  const belowAbsoluteGuidance = cargoCogEnvelopeGuidance(manualBelowAbsolute.cargo);
+  assert.equal(belowAbsoluteGuidance.warnings.length, 2);
+  assert.ok(belowAbsoluteGuidance.warnings.every((warning) => /explicit override is not advised/.test(warning)));
+  assert.ok(calculateProject(manualBelowAbsolute).warnings.some((warning) => /below the 0\.100 m minimum/.test(warning)));
+
+  const negativeEnvelope = structuredClone(manualEnvelopeModel);
+  negativeEnvelope.cargo.envelopeX = -0.01;
+  assert.ok(collectSetupIssues(negativeEnvelope, calculateProject(negativeEnvelope)).some((item) => item.id === "cargo-envelope-negative" && item.severity === "blocking"));
+  assert.ok(collectArrangementIssues(negativeEnvelope, negativeEnvelope.arrangementOptimiser).some((item) => item.id === "cargo-envelope-negative" && item.severity === "blocking"));
+
+  const automaticFloorModel = structuredClone(model);
+  automaticFloorModel.cargo.lengthM = 3.99;
+  automaticFloorModel.cargo.widthM = 4;
+  automaticFloorModel.cargo.cog = { x: 1.995, y: 2, z: 2 };
+  automaticFloorModel.cargo.envelopeX = 999;
+  automaticFloorModel.cargo.envelopeY = 999;
+  assert.ok(calculateProject(automaticFloorModel).warnings.some((warning) => /Automatic X COG envelope uses the 0\.100 m minimum/.test(warning)));
+  const detailEditedAutomatic = updateModelField(model, "cargo.lengthM", 20);
+  assert.equal(detailEditedAutomatic.cargo.envelopeX, 0.5);
+  const detailManualMode = updateModelField(model, "cargo.autoCogEnvelopeFromCargo", false);
+  const detailEditedManual = updateModelField(detailManualMode, "cargo.envelopeX", 0.08);
+  assert.equal(detailEditedManual.cargo.envelopeX, 0.08);
   assert.equal(model.arrangementOptimiser.preferredCentreSpacingM, 2.9);
   assert.equal(model.arrangementOptimiser.minimumClearanceM, MINIMUM_TRAIN_CLEARANCE_M);
   assert.equal(model.arrangementOptimiser.searchMode, "MATHEMATICAL_BRANCH_BOUND");
@@ -983,6 +1056,20 @@ async function main(): Promise<void> {
   Object.assign(manualEnvelope.cargo, derivedCargoCogEnvelopeInputs(manualEnvelope.cargo));
   const manualEnvelopeResult = calculateProject(manualEnvelope);
   assert.deepEqual(autoEnvelopeResult.casePoints.basic, manualEnvelopeResult.casePoints.basic);
+  const automaticEnvelopeValues = derivedCargoCogEnvelopeInputs(autoEnvelope.cargo);
+  const automaticEnvelopeCad = buildAutocadExport(autoEnvelope, autoEnvelopeResult, "2026-08-23T12:00:00.000Z");
+  const automaticEnvelopeCadCargo = automaticEnvelopeCad.data.cg as { exn: number; eyn: number };
+  assert.equal(automaticEnvelopeCadCargo.exn, automaticEnvelopeValues.envelopeX);
+  assert.equal(automaticEnvelopeCadCargo.eyn, automaticEnvelopeValues.envelopeY);
+  const automaticEnvelopeCompactLoad = buildAutocadCompactExport(autoEnvelope, autoEnvelopeResult, "2026-08-23T12:00:00.000Z")
+    .split(/\r?\n/)
+    .find((line) => line.startsWith("LOAD|"))!
+    .split("|");
+  assert.ok(Math.abs(Number(automaticEnvelopeCompactLoad[10]) - automaticEnvelopeValues.envelopeX * 1000) < 1e-9);
+  assert.ok(Math.abs(Number(automaticEnvelopeCompactLoad[11]) - automaticEnvelopeValues.envelopeY * 1000) < 1e-9);
+  const automaticEnvelopeText = buildCaseTextExport(autoEnvelope, autoEnvelopeResult, "2026-08-23T12:00:00.000Z");
+  assert.match(automaticEnvelopeText, /COG envelope: \+\/- 0\.300 m X, \+\/- 0\.125 m Y \(automatic: 2\.5% with 0\.100 m minimum\)/);
+  assert.doesNotMatch(automaticEnvelopeText, /999\.000 m/);
 
   const result = calculateProject(model);
   assert.ok(Number.isFinite(result.totalMassT) && result.totalMassT > model.cargo.massT);
@@ -1523,8 +1610,8 @@ async function main(): Promise<void> {
   assert.equal(mainSheet.F17.v, "Third");
   assert.equal(mainSheet.J22.v, "WEIGHT-COG-REF-42");
   assert.equal(mainSheet.D48.v, "Rear-right datum");
-  assert.equal(mainSheet.E64.v, exportModel.cargo.lengthM * 0.02);
-  assert.equal(mainSheet.E65.v, exportModel.cargo.widthM * 0.02);
+  assert.equal(mainSheet.E64.v, derivedCargoCogEnvelopeInputs(exportModel.cargo).envelopeX);
+  assert.equal(mainSheet.E65.v, derivedCargoCogEnvelopeInputs(exportModel.cargo).envelopeY);
   assert.equal(mainSheet.C89.v, 12);
   assert.equal(formula(workbook, "Load and Stability Calculation", "C90"), "$C$89");
   assert.equal(mainSheet.D138.v, 4);

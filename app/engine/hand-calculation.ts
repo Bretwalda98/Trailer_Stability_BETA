@@ -1,4 +1,5 @@
 import { engineeringLimitsFor } from "./core";
+import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
 import type { CalculationResult, ProjectModel, TrailerDefinition } from "./types";
 
 export interface HandCalculationEquation {
@@ -132,6 +133,7 @@ export function buildHandCalculation(
   result: CalculationResult,
   generatedAt = new Date().toISOString(),
 ): HandCalculationDocument {
+  model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   const limits = engineeringLimitsFor(model.engineeringDegree);
   const definition = definitionForAnalysedTrailer(model);
   const loosePackingMass = model.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0);

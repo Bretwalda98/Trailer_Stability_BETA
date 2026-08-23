@@ -76,7 +76,7 @@ export interface CargoInput {
   extremeY: number;
   massT: number;
   cog: Point3;
-  /** When enabled, COG uncertainty is +/-2% of cargo length/width. */
+  /** When enabled, COG uncertainty is max(+/-2.5% of cargo length/width, 0.100 m). */
   autoCogEnvelopeFromCargo: boolean;
   envelopeX: number;
   envelopeY: number;

@@ -1,4 +1,5 @@
 import { calculateProject } from "./core";
+import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
 import { hydraulicPressureOutputs } from "./hydraulic-output";
 import type { CalculationResult, HydraulicGrouping, ProjectModel } from "./types";
 
@@ -63,6 +64,7 @@ export function buildAutocadCompactExport(
   authoritativeResult?: CalculationResult,
   generatedAt = new Date().toISOString(),
 ): string {
+  model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   const result = authoritativeResult ?? calculateProject(model);
   const lines: string[] = [
     line(AUTOCAD_COMPACT_FORMAT, AUTOCAD_COMPACT_VERSION, "MM-T-KN-DEG", "REAR-LOW-X"),

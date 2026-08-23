@@ -1,4 +1,5 @@
 import type { CalculationResult, ProjectModel } from "./types";
+import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
 
 /**
  * The calculation contract exposed to engineers and to interchange readers.
@@ -15,8 +16,10 @@ export const ENGINEERING_REFERENCE = {
     { id: "road-gravity", symbol: "g-road", value: 9.80665, unit: "m/s²", meaning: "Acceleration used by the road traction and braking check." },
     { id: "traction-bogie-limit", symbol: "F-drive", value: 60, unit: "kN/bogie", meaning: "Mechanical traction limit per credited driven bogie." },
     { id: "braking-bogie-limit", symbol: "F-brake", value: 55, unit: "kN/bogie", meaning: "Mechanical braking limit per credited braked bogie." },
-    { id: "cog-envelope-x", symbol: "eX", value: 0.02, unit: "of cargo length", meaning: "Default automatic longitudinal COG allowance." },
-    { id: "cog-envelope-y", symbol: "eY", value: 0.02, unit: "of cargo width", meaning: "Default automatic transverse COG allowance." },
+    { id: "cog-envelope-x", symbol: "eX", value: 0.025, unit: "of cargo length", meaning: "Default automatic longitudinal COG allowance, subject to a 0.100 m minimum." },
+    { id: "cog-envelope-y", symbol: "eY", value: 0.025, unit: "of cargo width", meaning: "Default automatic transverse COG allowance, subject to a 0.100 m minimum." },
+    { id: "cog-envelope-advised-minimum", symbol: "e-min", value: 0.02, unit: "of cargo dimension", meaning: "Advised minimum when a cargo COG envelope is entered manually." },
+    { id: "cog-envelope-absolute-minimum", symbol: "e-abs", value: 0.1, unit: "m", meaning: "Automatic minimum; a smaller manual override is accepted only with a not-advised warning." },
   ],
   inputs: [
     { id: "cargo", values: "length, width, height, extreme X/Y, mass, COG X/Y/Z, COG envelope, projected wind areas, drag coefficients and wind application heights", purpose: "Defines the payload geometry, mass distribution and environmental force surfaces." },
@@ -52,6 +55,7 @@ export const ENGINEERING_REFERENCE = {
 } as const;
 
 export function currentEngineeringValues(model: ProjectModel, result: CalculationResult) {
+  model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   return {
     case: {
       degree: model.engineeringDegree,

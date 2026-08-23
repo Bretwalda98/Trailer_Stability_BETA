@@ -1,4 +1,5 @@
 import type { ProjectModel } from "../../engine/types";
+import { applyAutomaticProjectCargoCogEnvelopeInputs } from "../../engine/cargo-envelope";
 
 export function updateModelField(
   model: ProjectModel,
@@ -15,7 +16,7 @@ export function updateModelField(
     cursor = next as Record<string, unknown>;
   }
   cursor[parts.at(-1) ?? ""] = value;
-  return clone as unknown as ProjectModel;
+  return applyAutomaticProjectCargoCogEnvelopeInputs(clone as unknown as ProjectModel);
 }
 
 export function numberInput(value: string, fallback: number): number {

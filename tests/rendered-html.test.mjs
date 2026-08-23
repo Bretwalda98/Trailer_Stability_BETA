@@ -123,8 +123,9 @@ test("keeps phone, offline, interactive drawing and compact AutoCAD capabilities
   assert.match(serviceWorker, /caches\.match/);
   assert.match(setupWizard, /Auto-calculate wind areas/);
   assert.match(setupWizard, /Auto-calculate COG envelope/);
-  assert.match(setupWizard, /2% of cargo length/);
-  assert.match(setupWizard, /2% of cargo width/);
+  assert.match(setupWizard, /2\.5% of cargo length\/width/);
+  assert.match(setupWizard, /0\.100 m automatic minimum/);
+  assert.match(setupWizard, /advised manual minimum is 2%/);
   assert.match(setupWizard, /Start with the cargo envelope/);
   assert.doesNotMatch(workbench, /OptimiserWizard/);
   assert.doesNotMatch(workbench, /OptimisationWorkspace/);

@@ -32,7 +32,7 @@ the supplied `Supports active check.pdf` as a reference case.
 
 Define envelope controls in cargo details. Automatically set X and Y envelopes
 to 2.5% of cargo length and width respectively, show 2% as the advised minimum,
-and cap each automatic value at 0.100 m. Warn when the automatic cap applies or
+and apply a 0.100 m automatic minimum. Warn when the automatic minimum applies or
 when a manual value is outside the advised range. A value below 100 mm remains
 possible only as an explicit, clearly labelled not-advised override. Verify
 small and large cargo boundaries and agreement with the authoritative workbook.

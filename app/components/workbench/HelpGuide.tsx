@@ -40,10 +40,11 @@ const GUIDE_SECTIONS = [
     title: "Calculate COG envelope and wind inputs from cargo",
     intro: "Automatic COG envelope and wind projection are enabled by default for new cases.",
     steps: [
-      "With Auto-calculate COG envelope on, X uncertainty is 2% of cargo length and Y uncertainty is 2% of cargo width.",
+      "With Auto-calculate COG envelope on, X uncertainty is 2.5% of cargo length and Y uncertainty is 2.5% of cargo width. Each automatic value has a 0.100 m minimum.",
+      "For manual envelopes, 2% of the relevant cargo dimension is the advised minimum. A value below 0.100 m is an explicit not-advised override and must be independently justified.",
       "With Auto-calculate wind areas on, side area is cargo length × height and front area is cargo width × height.",
       "Both wind forces act at half the cargo height; changing any cargo dimension updates these verification inputs and the COG envelope immediately.",
-      "Switch automatic calculation off only when separately verified envelope, projected area or force height values are required.",
+      "Switch automatic calculation off only when separately verified envelope, projected area or force height values are required. Amber envelope fields remain usable as manual overrides but require engineering review.",
       "Green inputs are acceptable. Amber inputs require a value within the allowed engineering range before the wizard can continue.",
     ],
   },
