@@ -21,6 +21,20 @@ export interface WorkbookImportResult {
 const MAIN = "Load and Stability Calculation";
 const DATABASE = "Database";
 const CONTROL = "TS_CONTROL";
+const EXPORT_TO_DWG = "Export to DWG";
+const REQUIRED_FOUR_POINT_SHEETS = [
+  MAIN,
+  DATABASE,
+  CONTROL,
+  EXPORT_TO_DWG,
+  "Slope effect COG",
+  "Dynamic loading CombinedCOG",
+  "Spinebeam calculation",
+] as const;
+
+export const VERIFICATION_EXPORT_CONTRACT_VERSION = "TS-XLSM-4P-1";
+export const VERIFICATION_TEMPLATE_ASSET =
+  "/templates/Trailer_Stability_Verification_Template_v0.8_4Point_InPlace.xlsm";
 
 function numberValue(sheet: WorkSheet, address: string, fallback: number): number {
   const value = sheet[address]?.v;
@@ -407,6 +421,17 @@ export async function importWorkbook(file: File, fallback: ProjectModel): Promis
         axleLinesUsed: numberValue(control, "B73", model.optimiser.weights.axleLinesUsed),
       },
     };
+    if (
+      textValue(control, "B102") === VERIFICATION_EXPORT_CONTRACT_VERSION &&
+      textValue(control, "D102").toUpperCase() === "SUPPORT ID"
+    ) {
+      model.supports = model.supports.map((support, index) => ({
+        ...support,
+        allowed: yes(control[`E${103 + index}`]?.v),
+        active: yes(control[`F${103 + index}`]?.v),
+        positiveConnectionToDeck: yes(control[`G${103 + index}`]?.v),
+      }));
+    }
   }
   return { model, warnings, workbookName: file.name, sourceBytes: bytes };
 }
@@ -416,6 +441,7 @@ type CellValue = string | number | boolean | null;
 interface XmlCellPatch {
   value: CellValue;
   formula?: string;
+  preserveExistingFormula?: boolean;
 }
 
 interface XmlPatchSheet {
@@ -427,15 +453,13 @@ function createPatchSheet(name: string): XmlPatchSheet {
   return { name, cells: new Map<string, XmlCellPatch>() };
 }
 
-function setValue(sheet: XmlPatchSheet, address: string, value: CellValue): void {
-  sheet.cells.set(address.toUpperCase(), { value });
-}
-
-function setFormula(sheet: XmlPatchSheet, address: string, formula: string, cachedValue: string | number = ""): void {
-  sheet.cells.set(address.toUpperCase(), {
-    value: cachedValue,
-    formula: formula.startsWith("=") ? formula.slice(1) : formula,
-  });
+function setValue(
+  sheet: XmlPatchSheet,
+  address: string,
+  value: CellValue,
+  preserveExistingFormula = false,
+): void {
+  sheet.cells.set(address.toUpperCase(), { value, preserveExistingFormula });
 }
 
 function escapeRegExp(value: string): string {
@@ -489,6 +513,60 @@ function worksheetPaths(archive: Record<string, Uint8Array>, decoder: TextDecode
   return result;
 }
 
+async function assertFourPointVerificationTemplate(bytes: Uint8Array): Promise<void> {
+  const { unzipSync } = await import("fflate");
+  let archive: Record<string, Uint8Array>;
+  try {
+    archive = unzipSync(bytes);
+  } catch {
+    throw new Error(
+      `The Excel calculation template is not a valid macro-enabled workbook package. Expected contract ${VERIFICATION_EXPORT_CONTRACT_VERSION}.`,
+    );
+  }
+
+  const decoder = new TextDecoder();
+  const paths = worksheetPaths(archive, decoder);
+  const issues: string[] = [];
+  for (const sheetName of REQUIRED_FOUR_POINT_SHEETS) {
+    const path = paths.get(sheetName);
+    if (!path || !archive[path]) issues.push(`missing sheet "${sheetName}"`);
+  }
+  if (!archive["xl/vbaProject.bin"]) issues.push("missing VBA project");
+  if (!Object.entries(archive).some(([path, payload]) =>
+    path.startsWith("xl/tables/") && decoder.decode(payload).includes('name="tblTrailerData"')
+  )) {
+    issues.push("missing tblTrailerData catalogue table");
+  }
+
+  const mainPath = paths.get(MAIN);
+  const mainXml = mainPath && archive[mainPath] ? decoder.decode(archive[mainPath]) : "";
+  const exportPath = paths.get(EXPORT_TO_DWG);
+  const exportXml = exportPath && archive[exportPath] ? decoder.decode(archive[exportPath]) : "";
+  const workbookXml = archive["xl/workbook.xml"]
+    ? decoder.decode(archive["xl/workbook.xml"])
+    : "";
+
+  if (!/\br="D133"/.test(mainXml)) issues.push("missing explicit three-/four-point mode cell D133");
+  if (!mainXml.includes("TS_HYD_REACTION(4")) issues.push("missing direct Group 4 reaction formulas");
+  if (!mainXml.includes("TS_HYD_GROUP_CENTRE(4")) issues.push("missing direct Group 4 centre formulas");
+  for (const copyFormula of ["$C$89", "$E$89", "$D$138", "$G$136", "$N$136"]) {
+    if (!mainXml.includes(copyFormula)) issues.push(`missing retained shared input formula ${copyFormula}`);
+  }
+  if (!/\br="O249"/.test(mainXml) || !/\br="O256"/.test(mainXml)) {
+    issues.push("missing Group 4 loading/GBP output cells");
+  }
+  if (!exportXml.includes("TS_HYD_POLYGON_VALID")) {
+    issues.push("missing four-point Export to DWG boundary validation");
+  }
+  if (!/\bname="bogies4"/.test(workbookXml)) issues.push("missing bogies4 workbook definition");
+
+  if (issues.length) {
+    throw new Error(
+      `The selected Excel calculation template is incompatible with ${VERIFICATION_EXPORT_CONTRACT_VERSION}: ${issues.join("; ")}. Use the latest four-point in-place workbook.`,
+    );
+  }
+}
+
 function cellColumn(address: string): number {
   const letters = address.match(/^[A-Z]+/)?.[0] ?? "A";
   let result = 0;
@@ -530,7 +608,7 @@ function fallbackColumnStyle(xml: string, address: string): string {
 function insertCellIntoRow(rowXml: string, address: string, cellXml: string): string {
   if (/\/>\s*$/.test(rowXml)) return rowXml.replace(/\/>\s*$/, `>${cellXml}</row>`);
   const targetColumn = cellColumn(address);
-  for (const match of rowXml.matchAll(/<c\b[^>]*\br="([A-Z]+\d+)"[^>]*(?:\/>|>[\s\S]*?<\/c>)/g)) {
+  for (const match of rowXml.matchAll(/<c\b[^>]*\br="([A-Z]+\d+)"[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g)) {
     if (cellColumn(match[1]) > targetColumn) {
       const index = match.index ?? rowXml.length;
       return `${rowXml.slice(0, index)}${cellXml}${rowXml.slice(index)}`;
@@ -541,7 +619,7 @@ function insertCellIntoRow(rowXml: string, address: string, cellXml: string): st
 
 function setXmlCell(xml: string, address: string, patch: XmlCellPatch): string {
   const cellPattern = new RegExp(
-    `<c\\b(?=[^>]*\\br="${escapeRegExp(address)}")[^>]*(?:\\/>|>[\\s\\S]*?<\\/c>)`,
+    `<c\\b(?=[^>]*\\br="${escapeRegExp(address)}")[^>]*?(?:\\/>|>[\\s\\S]*?<\\/c>)`,
   );
   const existing = xml.match(cellPattern)?.[0];
   const rendered = renderCell(address, patch, existing ? styleAttribute(existing) : fallbackColumnStyle(xml, address));
@@ -549,7 +627,7 @@ function setXmlCell(xml: string, address: string, patch: XmlCellPatch): string {
 
   const rowNumber = cellRow(address);
   const rowPattern = new RegExp(
-    `<row\\b(?=[^>]*\\br="${rowNumber}")[^>]*(?:\\/>|>[\\s\\S]*?<\\/row>)`,
+    `<row\\b(?=[^>]*\\br="${rowNumber}")[^>]*?(?:\\/>|>[\\s\\S]*?<\\/row>)`,
   );
   const existingRow = xml.match(rowPattern)?.[0];
   if (existingRow) return xml.replace(rowPattern, insertCellIntoRow(existingRow, address, rendered));
@@ -557,7 +635,7 @@ function setXmlCell(xml: string, address: string, patch: XmlCellPatch): string {
   const sheetData = xml.match(/<sheetData\b[^>]*>[\s\S]*?<\/sheetData>/)?.[0];
   if (!sheetData) throw new Error("Worksheet has no sheetData section.");
   let insertionIndex = sheetData.lastIndexOf("</sheetData>");
-  for (const match of sheetData.matchAll(/<row\b[^>]*\br="(\d+)"[^>]*(?:\/>|>[\s\S]*?<\/row>)/g)) {
+  for (const match of sheetData.matchAll(/<row\b[^>]*\br="(\d+)"[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g)) {
     if (Number(match[1]) > rowNumber) {
       insertionIndex = match.index ?? insertionIndex;
       break;
@@ -574,8 +652,30 @@ function patchWorksheet(xml: string, sheet: XmlPatchSheet): string {
     const rowDifference = cellRow(left[0]) - cellRow(right[0]);
     return rowDifference || cellColumn(left[0]) - cellColumn(right[0]);
   });
-  for (const [address, patch] of patches) result = setXmlCell(result, address, patch);
+  for (const [address, patch] of patches) {
+    const existingPattern = new RegExp(
+      `<c\\b(?=[^>]*\\br="${escapeRegExp(address)}")[^>]*?(?:\\/>|>[\\s\\S]*?<\\/c>)`,
+    );
+    const existing = result.match(existingPattern)?.[0];
+    if (patch.formula === undefined && patch.preserveExistingFormula && existing?.includes("<f")) continue;
+    result = setXmlCell(result, address, patch);
+  }
   return result;
+}
+
+function expandWorksheetDimension(xml: string, addresses: Iterable<string>): string {
+  const dimension = xml.match(/<dimension\b[^>]*\bref="([A-Z]+\d+)(?::([A-Z]+\d+))?"[^>]*\/>/);
+  if (!dimension) return xml;
+  const start = dimension[1];
+  const existingEnd = dimension[2] ?? start;
+  let maximumRow = cellRow(existingEnd);
+  let maximumColumn = cellColumn(existingEnd);
+  for (const address of addresses) {
+    maximumRow = Math.max(maximumRow, cellRow(address));
+    maximumColumn = Math.max(maximumColumn, cellColumn(address));
+  }
+  const reference = `${start}:${encodeColumn(maximumColumn - 1)}${maximumRow}`;
+  return xml.replace(dimension[0], dimension[0].replace(dimension[0].match(/\bref="[^"]+"/)?.[0] ?? "", `ref="${reference}"`));
 }
 
 async function patchWorkbookPackage(
@@ -592,6 +692,7 @@ async function patchWorkbookPackage(
     const path = paths.get(sheet.name);
     if (!path || !archive[path]) throw new Error(`The verification package is missing the required "${sheet.name}" data section.`);
     let xml = patchWorksheet(decoder.decode(archive[path]), sheet);
+    xml = expandWorksheetDimension(xml, sheet.cells.keys());
     if (sheet.name === DATABASE) {
       const endRow = 3 + catalogueRows;
       xml = xml.replace(/<dimension\b[^>]*\bref="([A-Z]+\d+):([A-Z]+)(\d+)"[^>]*\/>/, (tag, start, endColumn, row) =>
@@ -609,6 +710,21 @@ async function patchWorkbookPackage(
       .replace(/ref="A3:W\d+"/g, `ref="A3:W${endRow}"`)
       .replace(/<autoFilter ref="A3:W\d+"/g, `<autoFilter ref="A3:W${endRow}"`);
     archive[path] = encoder.encode(xml);
+  }
+  delete archive["xl/calcChain.xml"];
+  const contentTypesPath = "[Content_Types].xml";
+  if (archive[contentTypesPath]) {
+    const xml = decoder
+      .decode(archive[contentTypesPath])
+      .replace(/<Override\b(?=[^>]*PartName="\/xl\/calcChain\.xml")[^>]*\/>/g, "");
+    archive[contentTypesPath] = encoder.encode(xml);
+  }
+  const workbookRelationshipsPath = "xl/_rels/workbook.xml.rels";
+  if (archive[workbookRelationshipsPath]) {
+    const xml = decoder
+      .decode(archive[workbookRelationshipsPath])
+      .replace(/<Relationship\b(?=[^>]*Type="[^"]*\/calcChain")[^>]*\/>/g, "");
+    archive[workbookRelationshipsPath] = encoder.encode(xml);
   }
   const workbookPath = "xl/workbook.xml";
   if (archive[workbookPath]) {
@@ -639,10 +755,15 @@ export async function exportVerificationWorkbook(
   if (templateBytes) {
     source = templateBytes;
   } else {
-    const response = await fetch(assetPath("/templates/Trailer_Stability_Verification_Template_v0.7.xlsm"));
-    if (!response.ok) throw new Error("The verification template could not be loaded.");
+    const response = await fetch(assetPath(VERIFICATION_TEMPLATE_ASSET));
+    if (!response.ok) {
+      throw new Error(
+        `The latest four-point Excel calculation template could not be loaded (${VERIFICATION_EXPORT_CONTRACT_VERSION}).`,
+      );
+    }
     source = await response.arrayBuffer();
   }
+  await assertFourPointVerificationTemplate(new Uint8Array(source));
   const main = createPatchSheet(MAIN);
   const database = createPatchSheet(DATABASE);
   const control = createPatchSheet(CONTROL);
@@ -690,9 +811,6 @@ export async function exportVerificationWorkbook(
     if (index === 0) {
       setValue(main, `C${row}`, sharedAxles);
       setValue(main, `E${row}`, sharedX);
-    } else {
-      setFormula(main, `C${row}`, "$C$89", sharedAxles);
-      setFormula(main, `E${row}`, "$E$89", sharedX);
     }
     setValue(main, `D${row}`, trailer?.singleFile ? "yes" : "no");
     setValue(
@@ -706,7 +824,6 @@ export async function exportVerificationWorkbook(
     setValue(main, `K${row}`, trailer?.ppuRight ? "yes" : "no");
   }
   setValue(main, "D138", sharedSplit);
-  for (let row = 139; row <= 161; row += 1) setFormula(main, `D${row}`, "$D$138", sharedSplit);
   for (let index = 0; index < 12; index += 1) {
     const grouping = model.groupings[index];
     const firstBogieRow = 138 + index * 2;
@@ -720,18 +837,22 @@ export async function exportVerificationWorkbook(
   for (let column = 7; column <= 14; column += 1) {
     const address = encodeCell(135, column - 1);
     setValue(main, address, pins[column - 7] ?? null);
-    for (let row = 137; row <= 147; row += 1) {
-      const target = encodeCell(row - 1, column - 1);
-      setFormula(main, target, `$${encodeColumn(column - 1)}$136`, pins[column - 7] ?? "");
-    }
   }
+  const settledSupports = new Map(resolvedResult.supports.map((support) => [support.id, support]));
   for (let index = 0; index < 10; index += 1) {
     const support = model.supports[index];
+    const settledSupport = support ? settledSupports.get(support.id) : undefined;
     setValue(main, `E${71 + index}`, support?.xM ?? null);
     setValue(main, `F${71 + index}`, support?.optionalWeightT ?? null);
     setValue(main, `D${446 + index}`, support?.widthM ?? null);
-    setValue(main, `F${446 + index}`, support?.allowed ? "yes" : "no");
-    setValue(main, `I${446 + index}`, support?.active && support.allowed ? "yes" : "no");
+    setValue(main, `F${446 + index}`, support?.allowed ? "yes" : "no", true);
+    setValue(
+      main,
+      `I${446 + index}`,
+      settledSupport?.active && settledSupport.allowed && settledSupport.geometricallyAllowed
+        ? "yes"
+        : "no",
+    );
   }
   setValue(main, "D291", model.environment.routeLongitudinalSlopeDeg);
   setValue(main, "E291", model.environment.longitudinalSlopeDeg);
@@ -805,6 +926,26 @@ export async function exportVerificationWorkbook(
   setValue(control, "B71", model.optimiser.progressRefreshSeconds);
   setValue(control, "B72", model.optimiser.liveRefreshSeconds);
   setValue(control, "B73", model.optimiser.weights.axleLinesUsed);
+  setValue(control, "A102", "Web export contract");
+  setValue(control, "B102", VERIFICATION_EXPORT_CONTRACT_VERSION);
+  setValue(
+    control,
+    "C102",
+    "Latest four-point in-place workbook; lower X is rear and higher X is front.",
+  );
+  setValue(control, "D102", "Support ID");
+  setValue(control, "E102", "User allowed");
+  setValue(control, "F102", "Settled active");
+  setValue(control, "G102", "Positive connection");
+  for (let index = 0; index < 10; index += 1) {
+    const support = model.supports[index];
+    const settledSupport = support ? settledSupports.get(support.id) : undefined;
+    const row = 103 + index;
+    setValue(control, `D${row}`, support?.id ?? null);
+    setValue(control, `E${row}`, support?.allowed ? "yes" : "no");
+    setValue(control, `F${row}`, settledSupport?.active ? "yes" : "no");
+    setValue(control, `G${row}`, support?.positiveConnectionToDeck ? "yes" : "no");
+  }
   for (let index = 0; index < model.catalogue.length; index += 1) {
     const row = 4 + index;
     const item = model.catalogue[index];
@@ -833,7 +974,9 @@ export async function exportVerificationWorkbook(
       item.massBelowCylinderT,
       item.category,
     ];
-    values.forEach((value, column) => setValue(database, encodeCell(row - 1, column), value));
+    values.forEach((value, column) =>
+      setValue(database, encodeCell(row - 1, column), value, true)
+    );
   }
   return patchWorkbookPackage(new Uint8Array(source), model.catalogue.length, [main, database, control]);
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { unzipSync } from "fflate";
+import { unzipSync, zipSync } from "fflate";
 import * as XLSX from "xlsx";
 import { createDefaultModel, hydrateProjectModel } from "../app/data/default-model";
 import { solveContinuousBeam } from "../app/engine/beam";
@@ -77,7 +77,12 @@ import {
   stepCanContinue,
 } from "../app/engine/setup";
 import { derivedCargoWindInputs } from "../app/engine/wind";
-import { exportVerificationWorkbook, importWorkbook } from "../app/engine/workbook";
+import {
+  exportVerificationWorkbook,
+  importWorkbook,
+  VERIFICATION_EXPORT_CONTRACT_VERSION,
+  VERIFICATION_TEMPLATE_ASSET,
+} from "../app/engine/workbook";
 import { AUTOCAD_EXPORT_KEY, buildAutocadExport } from "../app/engine/autocad-export";
 import { AUTOCAD_COMPACT_FORMAT, buildAutocadCompactExport } from "../app/engine/autocad-compact-export";
 import { buildAutocadDxfExport } from "../app/engine/autocad-dxf-export";
@@ -1391,7 +1396,11 @@ async function main(): Promise<void> {
     root,
     "public",
     "templates",
-    "Trailer_Stability_Verification_Template_v0.7.xlsm",
+    "Trailer_Stability_Verification_Template_v0.8_4Point_InPlace.xlsm",
+  );
+  assert.equal(
+    VERIFICATION_TEMPLATE_ASSET,
+    "/templates/Trailer_Stability_Verification_Template_v0.8_4Point_InPlace.xlsm",
   );
   const template = new Uint8Array(await readFile(templatePath));
   const imported = await importWorkbook(
@@ -1417,6 +1426,19 @@ async function main(): Promise<void> {
   assert.notEqual(importedNativeResult.status, "GEOMETRY_FAIL");
   assert.notEqual(importedNativeResult.status, "ERROR");
   const sourceWorkbook = XLSX.read(template, { type: "array", cellFormula: true });
+  const incompatibleArchive = unzipSync(template);
+  for (const [archivePath, payload] of Object.entries(incompatibleArchive)) {
+    if (!archivePath.startsWith("xl/worksheets/") || !archivePath.endsWith(".xml")) continue;
+    const xml = text(payload);
+    if (!xml.includes("TS_HYD_REACTION(4")) continue;
+    incompatibleArchive[archivePath] = new TextEncoder().encode(
+      xml.replaceAll("TS_HYD_REACTION(4", "TS_HYD_REACTION_LEGACY(4"),
+    );
+  }
+  await assert.rejects(
+    exportVerificationWorkbook(fourPointModel, arrayBuffer(zipSync(incompatibleArchive))),
+    /incompatible.*missing direct Group 4 reaction formulas.*latest four-point in-place workbook/i,
+  );
   const fourPointVerificationBytes = await exportVerificationWorkbook(
     fourPointModel,
     arrayBuffer(template),
@@ -1583,11 +1605,36 @@ async function main(): Promise<void> {
   const outputDirectory = path.join(root, "test-output");
   await mkdir(outputDirectory, { recursive: true });
   const outputPath = path.join(outputDirectory, "Trailer_Stability_Verification_Roundtrip.xlsm");
+  const fourPointOutputPath = path.join(
+    outputDirectory,
+    "Trailer_Stability_Verification_FourPoint.xlsm",
+  );
   await writeFile(outputPath, exported);
+  await writeFile(fourPointOutputPath, fourPointVerificationBytes);
 
   const sourceArchive = unzipSync(template);
   const outputArchive = unzipSync(exported);
-  assert.deepEqual(Object.keys(outputArchive).sort(), Object.keys(sourceArchive).sort());
+  assert.deepEqual(
+    Object.keys(outputArchive).sort(),
+    Object.keys(sourceArchive).filter((archivePath) => archivePath !== "xl/calcChain.xml").sort(),
+  );
+  assert.equal(outputArchive["xl/calcChain.xml"], undefined);
+  assert.doesNotMatch(text(outputArchive["[Content_Types].xml"]), /calcChain/i);
+  assert.doesNotMatch(text(outputArchive["xl/_rels/workbook.xml.rels"]), /calcChain/i);
+  for (const [archivePath, payload] of Object.entries(outputArchive)) {
+    if (!archivePath.startsWith("xl/worksheets/") || !archivePath.endsWith(".xml")) continue;
+    const xml = text(payload);
+    for (const row of xml.matchAll(/<row\b[^>]*\br="(\d+)"[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g)) {
+      const rowNumber = row[1];
+      const cellReferences = [...row[0].matchAll(/<c\b[^>]*\br="([A-Z]+\d+)"/g)].map(
+        (match) => match[1],
+      );
+      assert.ok(
+        cellReferences.every((reference) => reference.endsWith(rowNumber)),
+        `${archivePath} row ${rowNumber} contains a cell from another row: ${cellReferences.join(", ")}`,
+      );
+    }
+  }
   assert.ok(sourceArchive["xl/vbaProject.bin"]);
   assert.ok(outputArchive["xl/vbaProject.bin"]);
   assert.deepEqual(outputArchive["xl/vbaProject.bin"], sourceArchive["xl/vbaProject.bin"]);
@@ -1622,7 +1669,7 @@ async function main(): Promise<void> {
   assert.equal(mainSheet.H136.v, 6);
   assert.equal(formula(workbook, "Load and Stability Calculation", "G137"), "$G$136");
   assert.equal(formula(workbook, "Load and Stability Calculation", "H147"), "$H$136");
-  assert.equal(mainSheet.F446.v, "no");
+  assert.match(formula(workbook, "Load and Stability Calculation", "F446"), /IF\(ISNUMBER\(C446\)/i);
   assert.equal(mainSheet.I446.v, "no");
   assert.equal(mainSheet.D291.v, 4.5);
   assert.equal(mainSheet.E291.v, 1.25);
@@ -1651,9 +1698,30 @@ async function main(): Promise<void> {
   assert.equal(controlSheet.B42.v, exportModel.optimiser.weights.dynamicRatio);
   assert.equal(controlSheet.B58.v, exportModel.optimiser.weights.shearUtil);
   assert.equal(controlSheet.B73.v, exportModel.optimiser.weights.axleLinesUsed);
+  assert.equal(controlSheet.A102.v, "Web export contract");
+  assert.equal(controlSheet.B102.v, VERIFICATION_EXPORT_CONTRACT_VERSION);
+  assert.match(String(controlSheet.C102.v), /lower X is rear and higher X is front/i);
+  assert.equal(controlSheet.D102.v, "Support ID");
+  assert.equal(controlSheet.E103.v, "no");
+  assert.equal(controlSheet.F103.v, "no");
+  const exportedEngineeringResult = calculateProject(exportModel);
+  for (let index = 0; index < 10; index += 1) {
+    const support = exportModel.supports[index];
+    const settled = support
+      ? exportedEngineeringResult.supports.find((candidate) => candidate.id === support.id)
+      : undefined;
+    assert.equal(
+      mainSheet[`I${446 + index}`].v,
+      settled?.active && settled.allowed && settled.geometricallyAllowed ? "yes" : "no",
+    );
+  }
   assert.equal(workbook.Sheets.Database.A16.v, "PEKZ G4");
   assert.equal(workbook.Sheets.Database.A18.v, "PEKZ G4 M78 X24 D24 TL24");
   assert.equal(workbook.Sheets.Database.A19.v, "CUSTOM VERIFICATION TRAILER");
+  assert.equal(
+    formula(workbook, "Database", "U4"),
+    formula(sourceWorkbook, "Database", "U4"),
+  );
   assert.ok(workbook.vbaraw && workbook.vbaraw.byteLength > 0);
   const reimportedExport = await importWorkbook(
     new File([arrayBuffer(exported)], "Trailer_Stability_Verification_Roundtrip.xlsm", {
@@ -1720,6 +1788,7 @@ async function main(): Promise<void> {
         })),
         parityMetrics,
         workbookOutput: outputPath,
+        fourPointWorkbookOutput: fourPointOutputPath,
         vbaBytes: workbook.vbaraw.byteLength,
       },
       null,

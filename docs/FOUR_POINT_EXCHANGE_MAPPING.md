@@ -8,6 +8,9 @@ authoritative web result. The latest calculation reference is
 `Trailer_Stability_Calculator_Optimiser_v0.8_4Point_InPlace.xlsm`; it extends
 the existing `Load and Stability Calculation` and `Export to DWG` sheets in
 place. AutoCAD consumes the calculated web result and must not recalculate it.
+The website export uses the tracked copy
+`public/templates/Trailer_Stability_Verification_Template_v0.8_4Point_InPlace.xlsm`
+and records contract identifier `TS-XLSM-4P-1` in `TS_CONTROL!B102`.
 
 - Lengths are metres in `ProjectModel`/JSON, millimetres in compact CAD, and
   workbook display units shown by the relevant cells.
@@ -43,7 +46,19 @@ place. AutoCAD consumes the calculated web result and must not recalculate it.
 
 The importer reads `D133` first. Legacy files without that cell fall back to
 Group 4 routing inference. The exporter always records `3-point` or `4-point`
-in `D133`, so mode cannot be lost during an import/export round trip.
+in `D133`, so mode cannot be lost during an import/export round trip. Export is
+stricter than import: it rejects templates without the required sheets, VBA,
+`tblTrailerData`, direct Group 4 reaction/centre formulas, Group 4 output cells,
+or the four-point `Export to DWG` polygon check. This prevents an older
+three-point-only workbook from silently becoming the export target.
+
+The export also writes `TS-XLSM-4P-1` support metadata in
+`TS_CONTROL!D102:G112`: support ID, user-allowed state, final settled-active
+state and positive-connection state. This preserves the distinction between a
+support deliberately disabled by the user and one disabled by reaction
+settling when the workbook is imported again. Existing workbook eligibility
+formulas in `F446:F455` remain formulas; the final settled state is written to
+`I446:I455`.
 
 ## Calculated output map
 
@@ -72,6 +87,18 @@ workbook re-import. It proves:
 - compact `LOAD` and retained `RESULT` envelopes are identical millimetres;
 - overall/per-group GBP and neutral/A–D pressure values come from the same
   authoritative result.
+- settled support active states are written before Excel recalculates reaction,
+  GBP, hydraulic load and stability formulas;
+- the workbook archive, VBA project, formula/drawing parts and sheet structure
+  survive export unchanged except for the documented mapped cells, catalogue
+  table extent and forced full-calculation settings.
+
+The obsolete calculation chain is removed during export so Excel rebuilds it
+against the newly written inputs. This is intentional and is verified by
+opening without repair, performing a full calculation, saving and reopening.
+Expected `#N/A` placeholders in formula rows belonging to blank trailer slots
+are recorded separately; any error in an active row or other key output range
+fails verification.
 
 The workbook verifier
 `tools/excel/verify_v08_four_point_in_place.py` independently records exact
@@ -80,3 +107,8 @@ Group 4 calculations, drawings and VBA presence in
 `tools/excel/outputs/v08_4point_in_place_verification.json`. Negative reaction
 settling is intentionally tracked separately as TS-012; it is not hidden or
 reclassified by this mapping contract.
+
+`tools/excel/verify_web_export_v08.py` opens a generated website workbook in
+desktop Excel, performs a full rebuild, saves and reopens it, then checks the
+contract ID, required sheets, direct Group 4 formulas, four-point boundary,
+Group 4 loading/GBP outputs, support reactions and key formula ranges.
