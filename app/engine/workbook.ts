@@ -259,10 +259,19 @@ export async function importWorkbook(file: File, fallback: ProjectModel): Promis
   if (!trailers.length) throw new Error("Verification import failed. No trailer model is selected.");
   model.trailers = trailers;
   model.groupings = groupings;
-  model.hydraulicSystemMode = groupings.some((grouping) => {
-    const corners = grouping.cornerGroups;
-    return Boolean(corners && Object.values(corners).some((group) => group === 4));
-  }) ? "FOUR_POINT" : "THREE_POINT";
+  const workbookHydraulicMode = textValue(main, "D133").toUpperCase().replaceAll("_", "-");
+  if (workbookHydraulicMode.includes("4") || workbookHydraulicMode.includes("FOUR")) {
+    model.hydraulicSystemMode = "FOUR_POINT";
+  } else if (workbookHydraulicMode.includes("3") || workbookHydraulicMode.includes("THREE")) {
+    model.hydraulicSystemMode = "THREE_POINT";
+  } else {
+    // Pre-v0.8 workbooks do not have the explicit mode cell. Retain backward
+    // compatibility by inferring four-point mode only when Group 4 is routed.
+    model.hydraulicSystemMode = groupings.some((grouping) => {
+      const corners = grouping.cornerGroups;
+      return Boolean(corners && Object.values(corners).some((group) => group === 4));
+    }) ? "FOUR_POINT" : "THREE_POINT";
+  }
   model.supports = Array.from({ length: 10 }, (_, index) => {
     const row = 446 + index;
     const position = numberValue(main, `C${row}`, numberValue(main, `E${71 + index}`, Number.NaN));
@@ -667,6 +676,7 @@ export async function exportVerificationWorkbook(
   setValue(main, "C73", model.packing.cog.y);
   setValue(main, "C74", model.packing.cog.z);
   setValue(main, "C85", model.trailerDeckHeightM);
+  setValue(main, "D133", model.hydraulicSystemMode === "FOUR_POINT" ? "4-point" : "3-point");
   const sharedAxles = model.trailers[0]?.axleLines ?? 1;
   const sharedX = resolvedResult.resolvedTrailers.find((item) => item.index === 0)?.startXM
     ?? model.trailers[0]?.xM
