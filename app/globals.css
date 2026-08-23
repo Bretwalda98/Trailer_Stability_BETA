@@ -5121,7 +5121,7 @@ input[type="checkbox"] {
 
 .fast-support-row {
   display: grid;
-  grid-template-columns: 28px minmax(92px, 1fr) minmax(82px, 0.8fr) 64px 30px;
+  grid-template-columns: 28px minmax(92px, 1fr) minmax(82px, 0.8fr) 64px minmax(112px, auto) 30px;
   align-items: end;
   gap: 6px;
   padding: 6px;

@@ -205,6 +205,8 @@ Do not default to a triangle. For a four-point grouping, draw the four-point bou
 | `w` | Support width/spread |
 | `al` | Allowed flag |
 | `ac` | Active flag after support settling |
+| `pc` | Positive connection to the deck/spine beam; permits a warned tensile reaction when true |
+| `rs` | Final reaction state, including restrained tension |
 | `ra` | Settled reaction |
 | `rt` | Reaction/status text |
 | `dr` | Detail/status data |
@@ -250,7 +252,8 @@ Road slope is already reflected in the shifted COG/stability cases in the engine
 | `gp` | Hydraulic groups/result group geometry |
 | `ax` | Axle points and loads |
 | `sx` | Spine/beam axle points |
-| `ss` | Settled supports |
+| `ss` | Settled supports, including raw reactions, reaction states and disable reasons |
+| `se` | Complete support-settlement reaction table and state-transition trace |
 | `ov` | Trailer overlap pairs |
 | `gq` | Grouping quality |
 | `pg` | Stability polygon / hydraulic boundary points |

@@ -20,7 +20,7 @@ export function buildCaseTextExport(model: ProjectModel, result: CalculationResu
     return `  ${index + 1}. ${trailer.name}; ${input?.axleLines ?? 0} AL; rear X ${number(trailer.startXM)} m; centre Y ${number(trailer.centreYM)} m; ${number(trailer.lengthM)} m x ${number(trailer.widthM)} m; PPU rear/front ${number(trailer.ppuLeftLengthM)} / ${number(trailer.ppuRightLengthM)} m`;
   });
   const supportRows = result.supports.map((support, index) =>
-    `  ${index + 1}. ${support.id}; X ${number(support.xM)} m; width ${number(support.widthM)} m; reaction ${number(support.reactionT)} t; ${support.active ? "active" : "inactive"}${support.disableReason ? ` (${support.disableReason})` : ""}`,
+    `  ${index + 1}. ${support.id}; X ${number(support.xM)} m; width ${number(support.widthM)} m; reaction ${number(support.reactionT)} t; ${support.active ? "active" : "inactive"}; ${support.reactionState}; positive connection ${support.positiveConnectionToDeck ? "yes" : "no"}${support.disableReason ? ` (${support.disableReason})` : ""}`,
   );
   const groupRows = result.groups.map((group) =>
     `  G${group.group}; X ${number(group.point.x)} m; Y ${number(group.point.y)} m; ${group.axleCount} AL; reaction ${number(group.loadT)} t (${number(group.reactionFraction * 100, 2)}%)`,
@@ -70,7 +70,10 @@ export function buildCaseTextExport(model: ProjectModel, result: CalculationResu
     ...groupRows,
     "",
     `SUPPORTS — ${result.activeSupportCount}/${result.supports.length} active; minimum required ${result.minimumActiveSupports}`,
+    `Settlement: ${result.supportSettlement.outcome}; converged ${result.supportSettlement.converged ? "yes" : "no"}; ${result.supportSettlement.calculationCount} exact reaction calculation(s); ${number(result.supportSettlement.calculationTimeMs)} ms`,
     ...(supportRows.length ? supportRows : ["  No supports configured."]),
+    "Support settlement trace:",
+    JSON.stringify(result.supportSettlement, null, 2),
     "",
     "ENVIRONMENT",
     `Route slopes: longitudinal ${number(model.environment.routeLongitudinalSlopeDeg)} deg; transverse ${number(model.environment.routeTransverseSlopeDeg)} deg`,

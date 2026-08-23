@@ -138,6 +138,11 @@ export interface CargoSupport {
   allowed: boolean;
   active: boolean;
   optionalWeightT?: number;
+  /**
+   * Off by default. When true, a designed positive connection may carry a
+   * tensile (negative Rstatic) reaction instead of settling this support out.
+   */
+  positiveConnectionToDeck?: boolean;
 }
 
 export interface LoosePacking {
@@ -354,7 +359,67 @@ export interface GroupResult {
 
 export interface SupportResult extends CargoSupport {
   reactionT: number;
-  disableReason: "" | "NOT_ALLOWED" | "NEGATIVE_REACTION" | "UNDEFINED";
+  geometricallyAllowed: boolean;
+  reactionState:
+    | "COMPRESSION"
+    | "ZERO"
+    | "TENSION_RESTRAINED"
+    | "INACTIVE"
+    | "UNAVAILABLE";
+  disableReason:
+    | ""
+    | "NOT_ALLOWED"
+    | "OUTSIDE_TRAILER"
+    | "NEGATIVE_REACTION"
+    | "UNDEFINED_REACTION";
+}
+
+export interface SupportSettlementReaction {
+  supportId: string;
+  allowed: boolean;
+  geometricallyAllowed: boolean;
+  positiveConnectionToDeck: boolean;
+  activeBefore: boolean;
+  reactionT: number | null;
+  outcome:
+    | "COMPRESSION"
+    | "ZERO"
+    | "TENSION_RESTRAINED"
+    | "NEGATIVE_REACTION"
+    | "UNDEFINED_REACTION"
+    | "NOT_CALCULATED"
+    | "INACTIVE";
+}
+
+export interface SupportStateTransition {
+  supportId: string;
+  fromActive: boolean;
+  toActive: boolean;
+  reason:
+    | "RESET_ELIGIBLE"
+    | "NOT_ALLOWED"
+    | "OUTSIDE_TRAILER"
+    | "NEGATIVE_REACTION"
+    | "UNDEFINED_REACTION";
+  reactionT: number | null;
+}
+
+export interface SupportSettlementStep {
+  iteration: number;
+  stage: "RESET" | "REACTION" | "FAILED";
+  activeSupportIdsBefore: string[];
+  reactions: SupportSettlementReaction[];
+  transitions: SupportStateTransition[];
+  activeSupportIdsAfter: string[];
+}
+
+export interface SupportSettlementTrace {
+  reactionToleranceT: number;
+  converged: boolean;
+  outcome: "SETTLED" | "INSUFFICIENT_SUPPORTS" | "SOLVER_FAILED" | "NOT_RUN";
+  calculationCount: number;
+  calculationTimeMs: number;
+  steps: SupportSettlementStep[];
 }
 
 export interface BeamPoint {
@@ -553,6 +618,7 @@ export interface CalculationResult {
   spineAxlePoints: AxlePoint[];
   supports: SupportResult[];
   supportIterations: number;
+  supportSettlement: SupportSettlementTrace;
   activeSupportCount: number;
   minimumActiveSupports: number;
   trailerOverlaps: TrailerOverlap[];

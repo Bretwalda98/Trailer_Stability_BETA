@@ -511,6 +511,7 @@ export function ArrangementWizard({
                 widthM: 0.5,
                 allowed: true,
                 active: true,
+                positiveConnectionToDeck: false,
               }],
             }))}
           ><IconPlus size={14} /> Add support</button>
@@ -522,11 +523,15 @@ export function ArrangementWizard({
               <NumberField label="X location" value={support.xM} unit="m" onChange={(xM) => setDraftModel((current) => ({ ...current, supports: current.supports.map((item) => item.id === support.id ? { ...item, xM } : item) }))} />
               <NumberField label="Width" value={support.widthM} unit="m" min={0.001} valid={support.widthM > 0} onChange={(widthM) => setDraftModel((current) => ({ ...current, supports: current.supports.map((item) => item.id === support.id ? { ...item, widthM } : item) }))} />
               <label className="fast-support-allowed"><input type="checkbox" checked={support.allowed} onChange={(event) => setDraftModel((current) => ({ ...current, supports: current.supports.map((item) => item.id === support.id ? { ...item, allowed: event.target.checked, active: event.target.checked } : item) }))} /><span>Allowed</span></label>
+              <label className="fast-support-allowed"><input type="checkbox" checked={support.positiveConnectionToDeck === true} onChange={(event) => setDraftModel((current) => ({ ...current, supports: current.supports.map((item) => item.id === support.id ? { ...item, positiveConnectionToDeck: event.target.checked } : item) }))} /><span>Positive connection</span></label>
               <button type="button" className="icon-button" aria-label={`Remove support ${index + 1}`} onClick={() => setDraftModel((current) => ({ ...current, supports: current.supports.filter((item) => item.id !== support.id) }))}><IconTrash size={14} /></button>
             </div>
           ))}
           {!draftModel.supports.length && <p className="fast-support-empty">No packing supports entered. Add them manually or create an equal support proposal spanning the cargo-and-packing COG.</p>}
         </div>
+        {draftModel.supports.some((support) => support.positiveConnectionToDeck) && (
+          <div className="wizard-notice warning"><IconAlertTriangle size={15} /><span>Positive support connection enabled. Retained negative reactions are tensile design actions and require a verified packing-to-deck or spine-beam connection.</span></div>
+        )}
         <div className="wizard-field-grid two">
           <NumberField label="Minimum active supports" value={draftModel.optimiser.minimumActiveSupports} min={2} max={10} step={1} valid={Number.isInteger(draftModel.optimiser.minimumActiveSupports) && draftModel.optimiser.minimumActiveSupports >= 2 && draftModel.optimiser.minimumActiveSupports <= 10} onChange={(minimumActiveSupports) => setDraftModel((current) => ({ ...current, optimiser: { ...current.optimiser, minimumActiveSupports: Math.round(minimumActiveSupports) } }))} />
         </div>

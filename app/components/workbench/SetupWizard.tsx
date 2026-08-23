@@ -596,6 +596,7 @@ export function SetupWizard({
         widthM: last?.widthM ?? 0.5,
         allowed: true,
         active: true,
+        positiveConnectionToDeck: false,
       };
       return { ...current, supports: [...current.supports, support] };
     });
@@ -968,6 +969,12 @@ export function SetupWizard({
   const renderSupports = () => (
     <>
       <FormSection title="Support settling" description="Negative or disallowed reactions settle out before the minimum-active-support gate is checked.">
+        {draftModel.supports.some((support) => support.positiveConnectionToDeck) && (
+          <div className="wizard-notice warning">
+            <IconAlertTriangle size={15} />
+            <span>Positive support connection enabled. Any retained negative reaction is a tensile design action that must be verified for the packing, deck and spine-beam connection.</span>
+          </div>
+        )}
         <div className="wizard-support-summary">
           <div><span>Settled active</span><b>{engine.result.activeSupportCount}/{draftModel.supports.length}</b></div>
           <NumberField label="Minimum active supports" value={draftModel.optimiser.minimumActiveSupports} step={1} min={2} max={10} highlight={() => setSelectedId("project-case")} onChange={(minimumActiveSupports) => setDraftModel((current) => ({ ...current, optimiser: { ...current.optimiser, minimumActiveSupports: Math.round(minimumActiveSupports) } }))} />
@@ -987,6 +994,7 @@ export function SetupWizard({
                   <NumberField label="Spread width" value={support.widthM} unit="m" min={0} onChange={(widthM) => setDraftModel((current) => ({ ...current, supports: current.supports.map((item, itemIndex) => itemIndex === index ? { ...item, widthM } : item) }))} />
                   <NumberField label="Optional weight" value={support.optionalWeightT ?? 0} unit="t" min={0} onChange={(optionalWeightT) => setDraftModel((current) => ({ ...current, supports: current.supports.map((item, itemIndex) => itemIndex === index ? { ...item, optionalWeightT } : item) }))} />
                   <ToggleField label="Allowed" checked={support.allowed} onChange={(allowed) => setDraftModel((current) => ({ ...current, supports: current.supports.map((item, itemIndex) => itemIndex === index ? { ...item, allowed, active: allowed && item.active } : item) }))} />
+                  <ToggleField label="Positive connection to deck / spine beam" checked={support.positiveConnectionToDeck === true} onChange={(positiveConnectionToDeck) => setDraftModel((current) => ({ ...current, supports: current.supports.map((item, itemIndex) => itemIndex === index ? { ...item, positiveConnectionToDeck } : item) }))} />
                 </div>
               </article>
             );

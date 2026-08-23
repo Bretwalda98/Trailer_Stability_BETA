@@ -279,13 +279,21 @@ export function buildEngineeringDetailRows(
         fieldKey: `supports.${index}.allowed`,
         valueType: "boolean",
       }),
+      row(`support-${index}-positive-connection`, category, `Support ${index + 1} positive connection to deck / spine beam`, support.positiveConnectionToDeck === true, "", "Web case input", {
+        editable: true,
+        fieldKey: `supports.${index}.positiveConnectionToDeck`,
+        valueType: "boolean",
+        status: support.positiveConnectionToDeck ? "WARN" : "OK",
+        validation: support.positiveConnectionToDeck ? "Negative Rstatic may be retained only as a verified tensile connection design action." : undefined,
+      }),
       row(`support-${index}-active`, category, `Support ${index + 1} active`, calculated?.active ?? support.active, "", `I${446 + index}`, {
         valueType: "calculated",
         status: calculated?.active ? "OK" : "WARN",
         validation: calculated?.disableReason || undefined,
       }),
       row(`support-${index}-reaction`, category, `Support ${index + 1} Rstatic`, calculated?.reactionT ?? null, "t", `G${446 + index}`, {
-        status: (calculated?.reactionT ?? 0) < 0 ? "NOK" : "OK",
+        status: (calculated?.reactionT ?? 0) < 0 ? calculated?.reactionState === "TENSION_RESTRAINED" ? "WARN" : "NOK" : "OK",
+        validation: calculated?.reactionState,
       }),
       row(`support-${index}-weight`, category, `Support ${index + 1} optional weight`, support.optionalWeightT ?? null, "t", `F${71 + index}`, {
         editable: true,
