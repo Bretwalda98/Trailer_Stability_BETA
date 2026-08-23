@@ -16,6 +16,7 @@ import type {
   Point2,
   Point3,
   ProjectModel,
+  SupportSettlementTrace,
   SupportResult,
   SpineLoadCase,
   TrailerOverlap,
@@ -892,7 +893,20 @@ function cargoSupportBeam(
   converged: boolean;
   warning: string;
   settledSystem: SpineSystem | null;
+  trace: SupportSettlementTrace;
 } {
+  const settlementStarted = performance.now();
+  const reactionToleranceT = 1e-7;
+  const emptyTrace = (
+    outcome: SupportSettlementTrace["outcome"],
+  ): SupportSettlementTrace => ({
+    reactionToleranceT,
+    converged: false,
+    outcome,
+    calculationCount: 0,
+    calculationTimeMs: performance.now() - settlementStarted,
+    steps: [],
+  });
   const analysedIndex = clamp(Math.round(model.analysedTrailer) - 1, 0, Math.max(0, trailers.length - 1));
   const trailer = trailers.find((item) => item.index === analysedIndex) ?? trailers[0];
   if (!trailer) {
@@ -902,10 +916,12 @@ function cargoSupportBeam(
       converged: false,
       warning: "No analysed trailer is available.",
       settledSystem: null,
+      trace: emptyTrace("SOLVER_FAILED"),
     };
   }
   const trailerStartM = trailer.xM;
   const trailerEndM = trailerStartM + trailer.definition.axleSpacingM * trailer.input.axleLines;
+  const originalActiveById = new Map(supports.map((support) => [support.id, support.active]));
   const defined = supports
     .filter((support) => Number.isFinite(support.xM))
     .slice(0, 10)
@@ -913,47 +929,222 @@ function cargoSupportBeam(
       const geometricallyAllowed =
         support.xM - support.widthM / 2 >= trailerStartM - EPS &&
         support.xM + support.widthM / 2 <= trailerEndM + EPS;
-      const allowed = support.allowed && geometricallyAllowed;
-      return { ...support, allowed, active: allowed };
+      return {
+        ...support,
+        positiveConnectionToDeck: support.positiveConnectionToDeck === true,
+        geometricallyAllowed,
+        active: support.allowed && geometricallyAllowed,
+      };
     });
+  const steps: SupportSettlementTrace["steps"] = [];
+  const resetTransitions: SupportSettlementTrace["steps"][number]["transitions"] = [];
+  for (const support of defined) {
+    const sourceActive = originalActiveById.get(support.id) ?? false;
+    if (sourceActive === support.active) continue;
+    resetTransitions.push({
+      supportId: support.id,
+      fromActive: sourceActive,
+      toActive: support.active,
+      reason: support.active
+        ? "RESET_ELIGIBLE"
+        : support.allowed
+          ? "OUTSIDE_TRAILER"
+          : "NOT_ALLOWED",
+      reactionT: null,
+    });
+  }
+  steps.push({
+    iteration: 0,
+    stage: "RESET",
+    activeSupportIdsBefore: defined.filter((support) => originalActiveById.get(support.id)).map((support) => support.id),
+    reactions: defined.map((support) => ({
+      supportId: support.id,
+      allowed: support.allowed,
+      geometricallyAllowed: support.geometricallyAllowed,
+      positiveConnectionToDeck: support.positiveConnectionToDeck,
+      activeBefore: support.active,
+      reactionT: null,
+      outcome: "NOT_CALCULATED",
+    })),
+    transitions: resetTransitions,
+    activeSupportIdsAfter: defined.filter((support) => support.active).map((support) => support.id),
+  });
   let iterations = 0;
-  let warning = "";
+  const warnings: string[] = [];
   let converged = false;
-  let reactions = new Map<string, number>();
+  const lastReactions = new Map<string, number>();
+  const disableReasons = new Map<string, SupportResult["disableReason"]>();
   let settledSystem: SpineSystem | null = null;
-  for (let pass = 0; pass < 12; pass += 1) {
-    iterations += 1;
+  for (let pass = 1; pass <= defined.length + 2; pass += 1) {
     const active = defined.filter((support) => support.active);
     if (active.length < 2) {
-      warning = "Support settling left fewer than two active supports.";
+      warnings.push("Support settling left fewer than two active supports.");
+      steps.push({
+        iteration: pass,
+        stage: "FAILED",
+        activeSupportIdsBefore: active.map((support) => support.id),
+        reactions: defined.map((support) => ({
+          supportId: support.id,
+          allowed: support.allowed,
+          geometricallyAllowed: support.geometricallyAllowed,
+          positiveConnectionToDeck: support.positiveConnectionToDeck,
+          activeBefore: support.active,
+          reactionT: lastReactions.get(support.id) ?? null,
+          outcome: support.active ? "UNDEFINED_REACTION" : "INACTIVE",
+        })),
+        transitions: [],
+        activeSupportIdsAfter: active.map((support) => support.id),
+      });
       break;
     }
+    iterations += 1;
     const beam = solveSpineSystem(model, trailers, axles, defined);
     if (!beam.result.stable) {
-      warning = beam.result.warning;
+      warnings.push(beam.result.warning || "The support reaction solver did not return a stable system.");
+      steps.push({
+        iteration: pass,
+        stage: "FAILED",
+        activeSupportIdsBefore: active.map((support) => support.id),
+        reactions: defined.map((support) => ({
+          supportId: support.id,
+          allowed: support.allowed,
+          geometricallyAllowed: support.geometricallyAllowed,
+          positiveConnectionToDeck: support.positiveConnectionToDeck,
+          activeBefore: support.active,
+          reactionT: lastReactions.get(support.id) ?? null,
+          outcome: support.active ? "UNDEFINED_REACTION" : "INACTIVE",
+        })),
+        transitions: [],
+        activeSupportIdsAfter: active.map((support) => support.id),
+      });
       break;
     }
     // ConBeam reports the beam-on-support reaction. Rstatic in the workbook is
     // its opposite sign, so only a negative Rstatic disables a support.
-    reactions = new Map(
+    const reactions = new Map(
       beam.result.reactions.map((reaction) => [reaction.id, -reaction.reactionKN / GRAVITY]),
     );
-    const negative = active.filter((support) => (reactions.get(support.id) ?? 0) < -1e-7);
-    if (!negative.length) {
+    for (const [supportId, reactionT] of reactions) lastReactions.set(supportId, reactionT);
+    const transitions: SupportSettlementTrace["steps"][number]["transitions"] = [];
+    const reactionTable: SupportSettlementTrace["steps"][number]["reactions"] = defined.map((support) => {
+      if (!support.active) {
+        return {
+          supportId: support.id,
+          allowed: support.allowed,
+          geometricallyAllowed: support.geometricallyAllowed,
+          positiveConnectionToDeck: support.positiveConnectionToDeck,
+          activeBefore: false,
+          reactionT: lastReactions.get(support.id) ?? null,
+          outcome: "INACTIVE" as const,
+        };
+      }
+      const reactionT = reactions.get(support.id);
+      let outcome: SupportSettlementTrace["steps"][number]["reactions"][number]["outcome"];
+      if (reactionT === undefined || !Number.isFinite(reactionT)) {
+        outcome = "UNDEFINED_REACTION";
+        transitions.push({
+          supportId: support.id,
+          fromActive: true,
+          toActive: false,
+          reason: "UNDEFINED_REACTION",
+          reactionT: null,
+        });
+        disableReasons.set(support.id, "UNDEFINED_REACTION");
+      } else if (reactionT < -reactionToleranceT && !support.positiveConnectionToDeck) {
+        outcome = "NEGATIVE_REACTION";
+        transitions.push({
+          supportId: support.id,
+          fromActive: true,
+          toActive: false,
+          reason: "NEGATIVE_REACTION",
+          reactionT,
+        });
+        disableReasons.set(support.id, "NEGATIVE_REACTION");
+      } else if (reactionT < -reactionToleranceT) {
+        outcome = "TENSION_RESTRAINED";
+      } else if (Math.abs(reactionT) <= reactionToleranceT) {
+        outcome = "ZERO";
+      } else {
+        outcome = "COMPRESSION";
+      }
+      return {
+        supportId: support.id,
+        allowed: support.allowed,
+        geometricallyAllowed: support.geometricallyAllowed,
+        positiveConnectionToDeck: support.positiveConnectionToDeck,
+        activeBefore: true,
+        reactionT: reactionT ?? null,
+        outcome,
+      };
+    });
+    const deactivated = new Set(transitions.map((transition) => transition.supportId));
+    for (const support of defined) {
+      if (deactivated.has(support.id)) support.active = false;
+    }
+    steps.push({
+      iteration: pass,
+      stage: "REACTION",
+      activeSupportIdsBefore: active.map((support) => support.id),
+      reactions: reactionTable,
+      transitions,
+      activeSupportIdsAfter: defined.filter((support) => support.active).map((support) => support.id),
+    });
+    if (!transitions.length) {
       converged = true;
       settledSystem = beam;
       break;
     }
-    for (const support of defined) {
-      if (negative.some((candidate) => candidate.id === support.id)) support.active = false;
-    }
   }
   const supportResults = defined.map<SupportResult>((support) => ({
     ...support,
-    reactionT: support.active ? reactions.get(support.id) ?? 0 : 0,
-    disableReason: !support.allowed ? "NOT_ALLOWED" : support.active ? "" : "NEGATIVE_REACTION",
+    reactionT: lastReactions.get(support.id) ?? 0,
+    reactionState: !support.active
+      ? lastReactions.has(support.id) ? "INACTIVE" : "UNAVAILABLE"
+      : (lastReactions.get(support.id) ?? 0) < -reactionToleranceT
+        ? "TENSION_RESTRAINED"
+        : Math.abs(lastReactions.get(support.id) ?? 0) <= reactionToleranceT
+          ? "ZERO"
+          : "COMPRESSION",
+    disableReason: !support.allowed
+      ? "NOT_ALLOWED"
+      : !support.geometricallyAllowed
+        ? "OUTSIDE_TRAILER"
+        : support.active
+          ? ""
+          : disableReasons.get(support.id) ?? "UNDEFINED_REACTION",
   }));
-  return { supportResults, iterations, converged, warning, settledSystem };
+  const restrainedTensions = supportResults.filter(
+    (support) => support.active && support.reactionState === "TENSION_RESTRAINED",
+  );
+  if (restrainedTensions.length) {
+    warnings.push(
+      `POSITIVE CONNECTION REQUIRED: ${restrainedTensions.map((support) => `${support.id}=${support.reactionT.toFixed(3)} t`).join(", ")} remain active with tensile Rstatic reactions. Design and verify each packing/support connection to the trailer deck or spine beam for the stated tension load.`,
+    );
+  }
+  const finalActiveCount = supportResults.filter((support) => support.active).length;
+  const outcome: SupportSettlementTrace["outcome"] = converged
+    ? finalActiveCount < clamp(model.optimiser.minimumActiveSupports, 2, 10)
+      ? "INSUFFICIENT_SUPPORTS"
+      : "SETTLED"
+    : finalActiveCount < 2
+      ? "INSUFFICIENT_SUPPORTS"
+      : "SOLVER_FAILED";
+  const trace: SupportSettlementTrace = {
+    reactionToleranceT,
+    converged,
+    outcome,
+    calculationCount: iterations,
+    calculationTimeMs: performance.now() - settlementStarted,
+    steps,
+  };
+  return {
+    supportResults,
+    iterations,
+    converged,
+    warning: warnings.filter(Boolean).join(" "),
+    settledSystem,
+    trace,
+  };
 }
 
 function emptyBeamMetrics(): BeamMetrics {
@@ -1235,6 +1426,14 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
       spineAxlePoints: [],
       supports: [],
       supportIterations: 0,
+      supportSettlement: {
+        reactionToleranceT: 1e-7,
+        converged: false,
+        outcome: "NOT_RUN",
+        calculationCount: 0,
+        calculationTimeMs: 0,
+        steps: [],
+      },
       activeSupportCount: 0,
       minimumActiveSupports: model.optimiser.minimumActiveSupports,
       trailerOverlaps: [],
@@ -1422,12 +1621,22 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
           ...support,
           active: support.allowed,
           reactionT: 0,
+          geometricallyAllowed: true,
+          reactionState: support.allowed ? "ZERO" as const : "UNAVAILABLE" as const,
           disableReason: support.allowed ? "" as const : "NOT_ALLOWED" as const,
         })),
         iterations: 0,
         converged: true,
         warning: "",
         settledSystem: null,
+        trace: {
+          reactionToleranceT: 1e-7,
+          converged: true,
+          outcome: "NOT_RUN" as const,
+          calculationCount: 0,
+          calculationTimeMs: 0,
+          steps: [],
+        },
       }
     : cargoSupportBeam(model, resolved.trailers, spineAxlePoints, model.supports);
   if (supportSettle.warning) warnings.push(supportSettle.warning);
@@ -1648,6 +1857,10 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
     status = "SUPPORT_FAIL";
     failClass = "SUPPORT_OUTSIDE_TRAILER";
     failDetail = "Every allowed support must be fully within the analysed trailer deck footprint.";
+  } else if (!supportSettle.converged) {
+    status = "SUPPORT_FAIL";
+    failClass = "SUPPORT_SETTLEMENT_FAILED";
+    failDetail = supportSettle.warning || "The active support reactions could not be settled to a stable state.";
   } else if (!supportGatePass) {
     status = "SUPPORT_FAIL";
     failClass = "MINIMUM_ACTIVE_SUPPORTS";
@@ -1696,6 +1909,7 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
     spineAxlePoints,
     supports: supportSettle.supportResults,
     supportIterations: supportSettle.iterations,
+    supportSettlement: supportSettle.trace,
     activeSupportCount,
     minimumActiveSupports: model.optimiser.minimumActiveSupports,
     trailerOverlaps,

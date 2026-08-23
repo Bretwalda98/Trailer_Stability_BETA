@@ -167,9 +167,13 @@ export function buildHandCalculation(
   const supportFacts = result.supports.map((support, index) =>
     fact(
       `Support ${index + 1} (${support.id})`,
-      `${support.active ? "ACTIVE" : "INACTIVE"}; X ${n(support.xM)} m; spread ${n(support.widthM)} m; reaction ${n(support.reactionT)} t${support.disableReason ? `; ${support.disableReason}` : ""}`,
+      `${support.active ? "ACTIVE" : "INACTIVE"}; X ${n(support.xM)} m; spread ${n(support.widthM)} m; reaction ${n(support.reactionT)} t; ${support.reactionState}${support.positiveConnectionToDeck ? "; POSITIVE CONNECTION TO DECK/SPINE BEAM" : ""}${support.disableReason ? `; ${support.disableReason}` : ""}`,
     ),
   );
+  const settlementFacts = result.supportSettlement.steps.map((step) => fact(
+    `Settlement step ${step.iteration} (${step.stage})`,
+    `active before [${step.activeSupportIdsBefore.join(", ") || "none"}]; reactions ${step.reactions.map((reaction) => `${reaction.supportId}=${n(reaction.reactionT)} t (${reaction.outcome})`).join(", ") || "none"}; transitions ${step.transitions.map((transition) => `${transition.supportId} ${transition.fromActive ? "ON" : "OFF"}->${transition.toActive ? "ON" : "OFF"} (${transition.reason})`).join(", ") || "none"}; active after [${step.activeSupportIdsAfter.join(", ") || "none"}]`,
+  ));
   const beamI = definition ? definition.secondMomentCm4 * 1e-8 : 0;
   const beamEI = 210e6 * beamI;
   const road = result.roadTransport;
@@ -296,16 +300,20 @@ export function buildHandCalculation(
       id: "supports",
       title: "Cargo supports and reaction settlement",
       explanation: [
-        "Every allowed support is first activated. The exact continuous-beam reaction solution is calculated, then disallowed, undefined or negative-reaction supports are switched off. The beam is recalculated repeatedly until no additional negative reaction remains. The settled active count must meet the configured minimum.",
+        "Every eligible support is first activated. The exact continuous-beam reaction solution is calculated, then disallowed, undefined or negative-reaction supports are switched off as one deterministic batch. The beam is recalculated repeatedly until no additional prohibited negative reaction remains. The settled active count must meet the configured minimum.",
+        "A support may retain a tensile reaction only when Positive connection to deck / spine beam is explicitly enabled. This is off by default and the retained negative Rstatic is a connection design action, not a compression bearing reaction.",
         "Support spreading is represented by two equal forces at the outer edges of each support width after the first reaction pass, matching the engineering load-spreading method used by the structural solver.",
       ],
       equations: [
-        equation("Support acceptance", "R_j>0\\;\\land\\;allowed_j\\;\\Longrightarrow\\;active_j"),
+        equation("Support acceptance", "R_j\\ge-\\varepsilon\\;\\land\\;allowed_j\\;\\Longrightarrow\\;active_j"),
+        equation("Restrained tension exception", "R_j<-\\varepsilon\\;\\land\\;positiveConnection_j\\;\\Longrightarrow\\;active_j\\;\\text{ with tension warning}"),
         equation("Minimum support gate", `N_{active}\\ge N_{minimum}=${result.minimumActiveSupports}`),
       ],
       facts: [
         fact("Settlement iterations", String(result.supportIterations)),
+        fact("Settlement outcome", `${result.supportSettlement.outcome}; converged=${result.supportSettlement.converged}; exact calculations=${result.supportSettlement.calculationCount}; ${n(result.supportSettlement.calculationTimeMs)} ms`),
         fact("Active support check", `${result.activeSupportCount} active / ${result.minimumActiveSupports} minimum`),
+        ...settlementFacts,
         ...supportFacts,
       ],
     },

@@ -109,10 +109,10 @@ export function createDefaultModel(): ProjectModel {
     ],
     hydraulicSystemMode: "THREE_POINT",
     supports: [
-      { id: "support-1", xM: 1, widthM: 0.5, allowed: true, active: true },
-      { id: "support-2", xM: 4, widthM: 0.5, allowed: true, active: true },
-      { id: "support-3", xM: 7, widthM: 0.5, allowed: true, active: true },
-      { id: "support-4", xM: 10, widthM: 0.5, allowed: true, active: true },
+      { id: "support-1", xM: 1, widthM: 0.5, allowed: true, active: true, positiveConnectionToDeck: false },
+      { id: "support-2", xM: 4, widthM: 0.5, allowed: true, active: true, positiveConnectionToDeck: false },
+      { id: "support-3", xM: 7, widthM: 0.5, allowed: true, active: true, positiveConnectionToDeck: false },
+      { id: "support-4", xM: 10, widthM: 0.5, allowed: true, active: true, positiveConnectionToDeck: false },
     ],
     environment: {
       routeLongitudinalSlopeDeg: 2,
@@ -358,6 +358,7 @@ export function hydrateProjectModel(value: unknown): ProjectModel {
       ? supportItems.map((item, index) => ({
           ...(base.supports[index] ?? base.supports[0]),
           ...item,
+          positiveConnectionToDeck: item.positiveConnectionToDeck === true,
         })) as ProjectModel["supports"]
       : base.supports,
     catalogue: catalogueItems.length

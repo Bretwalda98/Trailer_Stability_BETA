@@ -374,6 +374,7 @@ export function recommendedPackingSupports(
     widthM,
     allowed: true,
     active: true,
+    positiveConnectionToDeck: false,
   }));
 }
 

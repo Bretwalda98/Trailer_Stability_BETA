@@ -1033,8 +1033,22 @@ function formatCaseInputSnapshot(model: ProjectModel, planned: PlannedCase): str
       cornerGroups: group.cornerGroups,
     })))}`,
     `hydraulicSystemMode=${model.hydraulicSystemMode}; roadTransport=${diagnosticJson(model.roadTransport)}`,
-    `allowedSupports=${model.supports.filter((support) => support.allowed).map((support) => `${support.id}@x=${diagnosticNumber(support.xM)} width=${diagnosticNumber(support.widthM)}`).join("; ") || "none"}`,
+    `allowedSupports=${model.supports.filter((support) => support.allowed).map((support) => `${support.id}@x=${diagnosticNumber(support.xM)} width=${diagnosticNumber(support.widthM)} positiveConnection=${support.positiveConnectionToDeck === true}`).join("; ") || "none"}`,
   ].join("\n");
+}
+
+function formatSupportSettlementTrace(result: CalculationResult): string {
+  const trace = result.supportSettlement;
+  const steps = trace.steps.map((step) => {
+    const reactions = step.reactions.map((reaction) =>
+      `${reaction.supportId}=${diagnosticNumber(reaction.reactionT)}t[${reaction.outcome}; allowed=${reaction.allowed}; onDeck=${reaction.geometricallyAllowed}; positiveConnection=${reaction.positiveConnectionToDeck}]`,
+    ).join("; ");
+    const transitions = step.transitions.map((transition) =>
+      `${transition.supportId}:${transition.fromActive ? "ON" : "OFF"}->${transition.toActive ? "ON" : "OFF"}[${transition.reason}; reaction=${diagnosticNumber(transition.reactionT)}t]`,
+    ).join("; ");
+    return `step=${step.iteration} stage=${step.stage} activeBefore=[${step.activeSupportIdsBefore.join(",")}] reactions={${reactions || "none"}} transitions={${transitions || "none"}} activeAfter=[${step.activeSupportIdsAfter.join(",")}]`;
+  }).join(" || ");
+  return `outcome=${trace.outcome}; converged=${trace.converged}; calculations=${trace.calculationCount}; calculationTimeMs=${diagnosticNumber(trace.calculationTimeMs, 3)}; tolerance=${diagnosticNumber(trace.reactionToleranceT)}t; ${steps || "no steps"}`;
 }
 
 function formatResultSnapshot(result: CalculationResult): string {
@@ -1054,6 +1068,7 @@ function formatResultSnapshot(result: CalculationResult): string {
     `metrics: ${metrics}`,
     `groups: ${groups || "none"}`,
     `supports: active=${result.activeSupportCount}/${result.supports.length}; minimum=${result.minimumActiveSupports}; iterations=${result.supportIterations}; ${supports || "none"}`,
+    `supportSettlement: ${formatSupportSettlementTrace(result)}`,
     `beam: shear=${diagnosticNumber(result.beam.shearMinKN)}..${diagnosticNumber(result.beam.shearMaxKN)}kN; bending=${diagnosticNumber(result.beam.bendingMinKNm)}..${diagnosticNumber(result.beam.bendingMaxKNm)}kNm; deflection=${diagnosticNumber(result.beam.absoluteDeflectionMm)}mm; localBending=${diagnosticNumber(result.beam.localBendingAbsKNm)}kNm`,
     `geometry: polygonArea=${diagnosticNumber(result.groupingQuality.polygonAreaM2)}m2; boundaryPoints=${result.groupingQuality.boundaryPointCount}; minimumWidth=${diagnosticNumber(result.groupingQuality.minimumAltitudeM)}m; overlaps=${result.trailerOverlaps.length}; warnings=${result.warnings.join(" | ") || "none"}`,
     `roadTransport: enabled=${result.roadTransport.enabled}; status=${result.roadTransport.status}; surface=${result.roadTransport.surface}/${result.roadTransport.condition}; traction=${diagnosticNumber(result.roadTransport.tractionDemandKN)}kN/${diagnosticNumber(result.roadTransport.tractionCapacityKN)}kN (${diagnosticNumber(result.roadTransport.tractionUtilisation)}); braking=${diagnosticNumber(result.roadTransport.brakingDemandKN)}kN/${diagnosticNumber(result.roadTransport.brakingCapacityKN)}kN (${diagnosticNumber(result.roadTransport.brakingUtilisation)}); driven/braked=${result.roadTransport.drivenBogieCount}/${result.roadTransport.brakedBogieCount}`,
@@ -1312,8 +1327,11 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
       pass.caseReference,
       "Support",
       "Support settlement recorded",
-      `iterations=${result.supportIterations}; active=${result.activeSupportCount}/${result.supports.length}; minimumRequired=${result.minimumActiveSupports}; ${result.supports.map((support) => `${support.id}=${support.active ? "ACTIVE" : "OFF"}[${support.disableReason || "settled"}] reaction=${diagnosticNumber(support.reactionT)}t`).join("; ") || "no supports"}`,
-      result.activeSupportCount >= result.minimumActiveSupports ? "INFO" : "WARN",
+      `iterations=${result.supportIterations}; active=${result.activeSupportCount}/${result.supports.length}; minimumRequired=${result.minimumActiveSupports}; ${result.supports.map((support) => `${support.id}=${support.active ? "ACTIVE" : "OFF"}[${support.disableReason || support.reactionState}] reaction=${diagnosticNumber(support.reactionT)}t positiveConnection=${support.positiveConnectionToDeck === true}`).join("; ") || "no supports"}\n${formatSupportSettlementTrace(result)}`,
+      result.activeSupportCount >= result.minimumActiveSupports &&
+      !result.supports.some((support) => support.reactionState === "TENSION_RESTRAINED")
+        ? "INFO"
+        : "WARN",
     );
     event(
       run,
@@ -1748,6 +1766,10 @@ export function exportPassesCsv(passes: PassResult[]): string {
     "Elapsed ms",
     "Fail Class",
     "Fail Detail",
+    "Support Settlement Outcome",
+    "Support Settlement Converged",
+    "Support Settlement Calculation Time ms",
+    "Support Settlement Trace JSON",
   ];
   const quote = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
   const rows = passes.map((pass) => {
@@ -1857,6 +1879,10 @@ export function exportPassesCsv(passes: PassResult[]): string {
       pass.elapsedMs,
       pass.result.failClass,
       pass.result.failDetail,
+      pass.result.supportSettlement.outcome,
+      pass.result.supportSettlement.converged,
+      pass.result.supportSettlement.calculationTimeMs,
+      JSON.stringify(pass.result.supportSettlement),
     ].map(quote);
   });
   return [headers.map(quote).join(","), ...rows.map((row) => row.join(","))].join("\r\n");

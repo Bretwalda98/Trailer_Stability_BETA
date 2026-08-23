@@ -181,6 +181,9 @@ export function buildAutocadCompactExport(
       support.allowed,
       settled?.active ?? false,
       settled?.reactionT ?? support.optionalWeightT ?? 0,
+      support.positiveConnectionToDeck === true,
+      settled?.reactionState ?? "UNAVAILABLE",
+      settled?.disableReason ?? "",
     ));
   });
 

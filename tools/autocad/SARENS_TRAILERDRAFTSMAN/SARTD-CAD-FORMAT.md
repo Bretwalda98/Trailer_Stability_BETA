@@ -29,7 +29,7 @@ fields; a producer must not remove a field and shift later indexes.
 | `TRAILER` | 1 index; 2 catalogue name; 3 AL; 4 resolved start X mm; 5 centre Y mm; 6 axle pitch mm; 7 resolved length mm; 8 width mm; 9 rear PPU; 10 front PPU; 11 rear PPU length mm; 12 front PPU length mm; 13 rear PPU t; 14 front PPU t; 15 trailer tare t; 16 AL capacity t |
 | `HYDRAULIC` | 1 trailer index; 2 `THREE_POINT`/`FOUR_POINT`; 3 split AL; 4 rear-left group; 5 front-left group; 6 rear-right group; 7 front-right group |
 | `PINS` | 1 trailer index; 2 comma-separated pinned AL numbers |
-| `SUPPORT` | 1 index; 2 X mm; 3 width mm; 4 allowed; 5 settled active; 6 reaction t |
+| `SUPPORT` | 1 index; 2 X mm; 3 width mm; 4 allowed; 5 settled active; 6 reaction t; 7 positive connection to deck/spine beam; 8 reaction state; 9 disable reason |
 | `GROUP` | 1 group; 2 active bogies; 3 neutral group t; 4 neutral bar; 5–8 A–D bar; 9 maximum gross AL t; 10 utilisation %; 11 neutral gross AL t; 12 maximum gross AL t; 13 GBP t/m²; 14 active AL; 15 contact area m² |
 | `SUMMARY` | 1 trailer tare t; 2 PPU t; 3 active bogies; 4 average gross AL t; 5 maximum gross AL t; 6 maximum utilisation %; 7 overall GBP t/m²; 8 maximum group GBP t/m²; 9 AL self-weight t |
 | `BOUNDARY` | 1 ordered point index; 2 X mm; 3 Y mm |

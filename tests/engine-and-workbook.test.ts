@@ -235,6 +235,100 @@ async function main(): Promise<void> {
   assert.match(caseText, /RESOLVED TRAILERS/);
   assert.match(caseText, /CALCULATION REFERENCE/);
 
+  // TS-012: every case starts from all eligible supports active, removes the
+  // full deterministic batch of prohibited reactions, recalculates, and
+  // retains the raw reaction and complete state-transition evidence.
+  const supportSettlementModel = createDefaultModel();
+  const supportLocations = [
+    2.0384396372828633,
+    2.4475483012385664,
+    6.2395687701180576,
+    7.109401272190734,
+  ];
+  supportSettlementModel.supports = supportLocations.map((xM, index) => ({
+    id: `settle-support-${index + 1}`,
+    xM,
+    widthM: 0.5,
+    allowed: true,
+    active: index !== 0,
+    positiveConnectionToDeck: false,
+  }));
+  const settled = calculateProject(supportSettlementModel);
+  assert.equal(settled.supportSettlement.converged, true);
+  assert.equal(settled.supportSettlement.outcome, "SETTLED");
+  assert.equal(settled.supportSettlement.calculationCount, 2);
+  assert.equal(settled.supportIterations, 2);
+  assert.equal(settled.activeSupportCount, 2);
+  assert.deepEqual(
+    settled.supportSettlement.steps[0].transitions.map((transition) => [transition.supportId, transition.reason]),
+    [["settle-support-1", "RESET_ELIGIBLE"]],
+  );
+  assert.ok(settled.supportSettlement.steps[0].reactions.every((reaction) =>
+    reaction.reactionT === null && reaction.outcome === "NOT_CALCULATED"));
+  assert.deepEqual(
+    settled.supportSettlement.steps[1].transitions.map((transition) => transition.supportId),
+    ["settle-support-1", "settle-support-3"],
+  );
+  assert.equal(settled.supportSettlement.steps[2].transitions.length, 0);
+  assert.deepEqual(
+    settled.supportSettlement.steps[2].activeSupportIdsAfter,
+    ["settle-support-2", "settle-support-4"],
+  );
+  const disabledByReaction = settled.supports.filter((support) => support.disableReason === "NEGATIVE_REACTION");
+  assert.deepEqual(disabledByReaction.map((support) => support.id), ["settle-support-1", "settle-support-3"]);
+  assert.ok(disabledByReaction.every((support) => !support.active && support.reactionT < 0));
+  assert.ok(settled.supports.filter((support) => support.active).every((support) => support.reactionT >= -settled.supportSettlement.reactionToleranceT));
+  const settledAgain = calculateProject(structuredClone(supportSettlementModel));
+  assert.deepEqual(
+    settledAgain.supportSettlement.steps.map((step) => ({
+      stage: step.stage,
+      before: step.activeSupportIdsBefore,
+      transitions: step.transitions,
+      after: step.activeSupportIdsAfter,
+    })),
+    settled.supportSettlement.steps.map((step) => ({
+      stage: step.stage,
+      before: step.activeSupportIdsBefore,
+      transitions: step.transitions,
+      after: step.activeSupportIdsAfter,
+    })),
+  );
+
+  const retainedTensionModel = structuredClone(supportSettlementModel);
+  retainedTensionModel.supports = retainedTensionModel.supports.map((support, index) => ({
+    ...support,
+    positiveConnectionToDeck: index === 0 || index === 2,
+  }));
+  const retainedTension = calculateProject(retainedTensionModel);
+  assert.equal(retainedTension.supportSettlement.converged, true);
+  assert.equal(retainedTension.supportIterations, 1);
+  assert.equal(retainedTension.activeSupportCount, 4);
+  assert.deepEqual(
+    retainedTension.supports.filter((support) => support.reactionState === "TENSION_RESTRAINED").map((support) => support.id),
+    ["settle-support-1", "settle-support-3"],
+  );
+  assert.ok(retainedTension.supports.filter((support) => support.reactionState === "TENSION_RESTRAINED").every((support) => support.reactionT < 0 && support.positiveConnectionToDeck));
+  assert.ok(retainedTension.warnings.some((warning) => warning.startsWith("POSITIVE CONNECTION REQUIRED:")));
+  assert.ok(collectSetupIssues(retainedTensionModel, retainedTension).some((item) => item.id === "positive-support-connections" && item.severity === "warning"));
+  retainedTensionModel.optimiser.minimumActiveSupports = 5;
+  assert.equal(calculateProject(retainedTensionModel).supportSettlement.outcome, "INSUFFICIENT_SUPPORTS");
+
+  const supportCad = buildAutocadExport(retainedTensionModel, retainedTension, "2026-08-23T12:00:00.000Z");
+  const supportCadInputs = supportCad.data.su as Array<{ pc: boolean; rs: string; rt: number }>;
+  const supportCadResult = supportCad.data.r as { se: typeof retainedTension.supportSettlement };
+  assert.equal(supportCadInputs[0].pc, true);
+  assert.equal(supportCadInputs[0].rs, "TENSION_RESTRAINED");
+  assert.ok(supportCadInputs[0].rt < 0);
+  assert.deepEqual(supportCadResult.se.steps, retainedTension.supportSettlement.steps);
+  const supportCompact = buildAutocadCompactExport(retainedTensionModel, retainedTension, "2026-08-23T12:00:00.000Z");
+  const supportCompactFields = supportCompact.split(/\r?\n/).find((line) => line.startsWith("SUPPORT|1|"))!.split("|");
+  assert.equal(supportCompactFields[7], "1");
+  assert.equal(supportCompactFields[8], "TENSION_RESTRAINED");
+  assert.equal(supportCompactFields[9], "");
+  const supportCaseText = buildCaseTextExport(retainedTensionModel, retainedTension, "2026-08-23T12:00:00.000Z");
+  assert.match(supportCaseText, /Support settlement trace:/);
+  assert.match(supportCaseText, /TENSION_RESTRAINED/);
+
   const staggerTemplates = longitudinalOffsetCandidates(
     { ...model.arrangementOptimiser, formationMode: "ALLOW_STAGGERED", maximumLongitudinalStaggerM: 4, longitudinalStaggerSamples: 1 },
     2,

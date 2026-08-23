@@ -23,7 +23,7 @@ export const ENGINEERING_REFERENCE = {
     { id: "packing", values: "mass, height, COG X/Y/Z and visual footprint", purpose: "Adds packing mass and height to the load COG. The footprint is visual and calculation-neutral." },
     { id: "trailers", values: "catalogue definition, axle-line count, one-file flag, absolute or relative X/Y, PPU ends and enabled state", purpose: "Defines support coordinates, tare mass, PPU mass, axle capacity and beam properties." },
     { id: "hydraulics", values: "three- or four-point mode, split after axle line, corner groups and shared pinned axle lines", purpose: "Assigns axle reactions to the active hydraulic stability boundary." },
-    { id: "supports", values: "support X, width, allowed and active state, minimum active-support requirement", purpose: "Settles beam reactions and rejects arrangements with too few active supports." },
+    { id: "supports", values: "support X, width, allowed state, optional positive connection to deck/spine beam and minimum active-support requirement", purpose: "Resets eligible supports, settles exact beam reactions and rejects arrangements with prohibited tension or too few active supports." },
     { id: "environment", values: "route and residual slopes, wind speed, longitudinal/transverse acceleration and combination factor", purpose: "Creates slope, wind and acceleration COG shifts for the applicable load cases." },
     { id: "road", values: "surface, wet/dry condition, speed, PPU drive limit, drive acceleration and brake deceleration", purpose: "Checks rolling resistance, grade, acceleration, traction adhesion and braking capacity." },
   ],
@@ -39,6 +39,7 @@ export const ENGINEERING_REFERENCE = {
     { id: "traction", title: "Road traction", formula: "capacity = min(μ × driven normal force, driven bogies × 60 kN); demand = rolling + uphill grade + acceleration", detail: "The active surface friction limits adhesion. The module pattern and PPU limit determine which driven bogies are credited." },
     { id: "braking", title: "Road braking", formula: "capacity = min(μ × braked normal force, braked bogies × 55 kN); demand = downhill grade + braking − rolling", detail: "Braking is checked independently from traction and both utilisations must be at or below 100% when road analysis is enabled." },
     { id: "beam", title: "Spine beam", formula: "continuous beam equilibrium with the selected mesh and settled support reactions", detail: "The engine records shear, bending moment, maximum absolute deflection, local bending and their utilisation values." },
+    { id: "support-settlement", title: "Support reaction settlement", formula: "reset eligible supports; solve Rstatic; disable disallowed, undefined and negative rows; repeat until unchanged", detail: "Every exact reaction table and active-state transition is retained. A negative reaction remains active only through the explicit positive-connection option and is reported as a warned tensile design action." },
     { id: "pass", title: "Pass decision", formula: "geometry + support gate + required utilisation/angle/ratio checks + optional road check", detail: "A valid arrangement must form the selected hydraulic polygon, keep all required COG cases inside it, satisfy minimum active supports and meet the configured engineering degree limits." },
   ],
   resultFields: [
@@ -70,7 +71,9 @@ export function currentEngineeringValues(model: ProjectModel, result: Calculatio
     supportRequirement: {
       configuredMinimum: model.optimiser.minimumActiveSupports,
       settledActive: result.activeSupportCount,
-      settledConverged: result.supports.length > 0 && result.supports.every((item) => item.disableReason !== "UNDEFINED"),
+      settledConverged: result.supportSettlement.converged,
+      settlementOutcome: result.supportSettlement.outcome,
+      settlementTrace: result.supportSettlement,
     },
     outputs: {
       status: result.status,

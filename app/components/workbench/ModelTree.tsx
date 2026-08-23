@@ -94,6 +94,7 @@ export function ModelTree({
       widthM: last?.widthM ?? 0.5,
       allowed: true,
       active: true,
+      positiveConnectionToDeck: false,
     };
     onModelChange({ ...model, supports: [...model.supports, support] });
     onSelect(support.id);

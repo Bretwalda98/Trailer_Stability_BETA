@@ -480,8 +480,21 @@ function supportIssues(model: ProjectModel, calculation: CalculationResult): Set
     model.optimiser.minimumActiveSupports > 10
   ) {
     result.push(issue("minimum-supports", "supports", "blocking", "Minimum active supports must be 2–10", "Choose the smallest settled support count that is physically acceptable."));
+  } else if (!calculation.supportSettlement.converged) {
+    result.push(issue("support-settlement", "supports", "blocking", "Support reactions did not settle", calculation.failDetail || "The exact beam-reaction solve did not reach a stable active-support state.", "project-case"));
   } else if (calculation.activeSupportCount < model.optimiser.minimumActiveSupports) {
     result.push(issue("settled-supports", "supports", "blocking", "Too few supports remain active after settling", `${calculation.activeSupportCount} support(s) remain active; the case requires at least ${model.optimiser.minimumActiveSupports}.`, "project-case"));
+  }
+  const restrainedTensions = calculation.supports.filter((support) => support.reactionState === "TENSION_RESTRAINED");
+  if (restrainedTensions.length) {
+    result.push(issue(
+      "positive-support-connections",
+      "supports",
+      "warning",
+      "Positive support connections carry tensile reactions",
+      `${restrainedTensions.map((support) => `${support.id} ${support.reactionT.toFixed(3)} t`).join(", ")}. Verify the packing, deck and spine-beam connection design for every stated tension load.`,
+      "project-case",
+    ));
   }
   const environmentNumbers = Object.values(model.environment);
   if (!environmentNumbers.every(finite)) {
