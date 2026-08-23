@@ -41,6 +41,7 @@ import {
   spacingCandidates,
   validAxleLineValues,
 } from "../app/engine/arrangement";
+import { quickArrangementRecommendations } from "../app/engine/arrangement-recommendations";
 import { ROAD_SURFACES } from "../app/engine/road-transport";
 import {
   deriveHydraulicYPitchBound,
@@ -589,6 +590,37 @@ async function main(): Promise<void> {
     ),
   );
   assert.equal(minimumTotalAxleLines(capacityBoundModel, arrangementSettings, 2), expectedBothPpuCapacityBound);
+  const referenceRecommendationModel = createDefaultModel();
+  const referenceDefinition = referenceRecommendationModel.catalogue.find(
+    (item) => item.id === referenceRecommendationModel.arrangementOptimiser.trailerDefinitionId,
+  )!;
+  const referenceNetCapacityT =
+    referenceDefinition.axleCapacityT - referenceDefinition.axleWeightT;
+  referenceRecommendationModel.cargo.massT = referenceNetCapacityT * 186.5;
+  referenceRecommendationModel.cargo.lengthM = 30;
+  referenceRecommendationModel.cargo.widthM = 40;
+  referenceRecommendationModel.cargo.heightM = 60;
+  referenceRecommendationModel.cargo.cog = { x: 15, y: 20, z: 30 };
+  referenceRecommendationModel.packing.massT = 0;
+  referenceRecommendationModel.loosePacking = [];
+  referenceRecommendationModel.optimiser.maximumAxleUtilisation = 1;
+  referenceRecommendationModel.arrangementOptimiser = {
+    ...referenceRecommendationModel.arrangementOptimiser,
+    minimumTrains: 4,
+    maximumTrains: 4,
+    maximumAxleLinesPerTrain: 99,
+    limitModuleAvailability: false,
+    ppuPosition: "NONE",
+  };
+  const referenceRecommendations = quickArrangementRecommendations(referenceRecommendationModel);
+  assert.equal(referenceRecommendations.capacityLowerBoundAL, 187);
+  assert.equal(referenceRecommendations.firstBuildableTotalAL, 188);
+  assert.equal(referenceRecommendations.exactVerificationRequired, true);
+  assert.deepEqual(
+    referenceRecommendations.recommendations.map((item) => item.kind),
+    ["AL_FIRST", "TRAIN_FIRST", "BALANCED"],
+  );
+  assert.ok(referenceRecommendations.screenedCandidateCount > 0);
   arrangementSettings.limitModuleAvailability = true;
   arrangementSettings.available4AxleModules = 3;
   arrangementSettings.available5AxleModules = 0;
@@ -687,6 +719,19 @@ async function main(): Promise<void> {
     deflectionCheck: "OFF",
     minimumActiveSupports: 1,
   };
+  const compactRecommendations = quickArrangementRecommendations(compactArrangementSearch);
+  assert.equal(compactRecommendations.exactVerificationRequired, true);
+  assert.ok(compactRecommendations.recommendations.every((item) => item.candidate));
+  compactRecommendations.recommendations.forEach((item) => {
+    const recommendation = item.candidate!;
+    const descriptor = recommendation.descriptor;
+    assert.equal(
+      descriptor.modules4 * 4 + descriptor.modules5 * 5 + descriptor.modules6 * 6,
+      descriptor.axleLinesPerTrain,
+    );
+    assert.equal(descriptor.axleLinesPerTrain * descriptor.trainCount, descriptor.totalAxleLines);
+    assert.equal(recommendation.provisionalPass, true);
+  });
   const arrangementRun = await runArrangementOptimiser(compactArrangementSearch);
   assert.equal(arrangementRun.state, "COMPLETE");
   assert.ok(arrangementRun.passes.length > 0);

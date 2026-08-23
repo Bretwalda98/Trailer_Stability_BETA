@@ -28,12 +28,14 @@ import {
   applyArrangementEnvironmentalActions,
   collectArrangementIssues,
   longitudinalOffsetCandidates,
+  minimumAxleLinesPerTrainForSupports,
   minimumTotalAxleLines,
   MINIMUM_TRAIN_CLEARANCE_M,
   recommendedPackingSupports,
   spacingCandidates,
   validAxleLineValues,
 } from "../../engine/arrangement";
+import { quickArrangementRecommendations } from "../../engine/arrangement-recommendations";
 import { ROAD_SURFACES } from "../../engine/road-transport";
 import { createBlankSetupModel } from "../../engine/setup";
 import type {
@@ -329,12 +331,16 @@ export function ArrangementWizard({
   const definition = draftModel.catalogue.find((item) => item.id === settings.trailerDefinitionId);
   const planRows = useMemo(() => {
     if (!definition) return [];
+    const supportAxleLowerBound = minimumAxleLinesPerTrainForSupports(draftModel, settings);
     return Array.from(
       { length: Math.max(0, settings.maximumTrains - settings.minimumTrains + 1) },
       (_, offset) => settings.minimumTrains + offset,
     ).map((trainCount) => {
       const capacityLowerBound = minimumTotalAxleLines(draftModel, settings, trainCount);
-      const minimumPerTrain = Math.ceil(capacityLowerBound / trainCount);
+      const minimumPerTrain = Math.max(
+        Math.ceil(capacityLowerBound / trainCount),
+        supportAxleLowerBound,
+      );
       const values = validAxleLineValues(settings, trainCount, minimumPerTrain);
       const first = values[0];
       const pitches = spacingCandidates(
@@ -358,9 +364,10 @@ export function ArrangementWizard({
     });
   }, [definition, draftModel, settings]);
   const plannedSearches = planRows.reduce((sum, row) => sum + row.searches, 0);
-  const minimumCapacityStart = planRows.length
-    ? Math.min(...planRows.map((row) => row.capacityLowerBound))
-    : minimumTotalAxleLines(draftModel, settings);
+  const quickRecommendations = useMemo(
+    () => quickArrangementRecommendations(draftModel),
+    [draftModel],
+  );
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -870,11 +877,41 @@ export function ArrangementWizard({
             <ArrangementLoadPreview model={draftModel} view={loadPreviewView} />
             <footer><span>{cargoPreviewSummary(draftModel)}</span><span>Rear = lower X · front = higher X</span></footer>
           </div>}
-          {step !== "cargo" && step !== "packing" && <><div className="arrangement-preview-hero"><span>CAPACITY-DERIVED START</span><b>{minimumCapacityStart} <small>total AL</small></b><p>Gross load, trailer tare, selected PPU mass and the axle-utilisation limit are included before module rounding.</p></div>
+          {step !== "cargo" && step !== "packing" && <><div className="arrangement-preview-hero"><span>CAPACITY-DERIVED START</span><b>{quickRecommendations.capacityLowerBoundAL} <small>total AL lower bound</small></b><p>Gross load, packing, trailer tare, selected PPU mass and the axle-utilisation limit are included before buildable module rounding.</p></div>
           <div className="arrangement-plan-table">
             <header><b>First buildable candidates</b><span>{settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" ? `${plannedSearches.toLocaleString()} bounded formation levels` : settings.searchMode === "ADAPTIVE_BOUNDED" ? `${plannedSearches.toLocaleString()} bounded seed cases` : `${plannedSearches.toLocaleString()} legacy formation searches`}</span></header>
             {planRows.map((row) => <div key={row.trainCount}><span><b>{row.trainCount}</b><small>train{row.trainCount === 1 ? "" : "s"}</small></span><span><b>{row.first?.axleLines ?? "—"} AL/train</b><small>{row.first ? moduleText(row.first.composition.modules4, row.first.composition.modules5, row.first.composition.modules6) : "No stock combination"}</small></span><span><b>{row.first ? row.first.axleLines * row.trainCount : "—"} total AL</b><small>{row.pitches} Y seed{row.pitches === 1 ? "" : "s"} · {row.formationTemplates} X template{row.formationTemplates === 1 ? "" : "s"}</small></span></div>)}
             {!planRows.length && <p className="fast-support-empty">Select a trailer and enter valid search bounds to create the plan.</p>}
+            <section className="quick-recommendations" aria-labelledby="quick-recommendations-title">
+              <header>
+                <span><b id="quick-recommendations-title">Quick recommendations</b><small>{quickRecommendations.screenedCandidateCount} bounded probes · planning only</small></span>
+                <strong>{quickRecommendations.firstBuildableTotalAL === null ? "No buildable total" : `${quickRecommendations.firstBuildableTotalAL} first buildable AL`}</strong>
+              </header>
+              <div className="quick-recommendation-grid">
+                {quickRecommendations.recommendations.map((recommendation) => {
+                  const candidate = recommendation.candidate;
+                  return <article key={recommendation.kind} className={candidate ? "available" : "unavailable"}>
+                    <span>{recommendation.label}</span>
+                    {candidate ? <>
+                      <b>{candidate.descriptor.totalAxleLines} AL · {candidate.descriptor.trainCount} train{candidate.descriptor.trainCount === 1 ? "" : "s"}</b>
+                      <small>{candidate.descriptor.axleLinesPerTrain} AL/train ({moduleText(candidate.descriptor.modules4, candidate.descriptor.modules5, candidate.descriptor.modules6)}) · {candidate.descriptor.pitchM.toFixed(2)} m pitch · {candidate.descriptor.hydraulicSystemMode === "FOUR_POINT" ? "4-point" : "3-point"}</small>
+                      <dl>
+                        <div><dt>Axle util.</dt><dd>{candidate.maximumAxleUtilisation === null ? "—" : `${(candidate.maximumAxleUtilisation * 100).toFixed(1)}%`}</dd></div>
+                        <div><dt>Min angle</dt><dd>{candidate.minimumStabilityAngleDeg === null ? "—" : `${candidate.minimumStabilityAngleDeg.toFixed(1)}°`}</dd></div>
+                        <div><dt>Supports</dt><dd>{candidate.availableSupportCount}</dd></div>
+                      </dl>
+                    </> : <small>{recommendation.unavailableReason}</small>}
+                    <p>{recommendation.description}</p>
+                  </article>;
+                })}
+              </div>
+              <details>
+                <summary>Assumptions and rejected probes</summary>
+                <div><b>Assumptions</b><ul>{quickRecommendations.assumptions.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                {quickRecommendations.rejectionReasons.length > 0 && <div><b>Rejected probes</b><ul>{quickRecommendations.rejectionReasons.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+              </details>
+              <footer><IconAlertTriangle size={13} /> Quick screening is not an engineering PASS. The exact arrangement solver must verify the selected formation.</footer>
+            </section>
           </div></>}
           <div className="arrangement-preview-facts"><span><small>Payload mass</small><b>{(draftModel.cargo.massT + draftModel.packing.massT + draftModel.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0)).toFixed(2)} t</b></span><span><small>Selected trailer</small><b>{definition?.name ?? "Not selected"}</b></span><span><small>Deck height</small><b>{draftModel.trailerDeckHeightM.toFixed(3)} m</b></span><span><small>PPU</small><b>{settings.ppuPosition === "NONE" ? "None" : settings.ppuPosition === "REAR" ? "Rear" : settings.ppuPosition === "FRONT" ? "Front" : "Both ends"}</b></span><span><small>Hydraulics</small><b>{settings.hydraulicSearchMode === "BOTH" ? "3-point + 4-point" : settings.hydraulicSearchMode === "FOUR_POINT" ? "4-point only" : "3-point only"}</b></span><span><small>Formation</small><b>{settings.formationMode === "ALLOW_STAGGERED" ? "In-line + staggered" : "In-line only"}</b></span><span><small>Road check</small><b>{draftModel.roadTransport.enabled ? "Active" : "Off"}</b></span><span><small>Verification</small><b>{environmentalSelection.reduced ? "Third degree" : draftModel.engineeringDegree}</b></span></div>
           <div className="setup-wizard-preview-findings">{blocking.length ? <span className="blocking"><IconX size={13} /> {blocking.length} blocking</span> : <span className="valid"><IconCheck size={13} /> Search valid</span>}</div>
