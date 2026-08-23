@@ -1,4 +1,5 @@
 import { currentEngineeringValues, ENGINEERING_REFERENCE } from "./engineering-reference";
+import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
 import type { CalculationResult, ProjectModel } from "./types";
 
 function number(value: number | null | undefined, precision = 3): string {
@@ -11,6 +12,7 @@ function point(label: string, value: { x: number; y: number; z?: number }): stri
 
 /** A plain-text calculation record intended for a job pack, review or support request. */
 export function buildCaseTextExport(model: ProjectModel, result: CalculationResult, generatedAt = new Date().toISOString()): string {
+  model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   const metrics = Object.entries(result.metrics).map(([id, metric]) =>
     `${id}: ${number(metric.value, 4)} (${metric.status}${metric.active ? "" : ", inactive"})`,
   );
@@ -55,7 +57,7 @@ export function buildCaseTextExport(model: ProjectModel, result: CalculationResu
     `Dimensions: ${number(model.cargo.lengthM)} m L x ${number(model.cargo.widthM)} m W x ${number(model.cargo.heightM)} m H`,
     `Mass: ${number(model.cargo.massT)} t`,
     point("Cargo COG", model.cargo.cog),
-    `COG envelope: +/- ${number(model.cargo.envelopeX)} m X, +/- ${number(model.cargo.envelopeY)} m Y${model.cargo.autoCogEnvelopeFromCargo ? " (automatic)" : ""}`,
+    `COG envelope: +/- ${number(model.cargo.envelopeX)} m X, +/- ${number(model.cargo.envelopeY)} m Y${model.cargo.autoCogEnvelopeFromCargo ? " (automatic: 2.5% with 0.100 m minimum)" : " (manual; advised minimum 2% and 0.100 m)"}`,
     `Wind: ${number(model.cargo.sideWindAreaM2)} m2 side at ${number(model.cargo.sideWindHeightM)} m; ${number(model.cargo.frontWindAreaM2)} m2 front at ${number(model.cargo.frontWindHeightM)} m${model.cargo.autoWindFromCargo ? " (automatic)" : ""}`,
     "",
     "PACKING",

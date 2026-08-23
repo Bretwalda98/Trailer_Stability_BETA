@@ -8,6 +8,7 @@ import type {
   TrailerDefinition,
   TrailerInput,
 } from "./types";
+import { cargoCogEnvelopeGuidance } from "./cargo-envelope";
 
 export interface ModuleComposition {
   modules4: number;
@@ -728,6 +729,24 @@ export function collectArrangementIssues(
     });
   }
   const cargo = model.cargo;
+  cargoCogEnvelopeGuidance(cargo).warnings.forEach((detail, index) => {
+    issues.push({
+      id: `cargo-envelope-guidance-${index}`,
+      severity: "warning",
+      title: cargo.autoCogEnvelopeFromCargo
+        ? "Automatic COG-envelope minimum applied"
+        : "Manual COG-envelope override is below the advised value",
+      detail,
+    });
+  });
+  if (cargo.envelopeX < 0 || cargo.envelopeY < 0) {
+    issues.push({
+      id: "cargo-envelope-negative",
+      severity: "blocking",
+      title: "Cargo COG envelope cannot be negative",
+      detail: "Enter zero or a positive X and Y uncertainty envelope.",
+    });
+  }
   if (
     cargo.cog.x < cargo.extremeX - EPS ||
     cargo.cog.x > cargo.extremeX + cargo.lengthM + EPS ||

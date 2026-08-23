@@ -1,6 +1,9 @@
 import { createDefaultModel, hydrateProjectModel } from "../data/default-model";
 import { validateCatalogue } from "./core";
-import { derivedCargoCogEnvelopeInputs } from "./cargo-envelope";
+import {
+  cargoCogEnvelopeGuidance,
+  derivedCargoCogEnvelopeInputs,
+} from "./cargo-envelope";
 import { derivedCargoWindInputs } from "./wind";
 import type {
   CalculationResult,
@@ -324,6 +327,28 @@ function cargoIssues(model: ProjectModel): SetupIssue[] {
       result.push(issue(`cargo-number-${label}`, "cargo", "blocking", `${label} is invalid`, "Enter a finite numeric value.", "cargo"));
     }
   }
+  if (cargo.envelopeX < 0 || cargo.envelopeY < 0) {
+    result.push(issue(
+      "cargo-envelope-negative",
+      "cargo",
+      "blocking",
+      "Cargo COG envelope cannot be negative",
+      "Enter zero or a positive X and Y uncertainty envelope.",
+      "envelope:cargo",
+    ));
+  }
+  cargoCogEnvelopeGuidance(cargo).warnings.forEach((detail, index) => {
+    result.push(issue(
+      `cargo-envelope-guidance-${index}`,
+      "cargo",
+      "warning",
+      cargo.autoCogEnvelopeFromCargo
+        ? "Automatic COG-envelope minimum applied"
+        : "Manual COG-envelope override is below the advised value",
+      detail,
+      "envelope:cargo",
+    ));
+  });
   if (
     cargo.lengthM > 0 &&
     cargo.widthM > 0 &&

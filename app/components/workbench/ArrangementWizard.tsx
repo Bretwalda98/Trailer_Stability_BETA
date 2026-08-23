@@ -19,7 +19,11 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { applyAutomaticCargoCogEnvelopeInputs, derivedCargoCogEnvelopeInputs } from "../../engine/cargo-envelope";
+import {
+  applyAutomaticCargoCogEnvelopeInputs,
+  cargoCogEnvelopeGuidance,
+  derivedCargoCogEnvelopeInputs,
+} from "../../engine/cargo-envelope";
 import {
   applyArrangementEnvironmentalActions,
   collectArrangementIssues,
@@ -293,6 +297,10 @@ export function ArrangementWizard({
     () => applyArrangementEnvironmentalActions(draftModel),
     [draftModel],
   );
+  const cogEnvelopeGuidance = useMemo(
+    () => cargoCogEnvelopeGuidance(draftModel.cargo),
+    [draftModel.cargo],
+  );
   const updateSettings = (patch: Partial<ArrangementOptimiserSettings>) =>
     setDraftModel((current) => ({
       ...current,
@@ -458,6 +466,12 @@ export function ArrangementWizard({
         </div>
       </FormSection>
       <FormSection title="Automatic load allowances" description="Both are enabled for a new mathematical-search case.">
+        {cogEnvelopeGuidance.warnings.length > 0 && (
+          <div className="wizard-notice warning">
+            <IconAlertTriangle size={15} />
+            <span>{cogEnvelopeGuidance.warnings.join(" ")}</span>
+          </div>
+        )}
         <label className="wizard-toggle">
           <input
             type="checkbox"
@@ -467,8 +481,30 @@ export function ArrangementWizard({
               ...(event.target.checked ? derivedCargoCogEnvelopeInputs(draftModel.cargo) : {}),
             })}
           />
-          <span><b>Auto-calculate COG envelope</b><small>±2% of cargo length and width</small></span>
+          <span><b>Auto-calculate COG envelope</b><small>±2.5% of cargo length/width, with a 0.100 m automatic minimum</small></span>
         </label>
+        <div className="wizard-field-grid two">
+          <NumberField
+            label="Envelope X ±"
+            value={draftModel.cargo.envelopeX}
+            unit="m"
+            min={0}
+            disabled={draftModel.cargo.autoCogEnvelopeFromCargo}
+            valid={draftModel.cargo.envelopeX >= 0 && (draftModel.cargo.autoCogEnvelopeFromCargo || (!cogEnvelopeGuidance.x.belowAdvisedMinimum && !cogEnvelopeGuidance.x.belowAbsoluteMinimum))}
+            hint={draftModel.cargo.autoCogEnvelopeFromCargo ? `Automatic ${cogEnvelopeGuidance.x.automaticM.toFixed(3)} m` : `Manual; advised 2% = ${cogEnvelopeGuidance.x.advisedMinimumM.toFixed(3)} m; under 0.100 m not advised`}
+            onChange={(envelopeX) => updateCargo({ envelopeX })}
+          />
+          <NumberField
+            label="Envelope Y ±"
+            value={draftModel.cargo.envelopeY}
+            unit="m"
+            min={0}
+            disabled={draftModel.cargo.autoCogEnvelopeFromCargo}
+            valid={draftModel.cargo.envelopeY >= 0 && (draftModel.cargo.autoCogEnvelopeFromCargo || (!cogEnvelopeGuidance.y.belowAdvisedMinimum && !cogEnvelopeGuidance.y.belowAbsoluteMinimum))}
+            hint={draftModel.cargo.autoCogEnvelopeFromCargo ? `Automatic ${cogEnvelopeGuidance.y.automaticM.toFixed(3)} m` : `Manual; advised 2% = ${cogEnvelopeGuidance.y.advisedMinimumM.toFixed(3)} m; under 0.100 m not advised`}
+            onChange={(envelopeY) => updateCargo({ envelopeY })}
+          />
+        </div>
         <label className="wizard-toggle">
           <input
             type="checkbox"

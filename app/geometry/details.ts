@@ -1,4 +1,5 @@
 import type { CalculationResult, ProjectModel } from "../engine/types";
+import { cargoCogEnvelopeGuidance } from "../engine/cargo-envelope";
 import { formatCompact } from "./format";
 
 export type DetailValueType = "text" | "number" | "boolean" | "select" | "calculated" | "unavailable";
@@ -43,6 +44,7 @@ export function buildEngineeringDetailRows(
   model: ProjectModel,
   result: CalculationResult,
 ): EngineeringDetailRow[] {
+  const cogEnvelopeGuidance = cargoCogEnvelopeGuidance(model.cargo);
   const rows: EngineeringDetailRow[] = [
     row("project-degree", "Project and references", "Engineering verification degree", model.engineeringDegree, "", "F17", {
       editable: true,
@@ -110,13 +112,30 @@ export function buildEngineeringDetailRows(
       editable: true,
       fieldKey: "cargo.cog.z",
     }),
-    row("cargo-envelope-x", "COG envelopes", "Cargo COG envelope X ±", model.cargo.envelopeX, "m", "E64", {
+    row("cargo-envelope-auto", "COG envelopes", "Automatic cargo COG envelope", model.cargo.autoCogEnvelopeFromCargo, "", "Web calculation control", {
       editable: true,
+      fieldKey: "cargo.autoCogEnvelopeFromCargo",
+      valueType: "boolean",
+      status: "OK",
+      validation: "Automatic = max(2.5% of cargo dimension, 0.100 m); advised manual minimum = 2%.",
+    }),
+    row("cargo-envelope-x", "COG envelopes", "Cargo COG envelope X ±", model.cargo.envelopeX, "m", "E64", {
+      editable: !model.cargo.autoCogEnvelopeFromCargo,
       fieldKey: "cargo.envelopeX",
+      valueType: model.cargo.autoCogEnvelopeFromCargo ? "calculated" : "number",
+      status: cogEnvelopeGuidance.x.belowAdvisedMinimum || cogEnvelopeGuidance.x.belowAbsoluteMinimum ? "WARN" : "OK",
+      validation: model.cargo.autoCogEnvelopeFromCargo
+        ? "Automatic 2.5% / 0.100 m minimum"
+        : `Manual; advised 2% = ${cogEnvelopeGuidance.x.advisedMinimumM.toFixed(3)} m; under 0.100 m not advised`,
     }),
     row("cargo-envelope-y", "COG envelopes", "Cargo COG envelope Y ±", model.cargo.envelopeY, "m", "E65", {
-      editable: true,
+      editable: !model.cargo.autoCogEnvelopeFromCargo,
       fieldKey: "cargo.envelopeY",
+      valueType: model.cargo.autoCogEnvelopeFromCargo ? "calculated" : "number",
+      status: cogEnvelopeGuidance.y.belowAdvisedMinimum || cogEnvelopeGuidance.y.belowAbsoluteMinimum ? "WARN" : "OK",
+      validation: model.cargo.autoCogEnvelopeFromCargo
+        ? "Automatic 2.5% / 0.100 m minimum"
+        : `Manual; advised 2% = ${cogEnvelopeGuidance.y.advisedMinimumM.toFixed(3)} m; under 0.100 m not advised`,
     }),
     row("packing-mass", "Packing", "Packing mass", model.packing.massT, "t", "C70", {
       editable: true,

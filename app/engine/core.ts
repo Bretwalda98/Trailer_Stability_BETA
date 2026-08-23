@@ -1,5 +1,8 @@
 import { beamMetricsFromResult, solveContinuousBeam } from "./beam";
-import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
+import {
+  applyAutomaticProjectCargoCogEnvelopeInputs,
+  cargoCogEnvelopeGuidance,
+} from "./cargo-envelope";
 import { hydraulicCornerForAxleLine } from "./orientation";
 import { calculateRoadTransport } from "./road-transport";
 import type {
@@ -1411,6 +1414,7 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
   model = applyAutomaticProjectWindInputs(model);
   const started = performance.now();
   const warnings: string[] = [];
+  warnings.push(...cargoCogEnvelopeGuidance(model.cargo).warnings);
   const baseLoad = loadCog(model);
   const resolved = resolveTrailers(model, baseLoad.point);
   if (!resolved.trailers.length) {
