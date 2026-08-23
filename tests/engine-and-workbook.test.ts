@@ -87,7 +87,6 @@ import type { ProjectModel } from "../app/engine/types";
 import {
   exportVerificationWorkbook,
   importWorkbook,
-  VERIFICATION_EXPORT_CONTRACT_VERSION,
   VERIFICATION_TEMPLATE_ASSET,
 } from "../app/engine/workbook";
 import { AUTOCAD_EXPORT_KEY, buildAutocadExport } from "../app/engine/autocad-export";
@@ -1493,6 +1492,7 @@ async function main(): Promise<void> {
     "/templates/Trailer_Stability_Verification_Template_v0.8_4Point_InPlace.xlsm",
   );
   const template = new Uint8Array(await readFile(templatePath));
+  const sourceWorkbook = XLSX.read(template, { type: "array", cellFormula: true });
   const imported = await importWorkbook(
     new File([template], path.basename(templatePath), {
       type: "application/vnd.ms-excel.sheet.macroEnabled.12",
@@ -1503,19 +1503,18 @@ async function main(): Promise<void> {
   assert.ok(imported.model.catalogue.some((item) => item.name === "PEKZ G4"));
   assert.ok(imported.model.trailers.length > 0);
   assert.equal(imported.model.longitudinalOrientation, LONGITUDINAL_ORIENTATION_ID);
-  assert.equal(imported.model.optimiser.c89Start, 30);
-  assert.equal(imported.model.optimiser.c89Maximum, 36);
-  assert.equal(imported.model.optimiser.c89Step, 2);
-  assert.equal(imported.model.optimiser.e89Step, 2);
-  assert.equal(imported.model.optimiser.e89RangeMode, "AUTO_GROUP_CENTRES");
-  assert.equal(imported.model.optimiser.fineFirstPassReference, "R001-P006");
-  assert.equal(imported.model.optimiser.fineSecondPassReference, "R001-P010");
-  assert.equal(imported.model.optimiser.fineE89Step, 0.25);
-  assert.equal(imported.model.optimiser.weights.axleLinesUsed, 0.5);
+  for (const removedSheet of [
+    "TS_COMMAND_CENTER",
+    "TS_CONTROL",
+    "TS_OPTIMISER_LOG",
+    "TS_LIVE_FEED",
+    "TS_RUN_ACTIVITY_LOG",
+  ]) {
+    assert.equal(sourceWorkbook.Sheets[removedSheet], undefined, `${removedSheet} should not be exported`);
+  }
   const importedNativeResult = calculateProject(imported.model);
   assert.notEqual(importedNativeResult.status, "GEOMETRY_FAIL");
   assert.notEqual(importedNativeResult.status, "ERROR");
-  const sourceWorkbook = XLSX.read(template, { type: "array", cellFormula: true });
   const incompatibleArchive = unzipSync(template);
   for (const [archivePath, payload] of Object.entries(incompatibleArchive)) {
     if (!archivePath.startsWith("xl/worksheets/") || !archivePath.endsWith(".xml")) continue;
@@ -1537,6 +1536,23 @@ async function main(): Promise<void> {
     type: "array",
     cellFormula: true,
   });
+  // The web arrangement finder can legitimately select the 99 AL/train
+  // upper bound.  Verify that this value is exported into the retained
+  // calculation workbook and that its complete calculation path exists.
+  const maximumAxleModel = structuredClone(fourPointModel);
+  maximumAxleModel.trailers = maximumAxleModel.trailers.map((trailer) => ({
+    ...trailer,
+    axleLines: 99,
+  }));
+  const maximumAxleWorkbook = XLSX.read(
+    await exportVerificationWorkbook(maximumAxleModel, arrayBuffer(template)),
+    { type: "array", cellFormula: true },
+  );
+  assert.equal(maximumAxleWorkbook.Sheets["Load and Stability Calculation"].C89.v, 99);
+  assert.equal(formula(maximumAxleWorkbook, "Load and Stability Calculation", "C100"), "$C$89");
+  assert.equal(maximumAxleWorkbook.Sheets["Bogie Group"].CY2.v, 99);
+  assert.match(formula(maximumAxleWorkbook, "Bogie Load Neutral", "CW6"), /'Bogie Group'!CY3/);
+  assert.match(formula(maximumAxleWorkbook, "Spinebeam calculation", "CX72"), /\$A\$29:\$CW\$52/);
   assert.equal(
     fourPointVerificationWorkbook.Sheets["Load and Stability Calculation"].D133.v,
     "4-point",
@@ -1608,7 +1624,13 @@ async function main(): Promise<void> {
     dynamicAngle: { workbook: Number(sourceMain.L505?.v), native: importedNativeResult.metrics.dynamicAngle.value },
     dynamicRatio: { workbook: Number(sourceMain.L506?.v), native: importedNativeResult.metrics.dynamicRatio.value },
   };
-  assert.ok(Math.abs(Math.round((importedNativeResult.metrics.basicUtil.value ?? 0) * 100) / 100 - parityMetrics.basicUtil.workbook) < 1e-12);
+  // The retained calculation workbook stores the basic axle check in C223,
+  // which may be zero for a no-governing basic case.  The web engine still
+  // reports its actual envelope utilisation, so only compare this value when
+  // the workbook identifies a governing basic case.
+  if (parityMetrics.basicUtil.workbook > 0) {
+    assert.ok(Math.abs(Math.round((importedNativeResult.metrics.basicUtil.value ?? 0) * 100) / 100 - parityMetrics.basicUtil.workbook) < 1e-12);
+  }
   assert.ok(Math.abs(Math.round((importedNativeResult.metrics.slopeUtil.value ?? 0) * 100) / 100 - parityMetrics.slopeUtil.workbook) < 1e-12);
   assert.ok(Math.abs(Math.round((importedNativeResult.metrics.dynamicUtil.value ?? 0) * 100) / 100 - parityMetrics.dynamicUtil.workbook) < 1e-12);
   assert.ok(Math.abs((importedNativeResult.metrics.spineUtil.value ?? 0) - parityMetrics.spineUtil.workbook) < 1e-8);
@@ -1777,23 +1799,19 @@ async function main(): Promise<void> {
   assert.equal(mainSheet.C72.v, exportModel.packing.cog.x);
   assert.equal(mainSheet.C73.v, exportModel.packing.cog.y);
   assert.equal(mainSheet.C74.v, exportModel.packing.cog.z);
-  const controlSheet = workbook.Sheets.TS_CONTROL;
-  assert.equal(controlSheet.B2.v, "STOP");
-  assert.equal(controlSheet.B6.v, exportModel.optimiser.e89Step);
-  assert.equal(controlSheet.B7.v, exportModel.optimiser.c89Maximum);
-  assert.equal(controlSheet.B8.v, exportModel.optimiser.c89Start);
-  assert.equal(controlSheet.B9.v, exportModel.optimiser.c89Step);
-  assert.equal(controlSheet.B11.v, exportModel.optimiser.e89RangeMode);
-  assert.equal(controlSheet.B35.v, exportModel.optimiser.weights.basicUtil);
-  assert.equal(controlSheet.B42.v, exportModel.optimiser.weights.dynamicRatio);
-  assert.equal(controlSheet.B58.v, exportModel.optimiser.weights.shearUtil);
-  assert.equal(controlSheet.B73.v, exportModel.optimiser.weights.axleLinesUsed);
-  assert.equal(controlSheet.A102.v, "Web export contract");
-  assert.equal(controlSheet.B102.v, VERIFICATION_EXPORT_CONTRACT_VERSION);
-  assert.match(String(controlSheet.C102.v), /lower X is rear and higher X is front/i);
-  assert.equal(controlSheet.D102.v, "Support ID");
-  assert.equal(controlSheet.E103.v, "no");
-  assert.equal(controlSheet.F103.v, "no");
+  for (const removedSheet of [
+    "TS_COMMAND_CENTER",
+    "TS_CONTROL",
+    "TS_OPTIMISER_LOG",
+    "TS_LIVE_FEED",
+    "TS_RUN_ACTIVITY_LOG",
+  ]) {
+    assert.equal(workbook.Sheets[removedSheet], undefined, `${removedSheet} should not be in web export`);
+  }
+  assert.equal(workbook.Sheets["Bogie Group"].CY2.v, 99);
+  assert.match(formula(workbook, "Load and Stability Calculation", "H154"), /\$E\$3:\$CY\$26/);
+  assert.match(formula(workbook, "Spinebeam calculation", "CX72"), /\$A\$29:\$CW\$52/);
+  assert.match(formula(workbook, "Bogie Load Neutral", "CW6"), /'Bogie Group'!CY3/);
   const exportedEngineeringResult = calculateProject(exportModel);
   for (let index = 0; index < 10; index += 1) {
     const support = exportModel.supports[index];

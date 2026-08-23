@@ -10,7 +10,9 @@ import win32com.client
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "public" / "templates" / "Trailer_Stability_Verification_Template_v0.7.xlsm"
+# The v0.8 template is the in-place four-point baseline.  Rebuild it in place
+# so the website and the delivered verification workbook use one asset.
+SOURCE = ROOT / "public" / "templates" / "Trailer_Stability_Verification_Template_v0.8_4Point_InPlace.xlsm"
 OUTPUT = Path(__file__).resolve().parent / "outputs" / "Trailer_Stability_Calculator_Optimiser_v0.8_4Point_InPlace.xlsm"
 
 XL_UP = -4162
@@ -23,6 +25,23 @@ XL_CALC_AUTOMATIC = -4105
 XL_OPEN_XML_WORKBOOK_MACRO_ENABLED = 52
 MSO_AUTOMATION_SECURITY_FORCE_DISABLE = 3
 MSO_AUTOMATION_SECURITY_LOW = 1
+
+# The web arrangement engine permits up to 99 axle lines on a train.  The
+# original workbook grid stopped at 66 (E:BR), silently omitting AL 67 onward
+# from group, load and spine-beam calculations.  Keep one explicit source of
+# truth for every connected workbook range.
+MAX_AXLE_LINES = 99
+AXLE_GROUP_FIRST_COL = 5  # E
+AXLE_GROUP_LAST_COL = AXLE_GROUP_FIRST_COL + MAX_AXLE_LINES - 1  # CY
+AXLE_EXISTENCE_FIRST_COL = 4  # D
+AXLE_EXISTENCE_LAST_COL = AXLE_EXISTENCE_FIRST_COL + MAX_AXLE_LINES - 1  # CX
+AXLE_LOAD_FIRST_COL = 3  # C
+AXLE_LOAD_LAST_COL = AXLE_LOAD_FIRST_COL + MAX_AXLE_LINES - 1  # CW
+LEGACY_AXLE_GROUP_LAST_COL = 70  # BR / AL 66
+LEGACY_AXLE_EXISTENCE_LAST_COL = 69  # BQ / AL 66
+LEGACY_AXLE_LOAD_LAST_COL = 68  # BP / AL 66
+SPINE_PLOT_FIRST_COL = 7  # G
+SPINE_PLOT_LAST_COL = SPINE_PLOT_FIRST_COL + MAX_AXLE_LINES * 3 - 1  # KQ
 
 
 VBA_HYDRAULICS = r'''Option Explicit
@@ -359,80 +378,54 @@ def replace_function(text: str, function_name: str, replacement: str) -> str:
     return new_text
 
 
-def patch_optimizer_vba(workbook) -> None:
+LEGACY_OPTIMISER_SHEETS = (
+    "TS_COMMAND_CENTER",
+    "TS_CONTROL",
+    "TS_OPTIMISER_LOG",
+    "TS_LIVE_FEED",
+    "TS_RUN_ACTIVITY_LOG",
+)
+
+LEGACY_OPTIMISER_MODULES = (
+    "modTS_Common",
+    "modTS_Acceleration",
+    "modTS_Progress",
+    "modTS_BeamOptimiser",
+    "modTS_CommandCenter",
+    "modTS_Setup",
+    "modTS_Optimiser",
+    "modTS_Spinebeam",
+)
+
+
+def strip_legacy_optimiser_assets(workbook) -> None:
+    """Remove the workbook-only optimiser; the web app owns optimisation.
+
+    The retained workbook is a calculation/verification deliverable.  Keeping
+    the old command centre and event logs made its purpose ambiguous and
+    retained VBA paths that are no longer supported by the web export.
+    """
+    workbook.Worksheets("Load and Stability Calculation").Activate()
+    for sheet_name in LEGACY_OPTIMISER_SHEETS:
+        try:
+            sheet = workbook.Worksheets(sheet_name)
+            # Excel will not delete a hidden sheet directly in some builds.
+            # Make it visible only for the deletion transaction.
+            sheet.Visible = -1
+            sheet.Delete()
+        except Exception as error:
+            # A missing sheet is harmless; a deletion failure is not.  Failing
+            # here prevents accidental delivery of a workbook with legacy
+            # optimiser UI/logging still embedded.
+            if sheet_name in {workbook.Worksheets(i).Name for i in range(1, workbook.Worksheets.Count + 1)}:
+                raise RuntimeError(f"Could not remove legacy optimiser sheet {sheet_name}: {error}") from error
+
     project = workbook.VBProject
-    for component in project.VBComponents:
-        text = module_text(component)
-        if not text:
-            continue
-        changed = text
-        changed = changed.replace('TS_GROUP_X_RANGE As String = "K151:K153"', 'TS_GROUP_X_RANGE As String = "K151:K154"')
-        changed = changed.replace('TS_GROUP_Y_RANGE As String = "M151:M153"', 'TS_GROUP_Y_RANGE As String = "M151:M154"')
-        changed = changed.replace('Stability Triangle Group X References (K151:K153)', 'Stability Boundary Group X References (K151:K154)')
-        changed = changed.replace('Stability Triangle Group Y References (M151:M153)', 'Stability Boundary Group Y References (M151:M154)')
-        changed = changed.replace('"K151:K153"', '"K151:K154"')
-        changed = changed.replace('"M151:M153"', '"M151:M154"')
-        changed = changed.replace('Dim x(1 To 3) As Double, y(1 To 3) As Double', 'Dim x(1 To 4) As Double, y(1 To 4) As Double')
-        if component.Name == "modTS_Optimiser":
-            read_replacement = r'''Private Function TS_ReadCurrentTriangleOnly(ByVal ws As Worksheet, ByRef x() As Double, ByRef y() As Double, ByRef detail As String) As Boolean
-    Dim rx As Range, ry As Range, i As Long, pointCount As Long, okX As Boolean, okY As Boolean
-    On Error GoTo Failed
-    pointCount = IIf(InStr(1, UCase$(CStr(ws.Range("D133").Value2)), "4") > 0, 4, 3)
-    Set rx = ws.Range(TS_GetControlText("B20", TS_GROUP_X_RANGE))
-    Set ry = ws.Range(TS_GetControlText("B21", TS_GROUP_Y_RANGE))
-    If rx.Cells.count < pointCount Or ry.Cells.count < pointCount Then
-        detail = "Hydraulic group-centre ranges do not contain all active boundary points."
-        Exit Function
-    End If
-    For i = 1 To pointCount
-        x(i) = TS_ToDbl(rx.Cells(i, 1).Value2, 0, okX)
-        y(i) = TS_ToDbl(ry.Cells(i, 1).Value2, 0, okY)
-        If Not okX Or Not okY Then
-            detail = "Could not read numeric Group " & i & " X/Y centre coordinates."
-            Exit Function
-        End If
-    Next i
-    TS_ReadCurrentTriangleOnly = True
-    Exit Function
-Failed:
-    detail = "Could not read the current hydraulic stability-boundary coordinates: " & Err.Description
-End Function'''
-            xsec_replacement = r'''Private Function TS_TriangleXSectionAtY(ByRef x() As Double, ByRef y() As Double, ByVal targetY As Double, ByRef xLeft As Double, ByRef xRight As Double, ByRef detail As String) As Boolean
-    Dim modeValue As String, leftValue As Variant, rightValue As Variant
-    modeValue = CStr(ThisWorkbook.Worksheets(TS_GetControlText("B5", TS_MAIN_SHEET_DEFAULT)).Range("D133").Value2)
-    leftValue = TS_HYD_XSECTION_LEFT(targetY, x(1), y(1), x(2), y(2), x(3), y(3), x(4), y(4), modeValue)
-    rightValue = TS_HYD_XSECTION_RIGHT(targetY, x(1), y(1), x(2), y(2), x(3), y(3), x(4), y(4), modeValue)
-    If IsError(leftValue) Or IsError(rightValue) Then
-        detail = "Combined COG Y does not cross a usable hydraulic stability boundary."
-        Exit Function
-    End If
-    xLeft = CDbl(leftValue): xRight = CDbl(rightValue)
-    TS_TriangleXSectionAtY = (xRight - xLeft > 0.00000001)
-    If Not TS_TriangleXSectionAtY Then detail = "The stability-boundary X interval at combined COG Y has zero width."
-End Function'''
-            inside_replacement = r'''Private Function TS_IsCombinedCOGInsideTriangle(ByVal ws As Worksheet, ByRef detail As String) As Boolean
-    Dim rx As Range, ry As Range, px As Double, py As Double, okX As Boolean, okY As Boolean, modeValue As String
-    On Error GoTo Failed
-    Set rx = ws.Range(TS_GetControlText("B20", TS_GROUP_X_RANGE))
-    Set ry = ws.Range(TS_GetControlText("B21", TS_GROUP_Y_RANGE))
-    px = TS_CellDbl(ws, TS_GetControlText("B18", TS_COMBINED_COG_X_CELL), 0, okX)
-    py = TS_CellDbl(ws, TS_GetControlText("B19", TS_COMBINED_COG_Y_CELL), 0, okY)
-    modeValue = CStr(ws.Range("D133").Value2)
-    If Not okX Or Not okY Then GoTo Failed
-    TS_IsCombinedCOGInsideTriangle = TS_HYD_INSIDE(px, py, rx.Cells(1, 1).Value2, ry.Cells(1, 1).Value2, _
-        rx.Cells(2, 1).Value2, ry.Cells(2, 1).Value2, rx.Cells(3, 1).Value2, ry.Cells(3, 1).Value2, _
-        rx.Cells(4, 1).Value2, ry.Cells(4, 1).Value2, modeValue)
-    detail = "COG=(" & Format$(px, "0.###") & "," & Format$(py, "0.###") & "); hydraulic mode=" & modeValue & "; inside=" & CStr(TS_IsCombinedCOGInsideTriangle)
-    Exit Function
-Failed:
-    detail = "Could not read the combined COG or active hydraulic stability-boundary coordinates."
-    TS_IsCombinedCOGInsideTriangle = False
-End Function'''
-            changed = replace_function(changed, "TS_ReadCurrentTriangleOnly", read_replacement)
-            changed = replace_function(changed, "TS_TriangleXSectionAtY", xsec_replacement)
-            changed = replace_function(changed, "TS_IsCombinedCOGInsideTriangle", inside_replacement)
-        if changed != text:
-            set_module_text(component, changed)
+    for module_name in LEGACY_OPTIMISER_MODULES:
+        try:
+            project.VBComponents.Remove(project.VBComponents(module_name))
+        except Exception:
+            pass
 
 
 def add_hydraulic_module(workbook) -> None:
@@ -498,10 +491,10 @@ def patch_main_sheet(workbook) -> None:
     ws.Range("F153:N153").Copy()
     ws.Range("F154:N154").PasteSpecial(-4122)
     ws.Range("F154").Value = "Group 4"
-    ws.Range("H154").Formula = '=IF($D$133="4-point",TS_HYD_GROUP_COUNT(4,\'Bogie Group\'!$E$3:$BR$26,\'Bogie coord-exist\'!$E$3:$BR$26),0)'
+    ws.Range("H154").Formula = '=IF($D$133="4-point",TS_HYD_GROUP_COUNT(4,\'Bogie Group\'!$E$3:$CY$26,\'Bogie coord-exist\'!$E$3:$CY$26),0)'
     ws.Range("G154").Formula = "=H154/2"
-    ws.Range("K154").Formula = '=IF($D$133="4-point",TS_HYD_GROUP_CENTRE(4,\'Bogie Group\'!$E$3:$BR$26,\'Bogie coord-exist\'!$E$3:$BR$26),"")'
-    ws.Range("M154").Formula = '=IF($D$133="4-point",TS_HYD_GROUP_CENTRE(4,\'Bogie Group\'!$E$3:$BR$26,\'Bogie coord-exist\'!$E$29:$BR$52),"")'
+    ws.Range("K154").Formula = '=IF($D$133="4-point",TS_HYD_GROUP_CENTRE(4,\'Bogie Group\'!$E$3:$CY$26,\'Bogie coord-exist\'!$E$3:$CY$26),"")'
+    ws.Range("M154").Formula = '=IF($D$133="4-point",TS_HYD_GROUP_CENTRE(4,\'Bogie Group\'!$E$3:$CY$26,\'Bogie coord-exist\'!$E$29:$CY$52),"")'
     ws.Range("I154").Formula = f'=IF($D$133="4-point",Mnettotpppin*{hyd_reaction(4,"$H$163","$I$163")},0)'
     ws.Range("N162").Value = "Group 4"
     ws.Range("M162").Copy()
@@ -664,6 +657,59 @@ def patch_main_sheet(workbook) -> None:
         ws.Range(f"AJ{row}").Formula = f"=TS_HYD_BOUNDARY_Y({i},{args})"
 
 
+def extend_axle_grids(workbook) -> None:
+    """Extend the inherited 66-AL grids to the web engine's 99-AL limit.
+
+    Formula extensions use Excel FillRight so relative references retain the
+    original per-axle mapping.  Formats are copied from the final legacy axle
+    column before formulas are seeded, preserving the established workbook
+    presentation and number formats.
+    """
+    grids = (
+        ("Bogie coordinates", AXLE_GROUP_FIRST_COL, AXLE_GROUP_LAST_COL, (2, 26)),
+        ("Bogie existance", AXLE_EXISTENCE_FIRST_COL, AXLE_EXISTENCE_LAST_COL, (2, 26)),
+        ("Bogie Group", AXLE_GROUP_FIRST_COL, AXLE_GROUP_LAST_COL, (2, 26)),
+        ("Bogie coord-exist", AXLE_GROUP_FIRST_COL, AXLE_GROUP_LAST_COL, (2, 52)),
+        ("Bogie Group 1", AXLE_GROUP_FIRST_COL, AXLE_GROUP_LAST_COL, (2, 26)),
+        ("Bogie Group 2", AXLE_GROUP_FIRST_COL, AXLE_GROUP_LAST_COL, (2, 26)),
+        ("Bogie Group 3", AXLE_GROUP_FIRST_COL, AXLE_GROUP_LAST_COL, (2, 26)),
+    )
+    for sheet_name, first_col, last_col, (first_row, last_row) in grids:
+        ws = workbook.Worksheets(sheet_name)
+        legacy_last = LEGACY_AXLE_GROUP_LAST_COL if first_col == AXLE_GROUP_FIRST_COL else LEGACY_AXLE_EXISTENCE_LAST_COL
+        ws.Range(ws.Cells(first_row, legacy_last), ws.Cells(last_row, legacy_last)).Copy()
+        ws.Range(ws.Cells(first_row, legacy_last + 1), ws.Cells(last_row, last_col)).PasteSpecial(-4122)
+        ws.Range(ws.Cells(first_row, legacy_last), ws.Cells(last_row, last_col)).FillRight()
+        # The inherited header cells are cached literals rather than formulas,
+        # so FillRight would repeat 66.  Write the real AL sequence explicitly.
+        for axle_line, column in enumerate(range(first_col, last_col + 1), 1):
+            ws.Cells(2, column).Value = axle_line
+
+    # The raw bogie-load blocks originally occupied C:BP.  Their adjacent
+    # summary panel begins at BQ, so relocate it to CX:DD before extending.
+    for sheet_name in (
+        "Bogie Load Neutral", "Bogie Load A", "Bogie Load B", "Bogie Load C", "Bogie Load D"
+    ):
+        ws = workbook.Worksheets(sheet_name)
+        ws.Range("BQ1:BW30").Copy(ws.Range("CX1"))
+        ws.Range("BQ1:BW30").ClearContents()
+        ws.Range(ws.Cells(1, LEGACY_AXLE_LOAD_LAST_COL), ws.Cells(30, LEGACY_AXLE_LOAD_LAST_COL)).Copy()
+        ws.Range(ws.Cells(1, LEGACY_AXLE_LOAD_LAST_COL + 1), ws.Cells(30, AXLE_LOAD_LAST_COL)).PasteSpecial(-4122)
+
+    # Spine-beam loads use C:BP and can safely extend to C:CW.
+    spine_loads = workbook.Worksheets("Bogie Load Spinebeam Calc")
+    spine_loads.Range(spine_loads.Cells(29, LEGACY_AXLE_LOAD_LAST_COL), spine_loads.Cells(52, LEGACY_AXLE_LOAD_LAST_COL)).Copy()
+    spine_loads.Range(spine_loads.Cells(29, LEGACY_AXLE_LOAD_LAST_COL + 1), spine_loads.Cells(52, AXLE_LOAD_LAST_COL)).PasteSpecial(-4122)
+    spine_loads.Range(spine_loads.Cells(29, AXLE_LOAD_FIRST_COL), spine_loads.Cells(52, AXLE_LOAD_LAST_COL)).FillRight()
+
+    spine = workbook.Worksheets("Spinebeam calculation")
+    spine.Range(spine.Cells(70, LEGACY_AXLE_EXISTENCE_LAST_COL), spine.Cells(73, LEGACY_AXLE_EXISTENCE_LAST_COL)).Copy()
+    spine.Range(spine.Cells(70, LEGACY_AXLE_EXISTENCE_LAST_COL + 1), spine.Cells(73, AXLE_EXISTENCE_LAST_COL)).PasteSpecial(-4122)
+    spine.Range(spine.Cells(70, LEGACY_AXLE_EXISTENCE_LAST_COL), spine.Cells(73, AXLE_EXISTENCE_LAST_COL)).FillRight()
+    for axle_line, column in enumerate(range(AXLE_EXISTENCE_FIRST_COL, AXLE_EXISTENCE_LAST_COL + 1), 1):
+        spine.Cells(70, column).Value = axle_line
+
+
 def patch_bogie_loads(workbook) -> None:
     cases = {"Bogie Load Neutral": 163, "Bogie Load A": 164, "Bogie Load B": 165, "Bogie Load C": 166, "Bogie Load D": 167}
     main = "'Load and Stability Calculation'"
@@ -671,7 +717,7 @@ def patch_bogie_loads(workbook) -> None:
         ws = workbook.Worksheets(sheet_name)
         for out_row in range(6, 30):
             group_row = out_row - 3
-            for out_col in range(3, 68):  # C:BP maps E:BR
+            for out_col in range(AXLE_LOAD_FIRST_COL, AXLE_LOAD_LAST_COL + 1):  # C:CW maps E:CY
                 group_col = out_col + 2
                 exist_col = out_col + 1
                 gc = f"'Bogie Group'!{col_letter(group_col)}{group_row}"
@@ -681,14 +727,76 @@ def patch_bogie_loads(workbook) -> None:
                     f"{main}!$M${case_row}/2,{main}!$N${case_row}/2),IF({gc},\"Pinned up\",NA()))"
                 )
 
+        # Summary panel was deliberately moved clear of AL 67:99.  Recreate
+        # its formulas against the complete AL span so the maximum local load
+        # and utilisation include every web-exported axle line.
+        ws.Range("CX5").Value = "MAX"
+        ws.Range("DA2").Value = "Net capacity per bogie"
+        ws.Range("DB4").Value = "Max UC:"
+        ws.Range("DC4").Value = "in trailer:"
+        ws.Range("DD4").Value = "AL cap"
+        for out_row in range(6, 30):
+            ws.Range(f"CX{out_row}").FormulaArray = f"=MAX(IF(ISERROR(C{out_row}:CW{out_row}),0,C{out_row}:CW{out_row}))"
+            ws.Range(f"CY{out_row}").Value = (out_row - 5 + 1) // 2
+            ws.Range(f"CZ{out_row}").Formula = f"=VLOOKUP(CY{out_row},{main}!$A$89:$B$100,2,FALSE)"
+            ws.Range(f"DA{out_row}").Formula = f"=(VLOOKUP(CZ{out_row},TrailerDataLookup,6,FALSE)-VLOOKUP(CZ{out_row},TrailerDataLookup,5,FALSE))/2"
+            ws.Range(f"DB{out_row}").Formula = f"=CX{out_row}/DA{out_row}"
+            ws.Range(f"DC{out_row}").Value = (out_row - 5 + 1) // 2
+        ws.Range("DB5").FormulaArray = "=MAX(IF(ISERROR(DB6:DB29),0,DB6:DB29))"
+        ws.Range("DC5").Formula = "=VLOOKUP(DB5,DB6:DC29,2,FALSE)"
+        ws.Range("DD5").Formula = "=VLOOKUP(DC5,CY6:DA29,3,FALSE)*2"
+
+
+def retarget_bogie_load_summaries(workbook) -> None:
+    """Point all retained capacity checks at the relocated MAX column.
+
+    `BQ` was the old per-bogie maximum after 66 AL columns (C:BP).  It is now
+    an active AL 67 column, while `CX` is the relocated maximum after C:CW.
+    Leaving a BQ reference behind silently compares capacity with one axle
+    instead of the governing bogie load.
+    """
+    for ws_index in range(1, workbook.Worksheets.Count + 1):
+        ws = workbook.Worksheets(ws_index)
+        for case_name in (
+            "Bogie Load Neutral",
+            "Bogie Load A",
+            "Bogie Load B",
+            "Bogie Load C",
+            "Bogie Load D",
+        ):
+            ws.UsedRange.Replace(
+                What=f"'{case_name}'!BQ",
+                Replacement=f"'{case_name}'!CX",
+                LookAt=2,
+                SearchOrder=1,
+                MatchCase=False,
+            )
+            ws.UsedRange.Replace(
+                What=f"'{case_name}'!$BQ$",
+                Replacement=f"'{case_name}'!$CX$",
+                LookAt=2,
+                SearchOrder=1,
+                MatchCase=False,
+            )
+    # Excel adjusts a moved single-column range as BQ:CX.  Within the capacity
+    # overview that is never intended: both endpoints are the relocated MAX
+    # summary, so normalise the retained formulas to CX:CX.
+    workbook.Worksheets("Load and Stability Calculation").Range("B149:Q266").Replace(
+        What="BQ",
+        Replacement="CX",
+        LookAt=2,
+        SearchOrder=1,
+        MatchCase=False,
+    )
+
 
 def patch_group4_chart_helper(workbook) -> None:
     ws = workbook.Worksheets("Bogie Group")
     # Existing blank helper rows are used; no Group 4 worksheet is added.
-    total_cols = 24 * 66
+    total_cols = 24 * MAX_AXLE_LINES
     for idx in range(total_cols):
-        src_row = idx // 66 + 3
-        src_col = idx % 66 + 5
+        src_row = idx // MAX_AXLE_LINES + 3
+        src_col = idx % MAX_AXLE_LINES + AXLE_GROUP_FIRST_COL
         dst_col = idx + 5
         group_addr = f"{col_letter(src_col)}{src_row}"
         x_addr = f"'Bogie coord-exist'!{col_letter(src_col)}{src_row}"
@@ -699,6 +807,24 @@ def patch_group4_chart_helper(workbook) -> None:
 
 def patch_spinebeam(workbook) -> None:
     ws = workbook.Worksheets("Spinebeam calculation")
+
+    # The original plotting / calculation chain stopped at AL 66.  Retarget
+    # it before adding the G4 series so bending, shear and deflection use the
+    # same 99-AL input span as the web calculation.
+    ws.Range("D56").Formula = "=IF(ISNUMBER(C56),INDEX($D$71:$CX$71,1,MATCH(C56,$D$70:$CX$70,0))-$C$12/2,0)"
+    ws.Range("P55:Y55").FormulaArray = '=IF(ISNUMBER(SMALL(IF(D72:CX72=0,COLUMN(D70:CX70)-3),ROW(1:10))),SMALL(IF(D72:CX72=0,COLUMN(D70:CX70)-3),ROW(1:10)),"")'
+    ws.Range("D71").Formula = '=IF(ISNUMBER(D72),INDEX(\'Bogie coordinates\'!$E$3:$CY$26,MATCH($C$3,\'Bogie coordinates\'!$A$3:$A$26,0),D70)-$C$28,"")'
+    ws.Range("D72").Formula = '=IF(ISNA(VLOOKUP($C$3,\'Bogie Load Spinebeam Calc\'!$A$29:$CW$52,D70+2,FALSE)),"",IF(ISNUMBER(VLOOKUP($C$3,\'Bogie Load Spinebeam Calc\'!$A$29:$CW$52,D70+2,FALSE)),(INDEX(\'Bogie Load Spinebeam Calc\'!$C$29:$CW$52,MATCH($C$3,\'Bogie Load Spinebeam Calc\'!$A$29:$A$52,0),D70)+INDEX(\'Bogie Load Spinebeam Calc\'!$C$29:$CW$52,MATCH($C$3,\'Bogie Load Spinebeam Calc\'!$A$29:$A$52,0)+1,D70))*$C$8,0))'
+    ws.Range("D71:CX73").FillRight()
+
+    # Source templates may already contain the extended calculation array.
+    # Clear the complete current CSE array rather than a fixed legacy subset.
+    ws.Range("G117").CurrentArray.ClearContents()
+    ws.Range("HV117:HV122").Copy()
+    ws.Range(f"HW117:{col_letter(SPINE_PLOT_LAST_COL)}122").PasteSpecial(-4122)
+    group_formula = "=TRANSPOSE(plotAxleLoads(TRANSPOSE(D71:CX73),TRANSPOSE(INDEX('Bogie Group'!$E$3:$CY$26,MATCH($C$3,'Bogie Group'!$A$3:$A$26,0)+1,'Bogie Group'!$E$2:$CY$2))))+D117:D122"
+    ws.Range(f"G117:{col_letter(SPINE_PLOT_LAST_COL)}122").FormulaArray = group_formula
+
     ws.Range("B125:F126").ClearContents()
     ws.Range("B121:F122").Copy()
     ws.Range("B125:F126").PasteSpecial(-4122)
@@ -707,10 +833,13 @@ def patch_spinebeam(workbook) -> None:
     ws.Range("C126").Value = "Load"
     ws.Range("D125").Formula = "=$C$28"
     ws.Range("D126").Value = 0
-    formula = "=TRANSPOSE(PlotAxleLoadsG4(TRANSPOSE(D71:BQ73),TRANSPOSE(INDEX('Bogie Group'!$E$3:$BR$26,MATCH($C$3,'Bogie Group'!$A$3:$A$26,0)+1,'Bogie Group'!$E$2:$BR$2))))+D125:D126"
-    ws.Range("G125:HV126").FormulaArray = formula
-    ws.Range("E126").FormulaArray = "=MIN(IF(NOT(ISNA(G126:HV126)),G126:HV126))"
-    ws.Range("F126").FormulaArray = "=MAX(IF(NOT(ISNA(G126:HV126)),G126:HV126))"
+    formula = "=TRANSPOSE(PlotAxleLoadsG4(TRANSPOSE(D71:CX73),TRANSPOSE(INDEX('Bogie Group'!$E$3:$CY$26,MATCH($C$3,'Bogie Group'!$A$3:$A$26,0)+1,'Bogie Group'!$E$2:$CY$2))))+D125:D126"
+    ws.Range("G125").CurrentArray.ClearContents()
+    ws.Range("HV125:HV126").Copy()
+    ws.Range(f"HW125:{col_letter(SPINE_PLOT_LAST_COL)}126").PasteSpecial(-4122)
+    ws.Range(f"G125:{col_letter(SPINE_PLOT_LAST_COL)}126").FormulaArray = formula
+    ws.Range("E126").FormulaArray = f"=MIN(IF(NOT(ISNA(G126:{col_letter(SPINE_PLOT_LAST_COL)}126)),G126:{col_letter(SPINE_PLOT_LAST_COL)}126))"
+    ws.Range("F126").FormulaArray = f"=MAX(IF(NOT(ISNA(G126:{col_letter(SPINE_PLOT_LAST_COL)}126)),G126:{col_letter(SPINE_PLOT_LAST_COL)}126))"
     # The existing support/distributed-load plotting ranges are left untouched.
     # The G4 axle-load series uses its own rows 125:126 and therefore cannot
     # disturb the legacy array formulas in rows 105:124.
@@ -746,21 +875,6 @@ def patch_export_sheet(workbook) -> None:
     ws.PageSetup.PrintArea = "$A$1:$K$55"
 
 
-def patch_controls(workbook) -> None:
-    ws = workbook.Worksheets("TS_CONTROL")
-    ws.Range("A20").Value = "Stability Boundary Group X References (K151:K154)"
-    ws.Range("B20").Value = "K151:K154"
-    ws.Range("A21").Value = "Stability Boundary Group Y References (M151:M154)"
-    ws.Range("B21").Value = "M151:M154"
-    ws.Range("B23").Value = "AUTO_GROUP_CENTRES reads all active hydraulic group centres after every configuration change and calculates the E89 interval where the combined COG remains inside the active three- or four-point stability boundary."
-    ws.Range("C93").Value = "Negative load range = K163:N167"
-    ws.Range("C96").Value = "Stability boundary group X coordinates = K151:K154"
-    ws.Range("C97").Value = "Stability boundary group Y coordinates = M151:M154"
-    ws.Range("A101").Value = "Hydraulic Stability System"
-    ws.Range("B101").Formula = "='Load and Stability Calculation'!D133"
-    ws.Range("C101").Value = "The current calculation and DWG-export sheets support either three or four hydraulic groups; no separate calculator is used."
-
-
 def patch_charts(workbook) -> None:
     main = workbook.Worksheets("Load and Stability Calculation")
     for chart_obj in main.ChartObjects():
@@ -782,8 +896,9 @@ def patch_charts(workbook) -> None:
             if not any("Group 4" in n for n in names):
                 s = chart.SeriesCollection().NewSeries()
                 s.Name = "Group 4"
-                s.XValues = "='Bogie Group'!$E$28:$BIB$28"
-                s.Values = "='Bogie Group'!$E$29:$BIB$29"
+                helper_last = col_letter(AXLE_GROUP_FIRST_COL + 24 * MAX_AXLE_LINES - 1)
+                s.XValues = f"='Bogie Group'!$E$28:${helper_last}$28"
+                s.Values = f"='Bogie Group'!$E$29:${helper_last}$29"
                 try:
                     s.Format.Line.ForeColor.RGB = 3394611
                 except Exception:
@@ -807,8 +922,8 @@ def patch_charts(workbook) -> None:
         if any("Axle loads G3" in n for n in names) and not any("Axle loads G4" in n for n in names):
             s = chart.SeriesCollection().NewSeries()
             s.Name = "='Spinebeam calculation'!$B$125"
-            s.XValues = "='Spinebeam calculation'!$G$125:$HV$125"
-            s.Values = "='Spinebeam calculation'!$G$126:$HV$126"
+            s.XValues = f"='Spinebeam calculation'!$G$125:${col_letter(SPINE_PLOT_LAST_COL)}$125"
+            s.Values = f"='Spinebeam calculation'!$G$126:${col_letter(SPINE_PLOT_LAST_COL)}$126"
 
 
 def build() -> Path:
@@ -828,17 +943,18 @@ def build() -> Path:
     try:
         workbook = excel.Workbooks.Open(str(OUTPUT), UpdateLinks=0, ReadOnly=False)
         excel.Calculation = XL_CALC_MANUAL
+        strip_legacy_optimiser_assets(workbook)
         add_hydraulic_module(workbook)
-        patch_optimizer_vba(workbook)
         patch_main_sheet(workbook)
+        extend_axle_grids(workbook)
         patch_bogie_loads(workbook)
+        retarget_bogie_load_summaries(workbook)
         patch_group4_chart_helper(workbook)
         patch_spinebeam(workbook)
         patch_export_sheet(workbook)
-        patch_controls(workbook)
         patch_charts(workbook)
 
-        forbidden = {"4 Point Hydraulics", "TS_4POINT_LOG"}
+        forbidden = {"4 Point Hydraulics", "TS_4POINT_LOG", *LEGACY_OPTIMISER_SHEETS}
         actual = {workbook.Worksheets(i).Name for i in range(1, workbook.Worksheets.Count + 1)}
         if actual & forbidden:
             raise RuntimeError(f"Forbidden separate four-point worksheets exist: {sorted(actual & forbidden)}")
@@ -846,7 +962,10 @@ def build() -> Path:
         workbook.Worksheets("Load and Stability Calculation").Range("D133").Value = "3-point"
         excel.Calculation = XL_CALC_AUTOMATIC
         excel.CalculateFullRebuild()
-        for _ in range(100):
+        # Full rebuild is authoritative; a small settle loop is enough to
+        # populate cached values without making the 99-AL template build wait
+        # on 100 redundant complete recalculations.
+        for _ in range(3):
             excel.Calculate()
         workbook.Save()
         workbook.Close(SaveChanges=True)

@@ -25,14 +25,13 @@ const EXPORT_TO_DWG = "Export to DWG";
 const REQUIRED_FOUR_POINT_SHEETS = [
   MAIN,
   DATABASE,
-  CONTROL,
   EXPORT_TO_DWG,
   "Slope effect COG",
   "Dynamic loading CombinedCOG",
   "Spinebeam calculation",
 ] as const;
 
-export const VERIFICATION_EXPORT_CONTRACT_VERSION = "TS-XLSM-4P-1";
+export const VERIFICATION_EXPORT_CONTRACT_VERSION = "TS-XLSM-4P-2";
 export const VERIFICATION_TEMPLATE_ASSET =
   "/templates/Trailer_Stability_Verification_Template_v0.8_4Point_InPlace.xlsm";
 
@@ -294,7 +293,10 @@ export async function importWorkbook(file: File, fallback: ProjectModel): Promis
       id: `support-${index + 1}`,
       xM: position,
       widthM: numberValue(main, `D${row}`, 0.5),
-      allowed: !["NO", "NOK"].includes(textValue(main, `F${row}`).toUpperCase()),
+      // `F` is the retained workbook's Allowed? field.  A blank row is an
+      // unconfigured support, not an implicit allowed support; this keeps
+      // calculation-only exports independent of the retired TS_CONTROL map.
+      allowed: textValue(main, `F${row}`).trim().toUpperCase() === "YES",
       active: yes(main[`I${row}`]?.v),
       optionalWeightT: nullableNumber(main[`F${71 + index}`]?.v) ?? undefined,
     };
@@ -462,6 +464,15 @@ function setValue(
   sheet.cells.set(address.toUpperCase(), { value, preserveExistingFormula });
 }
 
+function setFormulaValue(
+  sheet: XmlPatchSheet,
+  address: string,
+  formula: string,
+  value: CellValue,
+): void {
+  sheet.cells.set(address.toUpperCase(), { formula, value });
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -549,6 +560,7 @@ async function assertFourPointVerificationTemplate(bytes: Uint8Array): Promise<v
   if (!/\br="D133"/.test(mainXml)) issues.push("missing explicit three-/four-point mode cell D133");
   if (!mainXml.includes("TS_HYD_REACTION(4")) issues.push("missing direct Group 4 reaction formulas");
   if (!mainXml.includes("TS_HYD_GROUP_CENTRE(4")) issues.push("missing direct Group 4 centre formulas");
+  if (!mainXml.includes("$CY$26")) issues.push("missing 99-AL hydraulic group range E:CY");
   for (const copyFormula of ["$C$89", "$E$89", "$D$138", "$G$136", "$N$136"]) {
     if (!mainXml.includes(copyFormula)) issues.push(`missing retained shared input formula ${copyFormula}`);
   }
@@ -559,6 +571,15 @@ async function assertFourPointVerificationTemplate(bytes: Uint8Array): Promise<v
     issues.push("missing four-point Export to DWG boundary validation");
   }
   if (!/\bname="bogies4"/.test(workbookXml)) issues.push("missing bogies4 workbook definition");
+  for (const legacySheet of [
+    "TS_COMMAND_CENTER",
+    "TS_CONTROL",
+    "TS_OPTIMISER_LOG",
+    "TS_LIVE_FEED",
+    "TS_RUN_ACTIVITY_LOG",
+  ]) {
+    if (paths.has(legacySheet)) issues.push(`contains removed legacy optimiser sheet "${legacySheet}"`);
+  }
 
   if (issues.length) {
     throw new Error(
@@ -766,7 +787,6 @@ export async function exportVerificationWorkbook(
   await assertFourPointVerificationTemplate(new Uint8Array(source));
   const main = createPatchSheet(MAIN);
   const database = createPatchSheet(DATABASE);
-  const control = createPatchSheet(CONTROL);
   const resolvedResult = calculateProject(model);
   setValue(main, "F17", model.engineeringDegree);
   setValue(main, "D21", model.cargo.name);
@@ -845,7 +865,22 @@ export async function exportVerificationWorkbook(
     setValue(main, `E${71 + index}`, support?.xM ?? null);
     setValue(main, `F${71 + index}`, support?.optionalWeightT ?? null);
     setValue(main, `D${446 + index}`, support?.widthM ?? null);
-    setValue(main, `F${446 + index}`, support?.allowed ? "yes" : "no", true);
+    // A template may retain locations for unused rows.  Explicitly mark an
+    // absent support as disallowed so a workbook round-trip cannot turn it
+    // into an active candidate merely because it has a stored coordinate.
+    const allowedAddress = `F${446 + index}`;
+    if (support?.allowed) {
+      setValue(main, allowedAddress, "yes", true);
+    } else {
+      // Retain the workbook's formula-driven Allowed? presentation while
+      // explicitly recording a disabled/unused support for re-import.
+      setFormulaValue(
+        main,
+        allowedAddress,
+        `IF(ISNUMBER(C${446 + index}),"no","")`,
+        "no",
+      );
+    }
     setValue(
       main,
       `I${446 + index}`,
@@ -872,79 +907,6 @@ export async function exportVerificationWorkbook(
     setValue(main, `D${row}`, item?.massT ?? null);
     setValue(main, `E${row}`, item?.startXM ?? null);
     setValue(main, `F${row}`, item?.endXM ?? null);
-  }
-  setValue(control, "B2", "STOP");
-  setValue(control, "B6", model.optimiser.e89Step);
-  setValue(control, "B7", model.optimiser.c89Maximum);
-  setValue(control, "B8", model.optimiser.c89Start);
-  setValue(control, "B9", model.optimiser.c89Step);
-  setValue(control, "B11", model.optimiser.e89RangeMode);
-  setValue(control, "B12", model.optimiser.e89Minimum);
-  setValue(control, "B13", model.optimiser.e89Maximum);
-  setValue(control, "B15", model.optimiser.d138MaximumFraction);
-  setValue(control, "B16", model.optimiser.overrideD138Limit ? "YES" : "NO");
-  setValue(control, "B22", model.optimiser.boundaryToleranceM);
-  setValue(control, "B24", model.optimiser.stopAtFirstPass ? "YES" : "NO");
-  setValue(control, "B26", model.optimiser.d138Start);
-  setValue(control, "B27", model.optimiser.d138Step);
-  setValue(control, "B28", model.optimiser.fineFirstPassReference);
-  setValue(control, "B29", model.optimiser.fineSecondPassReference);
-  setValue(control, "B30", model.optimiser.fineE89Step);
-  setValue(control, "B34", model.optimiser.weightPreset);
-  setValue(control, "B35", model.optimiser.weights.basicUtil);
-  setValue(control, "B36", model.optimiser.weights.slopeUtil);
-  setValue(control, "B37", model.optimiser.weights.dynamicUtil);
-  setValue(control, "B38", model.optimiser.weights.spineUtil);
-  setValue(control, "B39", model.optimiser.weights.basicAngle);
-  setValue(control, "B40", model.optimiser.weights.slopeAngle);
-  setValue(control, "B41", model.optimiser.weights.dynamicAngle);
-  setValue(control, "B42", model.optimiser.weights.dynamicRatio);
-  setValue(control, "B45", model.optimiser.deflectionCheck);
-  setValue(control, "B46", model.optimiser.deflectionLimitMm);
-  setValue(control, "B47", model.optimiser.pinSearchMode);
-  setValue(control, "B48", model.optimiser.pinStopRule);
-  setValue(control, "B49", model.optimiser.existingPinsPolicy);
-  setValue(control, "B50", model.optimiser.maximumPins);
-  setValue(control, "B51", model.optimiser.maximumAxleUtilisation);
-  setValue(control, "B52", model.optimiser.minimumDeflectionImprovementMm);
-  setValue(control, "B53", model.optimiser.localStructuralTargetMode);
-  setValue(control, "B54", model.optimiser.manualLocalTargetXM);
-  setValue(control, "B55", model.optimiser.detailedWeighting ? "YES" : "NO");
-  setValue(control, "B56", model.optimiser.f506Policy);
-  setValue(control, "B57", model.optimiser.fineE89PinMode);
-  setValue(control, "B58", model.optimiser.weights.shearUtil);
-  setValue(control, "B59", model.optimiser.weights.bendingUtil);
-  setValue(control, "B60", model.optimiser.weights.deflection);
-  setValue(control, "B61", model.optimiser.weights.localBendingUtil);
-  setValue(control, "B63", model.optimiser.optimiserStrategy);
-  setValue(control, "B64", model.optimiser.minimumActiveSupports);
-  setValue(control, "B65", model.optimiser.pinCaseBudget);
-  setValue(control, "B66", model.optimiser.thoroughFinalistCount);
-  setValue(control, "B67", model.optimiser.deflectionToleranceMm);
-  setValue(control, "B68", model.optimiser.afterFirstPass);
-  setValue(control, "B70", model.optimiser.calculationMode === "WORKBOOK_PARITY" ? "SAFE_LEGACY" : "ACCELERATED_VERIFIED");
-  setValue(control, "B71", model.optimiser.progressRefreshSeconds);
-  setValue(control, "B72", model.optimiser.liveRefreshSeconds);
-  setValue(control, "B73", model.optimiser.weights.axleLinesUsed);
-  setValue(control, "A102", "Web export contract");
-  setValue(control, "B102", VERIFICATION_EXPORT_CONTRACT_VERSION);
-  setValue(
-    control,
-    "C102",
-    "Latest four-point in-place workbook; lower X is rear and higher X is front.",
-  );
-  setValue(control, "D102", "Support ID");
-  setValue(control, "E102", "User allowed");
-  setValue(control, "F102", "Settled active");
-  setValue(control, "G102", "Positive connection");
-  for (let index = 0; index < 10; index += 1) {
-    const support = model.supports[index];
-    const settledSupport = support ? settledSupports.get(support.id) : undefined;
-    const row = 103 + index;
-    setValue(control, `D${row}`, support?.id ?? null);
-    setValue(control, `E${row}`, support?.allowed ? "yes" : "no");
-    setValue(control, `F${row}`, settledSupport?.active ? "yes" : "no");
-    setValue(control, `G${row}`, support?.positiveConnectionToDeck ? "yes" : "no");
   }
   for (let index = 0; index < model.catalogue.length; index += 1) {
     const row = 4 + index;
@@ -978,7 +940,7 @@ export async function exportVerificationWorkbook(
       setValue(database, encodeCell(row - 1, column), value, true)
     );
   }
-  return patchWorkbookPackage(new Uint8Array(source), model.catalogue.length, [main, database, control]);
+  return patchWorkbookPackage(new Uint8Array(source), model.catalogue.length, [main, database]);
 }
 
 export function downloadBytes(bytes: Uint8Array, filename: string, mime = "application/octet-stream"): void {

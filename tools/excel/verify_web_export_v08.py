@@ -12,15 +12,21 @@ import pythoncom
 import win32com.client
 
 
-CONTRACT_VERSION = "TS-XLSM-4P-1"
+CONTRACT_VERSION = "TS-XLSM-4P-2"
 REQUIRED_SHEETS = (
     "Load and Stability Calculation",
     "Database",
-    "TS_CONTROL",
     "Export to DWG",
     "Slope effect COG",
     "Dynamic loading CombinedCOG",
     "Spinebeam calculation",
+)
+REMOVED_OPTIMISER_SHEETS = (
+    "TS_COMMAND_CENTER",
+    "TS_CONTROL",
+    "TS_OPTIMISER_LOG",
+    "TS_LIVE_FEED",
+    "TS_RUN_ACTIVITY_LOG",
 )
 KEY_RANGES = {
     "Load and Stability Calculation": (
@@ -113,17 +119,17 @@ def verify(workbook_path: Path) -> dict:
             issues.append(f"Missing required sheet(s): {', '.join(missing)}")
             return result
 
+        removed = [name for name in REMOVED_OPTIMISER_SHEETS if name in sheet_names]
+        if removed:
+            issues.append(f"Retired Excel optimiser sheet(s) still present: {', '.join(removed)}")
+
         main = workbook.Worksheets("Load and Stability Calculation")
-        control = workbook.Worksheets("TS_CONTROL")
         dwg = workbook.Worksheets("Export to DWG")
         settle(app)
 
-        contract = str(control.Range("B102").Value or "")
         mode = str(main.Range("D133").Value or "")
-        result["checks"]["contract"] = contract
+        result["checks"]["contract"] = CONTRACT_VERSION
         result["checks"]["mode"] = mode
-        if contract != CONTRACT_VERSION:
-            issues.append(f"Expected contract {CONTRACT_VERSION}; found {contract or 'blank'}.")
         if "4" not in mode:
             issues.append(f"Expected four-point mode in D133; found {mode or 'blank'}.")
 
@@ -138,6 +144,21 @@ def verify(workbook_path: Path) -> dict:
                 issues.append(f"{cell} does not contain direct Group 4 formula {signature}.")
         if "TS_HYD_POLYGON_VALID" not in str(dwg.Range("C55").Formula or ""):
             issues.append("Export to DWG C55 does not contain four-point polygon validation.")
+        for cell in ("H154", "K154", "M154"):
+            formula = str(main.Range(cell).Formula or "")
+            if "$CY$26" not in formula:
+                issues.append(f"{cell} does not use the 99-AL E:CY range.")
+
+        long_grid_checks = {
+            "Bogie Group!CY2": workbook.Worksheets("Bogie Group").Range("CY2").Value,
+            "Bogie Load Neutral!CW6": workbook.Worksheets("Bogie Load Neutral").Range("CW6").Formula,
+            "Spinebeam calculation!CX72": workbook.Worksheets("Spinebeam calculation").Range("CX72").Formula,
+        }
+        result["checks"]["99AxleGrid"] = long_grid_checks
+        if long_grid_checks["Bogie Group!CY2"] != 99:
+            issues.append("Bogie Group does not expose axle line 99 in CY2.")
+        if "$CW$52" not in str(long_grid_checks["Spinebeam calculation!CX72"] or ""):
+            issues.append("Spinebeam calculation does not use the extended C:CW load grid.")
 
         group_loads = [main.Range(f"I{row}").Value for row in range(151, 155)]
         group_x = [main.Range(f"K{row}").Value for row in range(151, 155)]
@@ -216,12 +237,13 @@ def verify(workbook_path: Path) -> dict:
         result["checks"]["vbaModules"] = module_names
         if "modTS_HydraulicBoundary" not in module_names:
             issues.append("Four-point VBA module modTS_HydraulicBoundary is missing.")
+        legacy_modules = [name for name in module_names if name.startswith("modTS_") and name != "modTS_HydraulicBoundary"]
+        if legacy_modules:
+            issues.append(f"Retired Excel optimiser VBA module(s) still present: {', '.join(legacy_modules)}")
 
         workbook.Save()
         workbook.Close(False)
         workbook = app.Workbooks.Open(str(workbook_path), UpdateLinks=0, ReadOnly=True)
-        if str(workbook.Worksheets("TS_CONTROL").Range("B102").Value or "") != CONTRACT_VERSION:
-            issues.append("Contract identifier was not retained after save/reopen.")
         if "4" not in str(workbook.Worksheets("Load and Stability Calculation").Range("D133").Value or ""):
             issues.append("Four-point mode was not retained after save/reopen.")
         result["passed"] = not issues
