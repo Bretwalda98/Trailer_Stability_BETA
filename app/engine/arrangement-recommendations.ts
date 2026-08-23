@@ -46,8 +46,18 @@ export interface QuickArrangementRecommendation {
 }
 
 export interface QuickArrangementRecommendationSet {
+  payloadMassT: number;
+  payloadOnlyLowerBoundAL: number;
   capacityLowerBoundAL: number;
   firstBuildableTotalAL: number | null;
+  capacityRecommendation: {
+    trainCount: number;
+    axleLinesPerTrain: number;
+    totalAxleLines: number;
+    modules4: number;
+    modules5: number;
+    modules6: number;
+  } | null;
   screenedCandidateCount: number;
   exactVerificationRequired: true;
   assumptions: string[];
@@ -168,6 +178,7 @@ export function quickArrangementRecommendations(
   const definition = model.catalogue.find((item) => item.id === settings.trailerDefinitionId);
   const assumptions = [
     "Only buildable 4-, 5- and 6-AL module combinations inside the configured stock limits are considered.",
+    "The capacity recommendation first divides cargo, packing and loose-packing mass by the selected gross axle-line capacity. It then retains axle self-weight and selected PPU mass so gross axle-line utilisation remains at or below the configured limit.",
     "Supports are screened for deck coverage and available count; final active reactions are settled only by the exact solver.",
     "The preferred pitch and the widest permitted pitch are probed for each first-buildable train count.",
     "Any applied recommendation must pass the full optimiser, spine-beam and final support verification.",
@@ -175,8 +186,11 @@ export function quickArrangementRecommendations(
   if (!definition) {
     const emptyKinds: QuickRecommendationKind[] = ["AL_FIRST", "TRAIN_FIRST", "BALANCED"];
     return {
+      payloadMassT: 0,
+      payloadOnlyLowerBoundAL: 4,
       capacityLowerBoundAL: 4,
       firstBuildableTotalAL: null,
+      capacityRecommendation: null,
       screenedCandidateCount: 0,
       exactVerificationRequired: true,
       assumptions,
@@ -192,6 +206,17 @@ export function quickArrangementRecommendations(
   const lowerBounds = trainCounts.map((trainCount) =>
     minimumTotalAxleLines(model, settings, trainCount));
   const capacityLowerBoundAL = lowerBounds.length ? Math.min(...lowerBounds) : 4;
+  const payloadMassT =
+    model.cargo.massT +
+    model.packing.massT +
+    model.loosePacking.reduce((sum, item) => sum + Math.max(0, item.massT), 0);
+  const utilisationLimit = typeof model.optimiser.maximumAxleUtilisation === "number"
+    ? Math.max(EPS, model.optimiser.maximumAxleUtilisation)
+    : 1;
+  const payloadOnlyLowerBoundAL = Math.max(
+    4,
+    Math.ceil(payloadMassT / Math.max(EPS, definition.axleCapacityT * utilisationLimit)),
+  );
   const supportAxleLowerBound = minimumAxleLinesPerTrainForSupports(model, settings);
   const configuredAxleUtilisationLimit =
     typeof model.optimiser.maximumAxleUtilisation === "number"
@@ -200,6 +225,7 @@ export function quickArrangementRecommendations(
   const candidates: QuickRecommendationCandidate[] = [];
   const rejected: string[] = [];
   const firstBuildableTotals: number[] = [];
+  const capacityFormations: NonNullable<QuickArrangementRecommendationSet["capacityRecommendation"]>[] = [];
 
   trainCounts.forEach((trainCount, trainIndex) => {
     const capacityLowerBound = lowerBounds[trainIndex];
@@ -215,6 +241,14 @@ export function quickArrangementRecommendations(
       return;
     }
     firstBuildableTotals.push(firstBuildable.axleLines * trainCount);
+    capacityFormations.push({
+      trainCount,
+      axleLinesPerTrain: firstBuildable.axleLines,
+      totalAxleLines: firstBuildable.axleLines * trainCount,
+      modules4: firstBuildable.composition.modules4,
+      modules5: firstBuildable.composition.modules5,
+      modules6: firstBuildable.composition.modules6,
+    });
     const pitchBounds = formationPitchBounds(definition, settings, trainCount, model.cargo.widthM);
     if (!pitchBounds) {
       rejected.push(
@@ -307,10 +341,18 @@ export function quickArrangementRecommendations(
   const candidateReasons = uniqueCandidates
     .flatMap((candidate) => candidate.rejectionReasons.map((reason) =>
       `${candidate.descriptor.trainCount} train${candidate.descriptor.trainCount === 1 ? "" : "s"}, ${candidate.descriptor.axleLinesPerTrain} AL/train, ${candidate.descriptor.hydraulicSystemMode === "FOUR_POINT" ? "4-point" : "3-point"}: ${reason}`));
+  const capacityRecommendation = [...capacityFormations].sort((left, right) =>
+    left.totalAxleLines - right.totalAxleLines ||
+    left.trainCount - right.trainCount ||
+    left.axleLinesPerTrain - right.axleLinesPerTrain,
+  )[0] ?? null;
 
   return {
+    payloadMassT,
+    payloadOnlyLowerBoundAL,
     capacityLowerBoundAL,
     firstBuildableTotalAL: firstBuildableTotals.length ? Math.min(...firstBuildableTotals) : null,
+    capacityRecommendation,
     screenedCandidateCount: uniqueCandidates.length,
     exactVerificationRequired: true,
     assumptions,

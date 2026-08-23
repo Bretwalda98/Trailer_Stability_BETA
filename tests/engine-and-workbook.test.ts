@@ -619,8 +619,18 @@ async function main(): Promise<void> {
     ppuPosition: "NONE",
   };
   const referenceRecommendations = quickArrangementRecommendations(referenceRecommendationModel);
+  assert.equal(referenceRecommendations.payloadMassT, referenceRecommendationModel.cargo.massT);
+  assert.equal(
+    referenceRecommendations.payloadOnlyLowerBoundAL,
+    Math.max(4, Math.ceil(referenceRecommendationModel.cargo.massT / referenceDefinition.axleCapacityT)),
+  );
   assert.equal(referenceRecommendations.capacityLowerBoundAL, 187);
   assert.equal(referenceRecommendations.firstBuildableTotalAL, 188);
+  assert.deepEqual(referenceRecommendations.capacityRecommendation && {
+    trains: referenceRecommendations.capacityRecommendation.trainCount,
+    axleLinesPerTrain: referenceRecommendations.capacityRecommendation.axleLinesPerTrain,
+    totalAxleLines: referenceRecommendations.capacityRecommendation.totalAxleLines,
+  }, { trains: 4, axleLinesPerTrain: 47, totalAxleLines: 188 });
   assert.equal(referenceRecommendations.exactVerificationRequired, true);
   assert.deepEqual(
     referenceRecommendations.recommendations.map((item) => item.kind),
