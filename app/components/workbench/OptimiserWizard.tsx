@@ -126,6 +126,8 @@ function NumberField({
   onChange(value: number): void;
 }) {
   const [text, setText] = useState(String(value));
+  // Controlled numeric fields must reflect an externally reset wizard value.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setText(String(value)), [value]);
   const parsed = Number(text);
   const inferredValid =
@@ -339,6 +341,7 @@ export function OptimiserWizard({
   const canContinue = optimiserStepCanContinue(issues, step);
   const canRun = canRunOptimiserWizard(issues) && !calculating;
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Resuming a persisted draft restores one coherent wizard snapshot. */
   useEffect(() => {
     const dialog = dialogRef.current;
     if (dialog && !dialog.open) dialog.showModal();
@@ -371,6 +374,7 @@ export function OptimiserWizard({
       setInitialised(true);
     }
   }, [activeModel.optimiser]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!initialised) return;

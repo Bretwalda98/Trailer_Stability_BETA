@@ -96,6 +96,8 @@ export function EngineeringViewport({
   }, [minimumHeight, minimumWidth]);
 
   useEffect(() => {
+    // Switching engineering views intentionally restores a neutral viewport.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setZoom(1);
     setPan({ x: 0, y: 0 });
   }, [view]);

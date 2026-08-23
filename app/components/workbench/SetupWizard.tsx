@@ -146,6 +146,8 @@ function NumberField({
   onChange(value: number): void;
 }) {
   const [text, setText] = useState(() => String(value));
+  // Controlled numeric fields must reflect an externally reset wizard value.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setText(String(value)), [value]);
   const parsed = Number(text);
   const inferredValidation =
@@ -401,6 +403,7 @@ export function SetupWizard({
     draftModel.cargo.heightM > 0 &&
     draftModel.trailers.length > 0;
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Restoring a draft intentionally restores the complete wizard snapshot. */
   useEffect(() => {
     const dialog = dialogRef.current;
     if (dialog && !dialog.open) dialog.showModal();
@@ -430,7 +433,9 @@ export function SetupWizard({
       setInitialised(true);
     }
   }, [initialSourceType]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
+  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- The preview is deliberately synchronised only when the user advances a step. */
   useEffect(() => {
     if (!initialised) return;
     const timer = window.setTimeout(() => {
@@ -457,8 +462,11 @@ export function SetupWizard({
     };
     setSelectedId(firstEntity[step] ?? "project-case");
   }, [step]);
+  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   useEffect(() => {
+    // Keep the local trailer tab in range after a trailer is removed.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedTrailerIndex((current) => Math.min(current, Math.max(0, draftModel.trailers.length - 1)));
   }, [draftModel.trailers.length]);
 

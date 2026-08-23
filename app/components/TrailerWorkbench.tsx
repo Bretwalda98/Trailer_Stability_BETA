@@ -123,6 +123,8 @@ export default function TrailerWorkbench() {
 
   useEffect(() => {
     if (window.matchMedia("(max-width: 900px)").matches) {
+      // The initial mobile layout is derived from the browser after hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDetailsOpen(false);
     }
   }, []);
@@ -151,6 +153,8 @@ export default function TrailerWorkbench() {
 
   useEffect(() => {
     if (!hydrated || !persistActiveProject) return;
+    // This is a persistence-status transition, not a derived render value.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSaved(false);
     const timer = window.setTimeout(() => {
       try {
@@ -170,11 +174,19 @@ export default function TrailerWorkbench() {
   }, [toast]);
 
   useEffect(() => {
-    if (engine.run.state !== "IDLE") setOptimiserOpen(true);
+    if (engine.run.state !== "IDLE") {
+      // A run started outside the drawer must make its controlling surface visible.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOptimiserOpen(true);
+    }
   }, [engine.run.state]);
 
   useEffect(() => {
-    if (!vm.entityById.has(selectedId)) setSelectedId("project-case");
+    if (!vm.entityById.has(selectedId)) {
+      // Selection must remain valid when imported/model entities are replaced.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedId("project-case");
+    }
   }, [vm, selectedId]);
 
   const changeWorkspace = (next: WorkspaceId) => {
@@ -312,8 +324,13 @@ export default function TrailerWorkbench() {
 
   useEffect(() => {
     if (!optimiseAfterSetup || engine.authoritativeModel !== model || engine.calculating) return;
+    // Consumes the one-shot post-setup request before starting the worker run.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOptimiseAfterSetup(false);
     startArrangementOptimisation();
+    // The one-shot flag deliberately gates this transition; adding the inline
+    // starter function here would recreate it on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.authoritativeModel, engine.calculating, model, optimiseAfterSetup]);
 
   const applyPass = (pass: PassResult) => {

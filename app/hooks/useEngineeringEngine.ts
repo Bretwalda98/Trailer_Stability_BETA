@@ -55,10 +55,14 @@ export function useEngineeringEngine(model: ProjectModel): EngineeringEngineStat
   const calculationModelRef = useRef(model);
   const optimiserRequestRef = useRef(0);
 
+  // Optimiser callbacks read the latest model without being recreated for every edit.
+  // eslint-disable-next-line react-hooks/refs
   modelRef.current = model;
 
   useEffect(() => {
     if (typeof Worker === "undefined") {
+      // The worker capability is established only after the browser mounts.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWorkerReady(false);
       return;
     }
@@ -127,6 +131,8 @@ export function useEngineeringEngine(model: ProjectModel): EngineeringEngineStat
     const requestId = calculationRequestRef.current + 1;
     calculationRequestRef.current = requestId;
     calculationModelRef.current = model;
+    // Mark the external worker request as pending before dispatching it.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCalculating(true);
     setError(null);
     const worker = workerRef.current;

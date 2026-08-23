@@ -68,7 +68,6 @@ export function ModelTree({
     const source = model.trailers.at(-1) ?? model.trailers[0];
     const grouping = model.groupings.at(-1) ?? model.groupings[0];
     if (!source || !grouping) return;
-    const index = model.trailers.length;
     const trailer = {
       ...structuredClone(source),
       id: `trailer-${Date.now()}`,
