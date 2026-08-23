@@ -84,6 +84,7 @@ export function OptimiserDrawer({
 }: OptimiserDrawerProps) {
   const arrangementRun = useMemo(() => run.passes.some((pass) => Boolean(pass.arrangement)), [run.passes]);
   const [candidateSort, setCandidateSort] = useState<{ key: CandidateSortKey; direction: SortDirection }>({ key: "rank", direction: "asc" });
+  const [workspacePanel, setWorkspacePanel] = useState<"result" | "candidates" | "activity">("result");
   const sortValue = (pass: PassResult, key: CandidateSortKey): number | string | null => {
     switch (key) {
       case "rank": return pass.overallRank;
@@ -227,7 +228,22 @@ export function OptimiserDrawer({
             </div>
           </div>
 
-          <div className="optimiser-results-grid">
+          <nav className="optimiser-workspace-tabs" aria-label="Arrangement search workspace">
+            <button type="button" className={workspacePanel === "result" ? "is-active" : ""} onClick={() => setWorkspacePanel("result")}>
+              Selected result
+              {selected && <small>#{selected.overallRank}</small>}
+            </button>
+            <button type="button" className={workspacePanel === "candidates" ? "is-active" : ""} onClick={() => setWorkspacePanel("candidates")}>
+              Ranked candidates
+              <small>{ranked.length}</small>
+            </button>
+            <button type="button" className={workspacePanel === "activity" ? "is-active" : ""} onClick={() => setWorkspacePanel("activity")}>
+              Search activity
+              <small>{run.events.length}</small>
+            </button>
+          </nav>
+
+          {workspacePanel !== "activity" && <div className={`optimiser-results-grid optimiser-results-${workspacePanel}`}>
             <div className="candidate-table-wrap">
               <header>
                 <b>Ranked candidates</b>
@@ -374,7 +390,7 @@ export function OptimiserDrawer({
                 </>
               ) : <p>Select a ranked valid pass to compare it with the starting configuration.</p>}
             </aside>
-          </div>
+          </div>}
 
           {candidateMenu && (() => {
             const pass = ranked.find((item) => item.id === candidateMenu.passId);
@@ -384,7 +400,7 @@ export function OptimiserDrawer({
             </div> : null;
           })()}
 
-          <div className="optimiser-log terminal-log">
+          {workspacePanel === "activity" && <div className="optimiser-log terminal-log">
             <header>
               <div className="terminal-heading"><b>Search activity</b><span>Showing {visibleTerminalEvents.length} of {filteredTerminalEvents.length} matching · {run.events.length} recorded</span></div>
               <div className="terminal-actions">
@@ -413,7 +429,7 @@ export function OptimiserDrawer({
               {!visibleTerminalEvents.length && <pre className="terminal-empty">No search activity has been recorded.</pre>}
             </div>
             <footer className="terminal-footer">The display is limited to the latest {MAX_VISIBLE_TERMINAL_EVENTS} matching events. Markdown is human-readable; JSON retains the full starting model, candidates, metrics, support transitions and chronology.</footer>
-          </div>
+          </div>}
         </div>
       )}
     </section>
