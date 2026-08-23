@@ -198,6 +198,9 @@ async function main(): Promise<void> {
   assert.equal(compactCadLines.filter((item) => item.startsWith("BOUNDARY|")).length, compactResult.stabilityPolygon.length);
   const loadFields = compactCadLines.find((item) => item.startsWith("LOAD|"))!.split("|");
   assert.equal(Number(loadFields[9]), model.cargo.cog.z * 1000);
+  const resultFields = compactCadLines.find((item) => item.startsWith("RESULT|"))!.split("|");
+  assert.equal(Number(resultFields[5]), Number(loadFields[10]));
+  assert.equal(Number(resultFields[6]), Number(loadFields[11]));
   const firstGroupFields = compactCadLines.find((item) => item.startsWith("GROUP|"))!.split("|");
   const pressureDefinition = model.catalogue.find((item) => item.id === model.trailers[compactResult.resolvedTrailers[0].index].definitionId)!;
   assert.ok(pressureDefinition.massBelowCylinderT !== null && pressureDefinition.factor !== null);
@@ -1233,6 +1236,51 @@ async function main(): Promise<void> {
   assert.notEqual(importedNativeResult.status, "GEOMETRY_FAIL");
   assert.notEqual(importedNativeResult.status, "ERROR");
   const sourceWorkbook = XLSX.read(template, { type: "array", cellFormula: true });
+  const fourPointVerificationBytes = await exportVerificationWorkbook(
+    fourPointModel,
+    arrayBuffer(template),
+  );
+  const fourPointVerificationWorkbook = XLSX.read(fourPointVerificationBytes, {
+    type: "array",
+    cellFormula: true,
+  });
+  assert.equal(
+    fourPointVerificationWorkbook.Sheets["Load and Stability Calculation"].D133.v,
+    "4-point",
+  );
+  const reimportedFourPointVerification = await importWorkbook(
+    new File([arrayBuffer(fourPointVerificationBytes)], "four-point-roundtrip.xlsm", {
+      type: "application/vnd.ms-excel.sheet.macroEnabled.12",
+    }),
+    createDefaultModel(),
+  );
+  assert.equal(reimportedFourPointVerification.model.hydraulicSystemMode, "FOUR_POINT");
+  assert.ok(reimportedFourPointVerification.model.groupings.some((grouping) =>
+    Object.values(grouping.cornerGroups ?? {}).includes(4)));
+  assert.equal(reimportedFourPointVerification.model.cargo.lengthM, fourPointModel.cargo.lengthM);
+  assert.equal(reimportedFourPointVerification.model.cargo.widthM, fourPointModel.cargo.widthM);
+  assert.equal(reimportedFourPointVerification.model.cargo.massT, fourPointModel.cargo.massT);
+  assert.deepEqual(reimportedFourPointVerification.model.cargo.cog, fourPointModel.cargo.cog);
+  assert.deepEqual(reimportedFourPointVerification.model.packing.cog, fourPointModel.packing.cog);
+  assert.equal(reimportedFourPointVerification.model.packing.massT, fourPointModel.packing.massT);
+  assert.equal(
+    reimportedFourPointVerification.model.environment.windSpeedMps,
+    fourPointModel.environment.windSpeedMps,
+  );
+  assert.equal(reimportedFourPointVerification.model.trailers.length, fourPointModel.trailers.length);
+  assert.deepEqual(
+    reimportedFourPointVerification.model.trailers.map((trailer) => trailer.axleLines),
+    fourPointModel.trailers.map((trailer) => trailer.axleLines),
+  );
+  assert.deepEqual(
+    reimportedFourPointVerification.model.supports
+      .slice(0, fourPointModel.supports.length)
+      .map((support) => [support.allowed, support.active]),
+    fourPointModel.supports.map((support) => [support.allowed, support.active]),
+  );
+  assert.ok(reimportedFourPointVerification.model.supports
+    .slice(fourPointModel.supports.length)
+    .every((support) => !support.allowed && !support.active));
   const missingSelectionWorkbook = XLSX.read(template, {
     type: "array",
     bookVBA: true,

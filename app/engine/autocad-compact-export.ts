@@ -246,8 +246,10 @@ export function buildAutocadCompactExport(
     result.combinedCog.x * 1000,
     result.combinedCog.y * 1000,
     result.combinedCog.z * 1000,
-    model.cargo.envelopeX,
-    model.cargo.envelopeY,
+    // RESULT fields 5/6 repeat the authoritative LOAD envelope for retained
+    // v1 readers. The compact header fixes every length field to millimetres.
+    model.cargo.envelopeX * 1000,
+    model.cargo.envelopeY * 1000,
     firstDefinition?.axleCapacityT ?? 0,
     model.environment.routeLongitudinalSlopeDeg,
     model.environment.routeTransverseSlopeDeg,

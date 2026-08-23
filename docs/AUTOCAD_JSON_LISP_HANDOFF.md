@@ -134,14 +134,16 @@ The compact keys are only the outer field names. Some result and grouping values
 |---|---|
 | `n` | Cargo name |
 | `l`, `w`, `h` | Cargo length, width and height |
-| `ex`, `ey` | Cargo X/Y extremes or envelope values |
+| `ex`, `ey` | Cargo rear-X and lower-Y extreme coordinates |
 | `m` | Cargo mass |
 | `x`, `y`, `z` | Cargo COG |
-| `exn`, `eyn` | Negative/other envelope extents where supplied |
+| `exn`, `eyn` | Symmetric cargo COG-envelope half-widths in X and Y |
 | `sa`, `sc`, `sh` | Side/projected wind area, coefficient and application height inputs |
 | `fa`, `fc`, `fh` | Front/projected wind area, coefficient and application height inputs |
 
-The exact envelope object/shape is available in `app/engine/autocad-export.ts`; do not assume `ex` and `ey` are the only envelope values when a more detailed value is present.
+`ex`/`ey` locate the cargo footprint and must never be substituted for the COG
+envelope. `exn`/`eyn` are the calculation inputs used to build the four COG
+envelope corners around the neutral cargo or combined COG.
 
 ### `data.pk` — packing
 
