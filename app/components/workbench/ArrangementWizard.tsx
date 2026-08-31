@@ -35,6 +35,7 @@ import {
   MINIMUM_TRAIN_CLEARANCE_M,
   recommendedPackingSupports,
   spacingCandidates,
+  trainAngleCandidates,
   validAxleLineValues,
 } from "../../engine/arrangement";
 import { quickArrangementRecommendations } from "../../engine/arrangement-recommendations";
@@ -57,7 +58,7 @@ import { hydrateProjectModel } from "../../data/default-model";
 export const ARRANGEMENT_WIZARD_DRAFT_KEY = "trailer-stability-arrangement-wizard-v2";
 const ARRANGEMENT_OBJECTIVE_PRESETS_KEY = "trailer-stability-arrangement-objective-presets-v1";
 type StepId = "cargo" | "packing" | "trailer" | "search" | "review";
-type InitialSource = "CURRENT" | "BLANK";
+type InitialSource = "CURRENT" | "BLANK" | "RESUME";
 type LoadPreviewView = "PLAN" | "SIDE" | "REAR";
 
 const STEPS: Array<{ id: StepId; label: string; description: string; icon: ReactNode }> = [
@@ -389,7 +390,7 @@ export function ArrangementWizard({
           values.length *
           pitches.length *
           longitudinalOffsetCandidates(settings, trainCount).length *
-          (settings.hydraulicSearchMode === "BOTH" ? 2 : 1),
+          (settings.hydraulicSearchMode === "BOTH" ? 2 : 1) * trainAngleCandidates(settings, trainCount).length,
       };
     });
   }, [definition, draftModel, settings]);
@@ -410,7 +411,7 @@ export function ArrangementWizard({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
-        const stored = localStorage.getItem(ARRANGEMENT_WIZARD_DRAFT_KEY);
+        const stored = initialSourceType === "RESUME" ? localStorage.getItem(ARRANGEMENT_WIZARD_DRAFT_KEY) : null;
         if (stored) {
           const parsed = JSON.parse(stored) as {
             model?: ProjectModel;
@@ -435,7 +436,7 @@ export function ArrangementWizard({
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [initialSourceType]);
 
   useEffect(() => {
     if (!initialised) return;
@@ -614,6 +615,9 @@ export function ArrangementWizard({
 
   const renderTrailer = () => (
     <>
+      {!!draftModel.deckPpus?.length && <FormSection title="Carried PPUs need manual placement" description="This search creates a new formation and cannot retain a PPU tied to an old bed. Removing it here only changes this search draft. Add and recheck it in Edit arrangement after applying a candidate.">
+        <button type="button" onClick={() => setDraftModel(current => ({ ...current, deckPpus: [] }))}>Remove carried PPUs from search draft</button>
+      </FormSection>}
       <FormSection title="Trailer family" description="Every generated parallel train uses the same selected catalogue model.">
         <label className={`wizard-field is-${definition ? "valid" : "invalid"}`}>
           <span>SPMT trailer model</span>
@@ -777,6 +781,14 @@ export function ArrangementWizard({
             </small>
           </span>
         </label>
+      </FormSection>
+      <FormSection title="Train orientation" description="Optional bounded angle templates. The search retains straight trains and adds parallel, fan and mirrored rotations; it is not an exhaustive free-angle search.">
+        <label className="arrangement-checkbox"><input type="checkbox" checked={settings.allowAngledFormations ?? false} onChange={event => updateSettings({ allowAngledFormations: event.target.checked })} /> Include angled trains</label>
+        {settings.allowAngledFormations && <div className="wizard-field-grid two">
+          <NumberField label="Maximum train angle" unit="°" min={1} max={45} value={settings.maximumTrainAngleDeg ?? 10} onChange={maximumTrainAngleDeg => updateSettings({ maximumTrainAngleDeg })} />
+          <NumberField label="Angle levels" min={1} max={3} step={1} value={settings.trainAngleSamples ?? 2} onChange={trainAngleSamples => updateSettings({ trainAngleSamples })} />
+        </div>}
+        <p className="wizard-help">Rotated bogies and longitudinal beam checks are included. Transverse packing strength, torsion, securing and steering compatibility require separate verification.</p>
       </FormSection>
       <FormSection title="Longitudinal formation" description="Allow trains to be staggered in X without expanding an independent grid for every train.">
         <label className="wizard-field is-valid">

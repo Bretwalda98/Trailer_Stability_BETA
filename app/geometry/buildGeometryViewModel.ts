@@ -7,6 +7,8 @@ import type {
   TrailerDefinition,
 } from "../engine/types";
 import { engineeringLimitsFor } from "../engine/core";
+import { localToWorld, trailerFootprint } from "../engine/placement";
+import { deckPpuFootprint } from "../engine/deck-ppus";
 import { engineeringRectPoints, expandBounds, finiteBounds } from "./transform";
 import type {
   AxleLine,
@@ -259,8 +261,7 @@ export function buildGeometryViewModel(
     const input = model.trailers[resolved.index];
     const definition = input ? definitionFor(model, input.definitionId) : undefined;
     const point = {
-      x: resolved.startXM + resolved.lengthM / 2,
-      y: resolved.centreYM,
+      ...localToWorld(resolved, resolved.lengthM / 2),
       z: model.trailerDeckHeightM,
     };
     return {
@@ -280,6 +281,8 @@ export function buildGeometryViewModel(
       definitionId: input?.definitionId ?? "",
       definitionName: resolved.name,
       startXM: resolved.startXM,
+      yawDeg: resolved.yawDeg ?? 0,
+      footprint: resolved.footprint ?? trailerFootprint(resolved),
       centreYM: resolved.centreYM,
       lengthM: resolved.lengthM,
       widthM: resolved.widthM,
@@ -336,7 +339,8 @@ export function buildGeometryViewModel(
   const axleLines: AxleLine[] = [...axleMap.entries()].map(([key, members]) => {
     const first = members[0];
     const centreY = members.reduce((sum, axle) => sum + axle.point.y, 0) / members.length;
-    const point = { x: first.point.x, y: centreY, z: model.trailerDeckHeightM / 2 };
+    const centreX = members.reduce((sum, axle) => sum + axle.point.x, 0) / members.length;
+    const point = { x: centreX, y: centreY, z: model.trailerDeckHeightM / 2 };
     const loadT = members.reduce((sum, axle) => sum + axle.loadT, 0);
     const capacityT = members.reduce((sum, axle) => sum + axle.capacityT, 0);
     return {
@@ -355,7 +359,7 @@ export function buildGeometryViewModel(
       }),
       trailerIndex: first.trailerIndex,
       axleLine: first.axleLine,
-      xM: first.point.x,
+      xM: centreX,
       centreYM: centreY,
       groupIds: [...new Set(members.map((axle) => axle.group))],
       pinned: members.every((axle) => axle.pinned),
@@ -443,8 +447,7 @@ export function buildGeometryViewModel(
     if (input?.ppuLeft && trailer.ppuLeftLengthM > 0) {
       const startXM = trailer.startXM - trailer.ppuLeftLengthM;
       const point = {
-        x: startXM + trailer.ppuLeftLengthM / 2,
-        y: trailer.centreYM,
+        ...localToWorld(trailer, -trailer.ppuLeftLengthM / 2),
         z: model.trailerDeckHeightM / 2,
       };
       packs.push({
@@ -456,6 +459,7 @@ export function buildGeometryViewModel(
         }),
         trailerIndex: trailer.index,
         end: "rear",
+        footprint: trailerFootprint({ ...trailer, ...(() => { const p = localToWorld(trailer, -trailer.ppuLeftLengthM); return { startXM: p.x, centreYM: p.y }; })(), lengthM: trailer.ppuLeftLengthM }),
         startXM,
         endXM: trailer.startXM,
         centreYM: trailer.centreYM,
@@ -466,8 +470,7 @@ export function buildGeometryViewModel(
     if (input?.ppuRight && trailer.ppuRightLengthM > 0) {
       const startXM = trailer.startXM + trailer.lengthM;
       const point = {
-        x: startXM + trailer.ppuRightLengthM / 2,
-        y: trailer.centreYM,
+        ...localToWorld(trailer, trailer.lengthM + trailer.ppuRightLengthM / 2),
         z: model.trailerDeckHeightM / 2,
       };
       packs.push({
@@ -479,6 +482,7 @@ export function buildGeometryViewModel(
         }),
         trailerIndex: trailer.index,
         end: "front",
+        footprint: trailerFootprint({ ...trailer, ...(() => { const p = localToWorld(trailer, trailer.lengthM); return { startXM: p.x, centreYM: p.y }; })(), lengthM: trailer.ppuRightLengthM }),
         startXM,
         endXM: startXM + trailer.ppuRightLengthM,
         centreYM: trailer.centreYM,
@@ -916,6 +920,11 @@ export function buildGeometryViewModel(
   );
 
   const extentPoints: Point3[] = [
+    ...(model.bedLayout ?? []).flatMap(bed => {
+      const definition = model.catalogue.find(d => d.id === bed.definitionId);
+      return definition ? trailerFootprint({ startXM: bed.xM, centreYM: bed.yM, yawDeg: bed.yawDeg, lengthM: bed.axleLines * definition.axleSpacingM, widthM: definition.trailerWidthM }).map(point => ({ ...point, z: model.trailerDeckHeightM })) : [];
+    }),
+    ...(model.deckPpus ?? []).flatMap(ppu => deckPpuFootprint(ppu).map(point => ({ ...point, z: model.trailerDeckHeightM + ppu.heightM }))),
     ...engineeringRectPoints(
       cargo.extremeX,
       cargo.extremeY + cargo.widthM / 2,
@@ -931,13 +940,7 @@ export function buildGeometryViewModel(
       model.trailerDeckHeightM + model.packing.heightM,
     ),
     ...trailers.flatMap((trailer) =>
-      engineeringRectPoints(
-        trailer.startXM - trailer.ppuLeftLengthM,
-        trailer.centreYM,
-        trailer.lengthM + trailer.ppuLeftLengthM + trailer.ppuRightLengthM,
-        trailer.widthM,
-        trailer.deckHeightM,
-      ),
+      trailerFootprint(trailer, trailer.ppuLeftLengthM, trailer.ppuRightLengthM).map(point => ({ ...point, z: trailer.deckHeightM })),
     ),
     ...cogs.filter((item) => item.available).map((item) => item.point),
     ...groupCentres.map((item) => ({ ...item.point, z: 0 })),

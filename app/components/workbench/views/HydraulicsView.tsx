@@ -1,6 +1,7 @@
 "use client";
 
 import { IconPin, IconPinnedOff } from "@tabler/icons-react";
+import { worldToLocal } from "../../../engine/placement";
 import type { HydraulicGrouping, ProjectModel } from "../../../engine/types";
 import {
   hydraulicCornerForAxleLine,
@@ -21,12 +22,13 @@ interface HydraulicsViewProps extends EngineeringViewProps {
 function cornerFor(
   trailerIndex: number,
   axleLine: number,
+  xM: number,
   yM: number,
   vm: EngineeringViewProps["vm"],
 ): CornerKey {
   const trailer = vm.trailers.find((item) => item.index === trailerIndex);
   const grouping = vm.project.model.groupings[trailerIndex];
-  const circuit = yM <= (trailer?.centreYM ?? 0) ? "left" : "right";
+  const circuit = trailer && worldToLocal(trailer, { x: xM, y: yM }).y <= 1e-9 ? "left" : "right";
   return hydraulicCornerForAxleLine(
     axleLine,
     grouping?.splitAfterAxleLine ?? 1,
@@ -119,12 +121,7 @@ export function HydraulicsView(props: HydraulicsViewProps) {
                 key={trailer.id}
                 className={`hydraulic-deck${trailer.colliding ? " colliding" : ""}`}
               >
-                <rect
-                  x={start.x}
-                  y={end.y}
-                  width={end.x - start.x}
-                  height={start.y - end.y}
-                />
+                <path d={pointPath(transform, trailer.footprint, true)} />
                 <text x={(start.x + end.x) / 2} y={end.y + 16} textAnchor="middle">
                   TRAILER {trailer.index + 1}
                 </text>
@@ -153,7 +150,7 @@ export function HydraulicsView(props: HydraulicsViewProps) {
 
           {vm.bogies.map((bogie) => {
             const point = transform.toScreen(bogie.engineeringCoordinates);
-            const corner = cornerFor(bogie.trailerIndex, bogie.axleLine, bogie.yM, vm);
+            const corner = cornerFor(bogie.trailerIndex, bogie.axleLine, bogie.xM, bogie.yM, vm);
             const activate = () => {
               if (bogie.pinned) {
                 onSelect(bogie.id);
@@ -331,16 +328,16 @@ export function HydraulicsView(props: HydraulicsViewProps) {
                   (item) => item.index === axle.trailerIndex,
                 );
                 const left = bogies
-                  .filter((bogie) => bogie.yM <= (trailer?.centreYM ?? 0))
+                  .filter((bogie) => trailer && worldToLocal(trailer, { x: bogie.xM, y: bogie.yM }).y <= 1e-9)
                   .sort((a, b) => a.yM - b.yM)[0];
                 const right = bogies
-                  .filter((bogie) => bogie.yM > (trailer?.centreYM ?? 0))
+                  .filter((bogie) => trailer && worldToLocal(trailer, { x: bogie.xM, y: bogie.yM }).y > 1e-9)
                   .sort((a, b) => b.yM - a.yM)[0];
                 const leftCorner = left
-                  ? cornerFor(left.trailerIndex, left.axleLine, left.yM, vm)
+                  ? cornerFor(left.trailerIndex, left.axleLine, left.xM, left.yM, vm)
                   : null;
                 const rightCorner = right
-                  ? cornerFor(right.trailerIndex, right.axleLine, right.yM, vm)
+                  ? cornerFor(right.trailerIndex, right.axleLine, right.xM, right.yM, vm)
                   : null;
                 return (
                   <tr

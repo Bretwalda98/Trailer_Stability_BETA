@@ -8,6 +8,8 @@ import {
   ViewGrid,
 } from "../svg-primitives";
 import type { EngineeringViewProps } from "./view-types";
+import { DeckPpuElevation, PlacedTrainElevation } from "./PlacedElevation";
+import { polygonBounds } from "../../../engine/placement";
 
 export function SideView(props: EngineeringViewProps) {
   const { vm, transform, width, height, preferences, selectedId, onSelect } = props;
@@ -56,6 +58,7 @@ export function SideView(props: EngineeringViewProps) {
       <rect className="viewport-hit-area" x={0} y={0} width={width} height={height} />
       <ViewGrid width={width} height={height} visible={preferences.grid} />
       <LongitudinalOrientation width={width} />
+      <DeckPpuElevation props={props} />
       <line
         className="ground-line"
         x1={groundStart.x}
@@ -69,6 +72,7 @@ export function SideView(props: EngineeringViewProps) {
 
       {preferences.layers.trailers &&
         vm.trailers.map((trailer) => {
+          if (Math.abs(trailer.yawDeg) > 1e-9) return <PlacedTrainElevation key={trailer.id} trailer={trailer} props={props} />;
           const trailerAxles = vm.axleLines.filter(
             (axle) => axle.sourceTrailerId === trailer.sourceTrailerId,
           );
@@ -355,6 +359,8 @@ export function SideView(props: EngineeringViewProps) {
 
       {preferences.layers.trailers &&
         vm.powerPacks.map((ppu) => {
+          const bounds = polygonBounds(ppu.footprint);
+          ppu = { ...ppu, startXM: bounds.minX, endXM: bounds.maxX };
           const trailer = vm.trailers[ppu.trailerIndex];
           const wheelDiameterM =
             trailer?.wheelDiameterM && trailer.wheelDiameterM > 0

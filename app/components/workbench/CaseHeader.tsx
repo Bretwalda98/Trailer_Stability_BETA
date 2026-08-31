@@ -24,6 +24,7 @@ interface CaseHeaderProps {
   saved: boolean;
   busy: boolean;
   onSetup(): void;
+  onHome(): void;
   onExportAutoCAD(): void;
   onExportAutoCADDxf(): void;
   onExportCaseText(): void;
@@ -43,6 +44,7 @@ export function CaseHeader({
   saved,
   busy,
   onSetup,
+  onHome,
   onExportAutoCAD,
   onExportAutoCADDxf,
   onExportCaseText,
@@ -60,7 +62,7 @@ export function CaseHeader({
   return (
     <header className="case-header">
       <div className="product-title">
-        <span className="product-mark" aria-hidden="true">TS</span>
+        <button className="product-mark" aria-label="Open start screen" onClick={onHome}>TS</button>
         <div>
           <b>Trailer Stability</b>
           <span>Engineering workbench</span>
@@ -94,8 +96,8 @@ export function CaseHeader({
             event.currentTarget.value = "";
           }}
         />
-        <button className="setup-action" aria-label="Edit case inputs" disabled={busy} onClick={onSetup}>
-          <IconEdit size={15} /> <span>Edit inputs</span>
+        <button className="setup-action" aria-label="Edit arrangement and case inputs" disabled={busy} onClick={onSetup}>
+          <IconEdit size={15} /> <span>Edit arrangement</span>
         </button>
         <button className="mobile-optional" aria-label="Open project JSON" disabled={busy} onClick={() => projectInput.current?.click()}>
           <IconFileImport size={15} /> <span>Open</span>

@@ -70,6 +70,7 @@ import { applyAutomaticCargoWindInputs, derivedCargoWindInputs } from "../../eng
 import { buildGeometryViewModel } from "../../geometry/buildGeometryViewModel";
 import { useEngineeringEngine } from "../../hooks/useEngineeringEngine";
 import { EngineeringViewport } from "./EngineeringViewport";
+import { PlacementMatrix } from "./PlacementMatrix";
 import {
   DEFAULT_COG_VISIBILITY,
   DEFAULT_LAYERS,
@@ -357,7 +358,7 @@ export function SetupWizard({
   const [sourceType, setSourceType] = useState<SetupSourceType>(
     initialSourceType ?? "CURRENT",
   );
-  const [step, setStep] = useState<SetupStepId>("case");
+  const [step, setStep] = useState<SetupStepId>(initialSourceType === "CURRENT" && activeModel.trailers.length > 0 ? "trailers" : "case");
   const [view, setView] = useState<ViewId>("plan");
   const [selectedId, setSelectedId] = useState("project-case");
   const [selectedTrailerIndex, setSelectedTrailerIndex] = useState(0);
@@ -413,7 +414,7 @@ export function SetupWizard({
   }, []);
 
   useEffect(() => {
-    if (initialSourceType === "BLANK") {
+    if (initialSourceType === "BLANK" || initialSourceType === "CURRENT") {
       setInitialised(true);
       return;
     }
@@ -617,6 +618,15 @@ export function SetupWizard({
 
   const renderCase = () => (
     <>
+      <FormSection title="Road conditions" description="Define the route before placing equipment. Detailed drive and braking settings remain available in Supports & checks.">
+        <ToggleField label="Include road traction and braking checks" checked={draftModel.roadTransport.enabled} onChange={enabled => setDraftModel(current => ({ ...current, roadTransport: { ...current.roadTransport, enabled } }))} />
+        <div className="wizard-field-grid two">
+          <SelectField label="Road surface" value={draftModel.roadTransport.surface} onChange={surface => setDraftModel(current => ({ ...current, roadTransport: { ...current.roadTransport, surface: surface as ProjectModel["roadTransport"]["surface"] } }))}>{ROAD_SURFACES.map(surface => <option key={surface.id} value={surface.id}>{surface.label}</option>)}</SelectField>
+          <SelectField label="Surface condition" value={draftModel.roadTransport.condition} onChange={condition => setDraftModel(current => ({ ...current, roadTransport: { ...current.roadTransport, condition: condition as ProjectModel["roadTransport"]["condition"] } }))}><option value="DRY">Dry</option><option value="WET">Wet</option></SelectField>
+          <NumberField label="Route longitudinal slope" unit="°" value={draftModel.environment.routeLongitudinalSlopeDeg} onChange={routeLongitudinalSlopeDeg => setDraftModel(current => ({ ...current, environment: { ...current.environment, routeLongitudinalSlopeDeg } }))} />
+          <NumberField label="Route transverse slope" unit="°" value={draftModel.environment.routeTransverseSlopeDeg} onChange={routeTransverseSlopeDeg => setDraftModel(current => ({ ...current, environment: { ...current.environment, routeTransverseSlopeDeg } }))} />
+        </div>
+      </FormSection>
       <FormSection
         title="Choose a starting point"
         description="The active case is untouched until you finish setup."
@@ -735,6 +745,9 @@ export function SetupWizard({
 
   const renderPacking = () => (
     <>
+      <FormSection title="Packing is optional" description="Without packing, cargo bears directly on the deck at the defined support strips. Support locations are still required.">
+        <button type="button" onClick={() => updatePacking({ massT: 0, heightM: 0, cog: { x: draftModel.cargo.cog.x, y: draftModel.cargo.cog.y, z: 0 } })}>No packing — direct deck bearing</button>
+      </FormSection>
       <FormSection title="Packing calculation inputs" description="Mass, height and COG are included in verification exports.">
         <div className="wizard-field-grid two">
           <NumberField label="Packing mass" value={draftModel.packing.massT} unit="t" min={0} highlight={() => setSelectedId("packing")} onChange={(massT) => updatePacking({ massT })} />
@@ -808,6 +821,8 @@ export function SetupWizard({
       : draftModel.trailers[0]?.offsetFromReference.x ?? 0;
     return (
       <>
+        <PlacementMatrix model={draftModel} result={engine.result} selectedId={selectedId} onChange={setDraftModel} onSelect={setSelectedId} />
+        {!draftModel.bedLayout && draftModel.trailers.length > 0 && <>
         <FormSection title="Shared formation controls" description="These values are applied consistently to every selected trailer.">
           <div className="wizard-field-grid two">
             <NumberField label="No. of axle lines" value={draftModel.trailers[0]?.axleLines ?? 1} step={1} min={1} highlight={() => selected && setSelectedId(`trailer:${selected.id}`)} onChange={(value) => setDraftModel((current) => applySharedAxleLines(current, value))} />
@@ -900,6 +915,7 @@ export function SetupWizard({
             </article>
           )}
         </FormSection>
+        </>}
       </>
     );
   };
@@ -924,7 +940,7 @@ export function SetupWizard({
             <option value="FOUR_POINT">Four-point suspension</option>
           </SelectField>
         </FormSection>
-        <FormSection title="Shared split and pinned axles" description="Changes are applied consistently across every trailer.">
+        {!draftModel.bedLayout && <FormSection title="Shared split and pinned axles" description="Changes are applied consistently across every trailer.">
           <div className="wizard-field-grid two">
             <NumberField label="Split after axle line" value={draftModel.groupings[0]?.splitAfterAxleLine ?? 1} step={1} min={1} max={Math.max(1, (draftModel.trailers[0]?.axleLines ?? 2) - 1)} highlight={() => setSelectedId("stability-boundary")} onChange={(value) => setDraftModel((current) => applySharedSplit(current, value))} />
             <div className="wizard-pin-entry">
@@ -937,7 +953,7 @@ export function SetupWizard({
               <button type="button" key={pin} onClick={() => setDraftModel((current) => applySharedPins(current, pins.filter((value) => value !== pin)))}>AL {pin}<IconX size={12} /></button>
             )) : <span>No axle lines pinned</span>}
           </div>
-        </FormSection>
+        </FormSection>}
         <FormSection title="Manual hydraulic grouping table" description={`The interactive drawing and these labelled controls edit the same ${hydraulicGroupIds.length}-group model.`}>
           <div className="wizard-hydraulic-groups">
             {hydraulicGroupIds.map((groupId) => {
@@ -953,7 +969,7 @@ export function SetupWizard({
           </div>
           <div className="wizard-hydraulic-table-wrap">
             <table className="wizard-hydraulic-table">
-              <thead><tr><th>Trailer</th><th>Rear L</th><th>Rear R</th><th>Front L</th><th>Front R</th></tr></thead>
+              <thead><tr><th>Trailer</th>{draftModel.bedLayout && <><th>Split after AL</th><th>Pinned AL (comma-separated)</th></>}<th>Rear L</th><th>Rear R</th><th>Front L</th><th>Front R</th></tr></thead>
               <tbody>
                 {draftModel.trailers.map((trailer, index) => {
                   const corners = draftModel.groupings[index]?.cornerGroups ?? { rearLeft: 1, rearRight: 2, frontLeft: 3, frontRight: 3 };
@@ -965,6 +981,10 @@ export function SetupWizard({
                   return (
                     <tr key={trailer.id} onClick={() => setSelectedId(`trailer:${trailer.id}`)}>
                       <th>T{index + 1}</th>
+                      {draftModel.bedLayout && <>
+                        <td><input aria-label={`Trailer ${index + 1} split after AL`} type="number" min={1} max={trailer.axleLines - 1} value={draftModel.groupings[index]?.splitAfterAxleLine ?? 1} onChange={event => setDraftModel(current => ({ ...current, groupings: current.groupings.map((group, i) => i === index ? { ...group, splitAfterAxleLine: Number(event.target.value) } : group) }))} /></td>
+                        <td><input aria-label={`Trailer ${index + 1} pinned axle lines`} key={(draftModel.groupings[index]?.pinnedAxleLines ?? []).join(",")} defaultValue={(draftModel.groupings[index]?.pinnedAxleLines ?? []).join(",")} onBlur={event => { const values = event.target.value.trim() ? event.target.value.split(",").map(value => Number(value.trim())) : []; setDraftModel(current => ({ ...current, groupings: current.groupings.map((group, i) => i === index ? { ...group, pinnedAxleLines: [...new Set(values)] } : group) })); }} /></td>
+                      </>}
                       <td>{cell("rearLeft")}</td>
                       <td>{cell("rearRight")}</td>
                       <td>{cell("frontLeft")}</td>
@@ -1120,7 +1140,7 @@ export function SetupWizard({
         <IconFileImport size={17} />
         <div>
           <b>AutoCAD interchange</b>
-          <p>The AutoCAD action downloads one compact numbered <code>.sartd</code> case file containing the resolved cargo, trailer, hydraulic, support, stability-boundary and drawing-result values used by the drafting program. Run <code>SARTDCAD</code>, or choose CAD in <code>SARTDRUN</code>, then select that single file.</p>
+          <p>Save Project JSON to retain every bed and PPU input. The compact AutoCAD <code>.sartd</code> export supports resolved bed placement and deck-mounted PPUs with the v1.23 LISP package. Direct DXF provides the scaled plan without LISP. Legacy Excel and coded JSON drafting formats cannot represent these extended layouts and stop with an explanation.</p>
         </div>
       </aside>
     </>

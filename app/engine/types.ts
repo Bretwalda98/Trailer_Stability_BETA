@@ -112,6 +112,8 @@ export interface TrailerInput {
   yM: number;
   /** Optimiser-owned offset retained when the common longitudinal datum moves. */
   formationOffsetXM?: number;
+  /** Rotation about the rear centre, positive toward +Y; degrees. Legacy cases use zero. */
+  yawDeg?: number;
   placementReference: PlacementReference;
   offsetFromReference: Point2;
   ppuLeft: boolean;
@@ -297,6 +299,9 @@ export interface ArrangementOptimiserSettings {
   formationMode: ArrangementFormationMode;
   maximumLongitudinalStaggerM: number;
   longitudinalStaggerSamples: number;
+  allowAngledFormations?: boolean;
+  maximumTrainAngleDeg?: number;
+  trainAngleSamples?: number;
   allowReducedEnvironmentalActions: boolean;
   reducedEnvironmentalActionsAccepted: boolean;
   searchWindSpeedMps: number;
@@ -321,12 +326,17 @@ export interface ArrangementDescriptor {
   ppuPosition: ArrangementPpuPosition;
   /** The hydraulic system used for this exact evaluated formation. */
   hydraulicSystemMode?: HydraulicSystemMode;
-  formationMode: "INLINE" | "STAGGERED";
+  formationMode: "INLINE" | "STAGGERED" | "ANGLED";
+  trainAnglesDeg?: number[];
   longitudinalOffsetsM: number[];
   longitudinalSpanM: number;
 }
 
 export interface ProjectModel {
+  /** Authored manual bed matrix. Beds sharing a train key must join end-to-end. */
+  bedLayout?: BedPlacement[];
+  /** Independently positioned, secured PPUs carried by an explicitly selected bed/train. */
+  deckPpus?: DeckPpu[];
   schemaVersion: 3;
   longitudinalOrientation: "REAR_LEFT_FRONT_RIGHT";
   sourceWorkbook: string;
@@ -349,6 +359,35 @@ export interface ProjectModel {
   spineLoadCase: SpineLoadCase;
   spineMeshSizeM: number;
   loosePacking: LoosePacking[];
+}
+
+export interface BedPlacement {
+  id: string;
+  train: string;
+  definitionId: string;
+  axleLines: 4 | 5 | 6;
+  xM: number;
+  yM: number;
+  yawDeg: number;
+  ppuRear: boolean;
+  ppuFront: boolean;
+}
+
+export interface DeckPpu {
+  id: string;
+  hostId: string;
+  xM: number;
+  yM: number;
+  yawDeg: number;
+  lengthM: number;
+  widthM: number;
+  heightM: number;
+  massT: number;
+  /** Height of PPU COG above its base on the deck. */
+  cogZM: number;
+  secured: boolean;
+  suppliesHydraulics?: boolean;
+  dragCoefficient: number;
 }
 
 export interface AxlePoint {
@@ -657,12 +696,16 @@ export interface CalculationResult {
     name: string;
     startXM: number;
     centreYM: number;
+    yawDeg?: number;
+    footprint?: Point2[];
     lengthM: number;
     widthM: number;
     ppuLeftLengthM: number;
     ppuRightLengthM: number;
   }>;
   beam: BeamMetrics;
+  /** Independent support/beam verification for non-parallel or staggered trains. */
+  trailerChecks?: Array<{ trailerIndex: number; activeSupportCount: number; supports: SupportResult[]; beam: BeamMetrics; passed: boolean; detail: string }>;
   metrics: CaseMetrics;
   warnings: string[];
   calculationMs: number;

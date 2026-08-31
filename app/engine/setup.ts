@@ -1,5 +1,7 @@
 import { createDefaultModel, hydrateProjectModel } from "../data/default-model";
 import { validateCatalogue } from "./core";
+import { applyBedLayout } from "./bed-layout";
+import { validateDeckPpus } from "./deck-ppus";
 import {
   cargoCogEnvelopeGuidance,
   derivedCargoCogEnvelopeInputs,
@@ -53,7 +55,7 @@ export const SETUP_STEPS: Array<{
   { id: "cargo", shortLabel: "Cargo", label: "Cargo", description: "Envelope, mass, COG and wind inputs" },
   { id: "packing", shortLabel: "Packing", label: "Packing", description: "Mass, height, COG and visual footprint" },
   { id: "trailers", shortLabel: "Trailers", label: "Trailers", description: "Catalogue models and physical placement" },
-  { id: "hydraulics", shortLabel: "Hydraulics", label: "Hydraulics", description: "Three-group triangle, split and pinned axles" },
+  { id: "hydraulics", shortLabel: "Hydraulics", label: "Hydraulics", description: "Three / four groups, split and pinned axles" },
   { id: "supports", shortLabel: "Checks", label: "Supports & checks", description: "Settled supports and route actions" },
   { id: "review", shortLabel: "Review", label: "Review & finish", description: "Preflight and live engineering result" },
 ];
@@ -370,8 +372,8 @@ function cargoIssues(model: ProjectModel): SetupIssue[] {
 function packingIssues(model: ProjectModel): SetupIssue[] {
   const packing = model.packing;
   const result: SetupIssue[] = [];
-  if (!finite(packing.massT) || packing.massT <= 0) {
-    result.push(issue("packing-mass", "packing", "blocking", "Packing mass must be positive", "Enter the total packing mass used by the calculation.", "packing"));
+  if (!finite(packing.massT) || packing.massT < 0) {
+    result.push(issue("packing-mass", "packing", "blocking", "Packing mass cannot be negative", "Enter the total packing mass, or zero when no packing is used.", "packing"));
   }
   if (!finite(packing.heightM) || packing.heightM < 0) {
     result.push(issue("packing-height", "packing", "blocking", "Packing height is invalid", "Packing height must be zero or greater.", "packing"));
@@ -409,7 +411,7 @@ function trailerIssues(model: ProjectModel, calculation: CalculationResult): Set
     if (!Number.isInteger(trailer.axleLines) || trailer.axleLines < 1) {
       result.push(issue(`trailer-axles-${index}`, "trailers", "blocking", `Trailer ${index + 1} axle count is invalid`, "Axle-line count must be a positive whole number.", `trailer:${trailer.id}`));
     }
-    if (sharedAxles !== undefined && trailer.axleLines !== sharedAxles) {
+    if (!model.bedLayout && sharedAxles !== undefined && trailer.axleLines !== sharedAxles) {
       result.push(issue(`trailer-shared-axles-${index}`, "trailers", "blocking", "Axle-line count must be shared", "All selected trailers must use the same axle-line count."));
     }
     if (sharedReference && trailer.placementReference !== sharedReference) {
@@ -448,14 +450,14 @@ function hydraulicIssues(model: ProjectModel, calculation: CalculationResult): S
     ) {
       result.push(issue(`split-${index}`, "hydraulics", "blocking", "Split line is outside the axle formation", `Split after an axle line from 1 to ${Math.max(1, trailer.axleLines - 1)}.`, `trailer:${trailer.id}`));
     }
-    if (sharedSplit !== undefined && grouping.splitAfterAxleLine !== sharedSplit) {
+    if (!model.bedLayout && sharedSplit !== undefined && grouping.splitAfterAxleLine !== sharedSplit) {
       result.push(issue(`shared-split-${index}`, "hydraulics", "blocking", "Split line must be shared", "All selected trailers must follow the same split-after axle line."));
     }
     const pins = grouping.pinnedAxleLines;
     if (pins.length > 8 || pins.some((pin) => !Number.isInteger(pin) || pin < 1 || pin > trailer.axleLines)) {
       result.push(issue(`pins-${index}`, "hydraulics", "blocking", "Pinned axle selection is invalid", "Use up to eight unique axle-line numbers within the active formation."));
     }
-    if (JSON.stringify(pins) !== sharedPins) {
+    if (!model.bedLayout && JSON.stringify(pins) !== sharedPins) {
       result.push(issue(`shared-pins-${index}`, "hydraulics", "blocking", "Pinned axle lines must be shared", "Every selected trailer must use the same pinned axle lines."));
     }
     const corners = grouping.cornerGroups;
@@ -548,6 +550,7 @@ export function collectSetupIssues(
   calculation: CalculationResult,
 ): SetupIssue[] {
   const result = [
+    ...(model.bedLayout ? applyBedLayout(model, model.bedLayout).errors : []).concat(validateDeckPpus(model)).map((detail, index) => issue(`placement-${index}`, "trailers", "blocking", "Check bed / PPU placement", detail)),
     ...caseIssues(model),
     ...cargoIssues(model),
     ...packingIssues(model),

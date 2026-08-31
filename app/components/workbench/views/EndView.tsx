@@ -1,4 +1,5 @@
 "use client";
+import { DeckPpuElevation, PlacedTrainElevation } from "./PlacedElevation";
 
 import { buildEndTippingConstructions } from "../../../geometry/end-tipping";
 import type { Bogie, TrailerUnit } from "../../../geometry/types";
@@ -259,7 +260,8 @@ export function EndView(props: EngineeringViewProps) {
         Datum Z = 0 · cross slope represented by shifted COG envelope
       </text>
 
-      {vm.trailers.map((trailer) => (
+      <DeckPpuElevation props={props} end />
+      {vm.trailers.map((trailer) => Math.abs(trailer.yawDeg) > 1e-9 ? <PlacedTrainElevation key={trailer.id} trailer={trailer} props={props} end /> : (
         <SpmtEndModule
           key={trailer.id}
           trailer={trailer}

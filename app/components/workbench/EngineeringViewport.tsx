@@ -519,6 +519,7 @@ export function EngineeringViewport({
             <span><i className="line g1" /> G1</span>
             <span><i className="line g2" /> G2</span>
             <span><i className="line g3" /> G3</span>
+            {vm.project.model.hydraulicSystemMode === "FOUR_POINT" && <span><i className="line g4" /> G4</span>}
             <span><i className="line polygon" /> Stability boundary</span>
             <span><i className="cog" /> COG</span>
           </div>

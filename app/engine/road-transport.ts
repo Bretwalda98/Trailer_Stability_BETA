@@ -5,6 +5,8 @@ import type {
   RoadTransportResult,
 } from "./types";
 
+import { worldToLocal } from "./placement";
+
 const GRAVITY = 9.80665;
 const TRACTION_PER_DRIVEN_BOGIE_KN = 60;
 const BRAKING_PER_BRAKED_BOGIE_KN = 55;
@@ -73,7 +75,7 @@ function ppuDriveLimit(model: ProjectModel): number {
     : model.roadTransport.ppuCapacity === "CUSTOM"
       ? Math.max(0, Math.round(model.roadTransport.customDrivenBogieLimit))
       : 26;
-  return ppuCount * perPpu;
+  return (ppuCount + (model.deckPpus ?? []).filter(ppu => ppu.secured === true && ppu.suppliesHydraulics === true).length) * perPpu;
 }
 
 function emptyRoadResult(model: ProjectModel, warning = "Road transport analysis is disabled."): RoadTransportResult {
@@ -163,7 +165,10 @@ export function calculateRoadTransport(
 
   for (const [trailerIndex, trailer] of model.trailers.entries()) {
     if (!trailer.enabled) continue;
-    const build = moduleBuild(trailer.axleLines);
+    const beds = model.bedLayout?.filter(bed => bed.train === trailer.id).sort((a, b) =>
+      worldToLocal({ startXM: trailer.xM, centreYM: trailer.yM, yawDeg: trailer.yawDeg }, { x: a.xM, y: a.yM }).x -
+      worldToLocal({ startXM: trailer.xM, centreYM: trailer.yM, yawDeg: trailer.yawDeg }, { x: b.xM, y: b.yM }).x);
+    const build = beds?.length ? { sizes: beds.map(bed => bed.axleLines), moduleCount: beds.length } : moduleBuild(trailer.axleLines);
     const bogies = neutralAxles
       .filter((axle) => axle.trailerIndex === trailerIndex)
       .sort((left, right) => left.axleLine - right.axleLine || left.point.y - right.point.y);

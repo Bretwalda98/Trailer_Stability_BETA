@@ -22,6 +22,7 @@
     "tests/colossal-cargo-search.benchmark.ts",
     "tests/support-settling.benchmark.ts",
     "tests/geometry-adapter.test.ts",
+    "tests/bed-placement.test.ts",
     "app/data/default-model.ts",
     "app/data/trailers.ts",
     "app/engine/beam.ts",

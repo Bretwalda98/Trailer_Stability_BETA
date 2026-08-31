@@ -11,7 +11,7 @@
     "build": "vinext build",
     "start": "node scripts/serve.mjs",
     "typecheck": "tsc --noEmit",
-    "test:engine": "tsc -p tsconfig.tests.json && node scripts/prepare-engine-test-output.mjs && node test-output/cjs/tests/engine-and-workbook.test.js && node test-output/cjs/tests/geometry-adapter.test.js",
+    "test:engine": "tsc -p tsconfig.tests.json && node scripts/prepare-engine-test-output.mjs && node test-output/cjs/tests/engine-and-workbook.test.js && node test-output/cjs/tests/geometry-adapter.test.js && node test-output/cjs/tests/bed-placement.test.js",
     "benchmark:colossal": "tsc -p tsconfig.tests.json && node scripts/prepare-engine-test-output.mjs && node test-output/cjs/tests/colossal-cargo-search.benchmark.js",
     "benchmark:matrix": "tsc -p tsconfig.tests.json && node scripts/prepare-engine-test-output.mjs && node test-output/cjs/tests/math-search-matrix.test.js",
     "benchmark:supports": "tsc -p tsconfig.tests.json && node scripts/prepare-engine-test-output.mjs && node test-output/cjs/tests/support-settling.benchmark.js",

@@ -4,7 +4,7 @@ import { IconChartLine, IconGeometry, IconHierarchy2 } from "@tabler/icons-react
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createDefaultModel, hydrateProjectModel } from "../data/default-model";
 import { passToProject } from "../engine/optimiser";
-import type { SetupSourceType } from "../engine/setup";
+import { createBlankSetupModel, WIZARD_DRAFT_STORAGE_KEY, type SetupSourceType } from "../engine/setup";
 import type { PassResult, ProjectModel } from "../engine/types";
 import { downloadText } from "../engine/download";
 import { buildAutocadCompactExport } from "../engine/autocad-compact-export";
@@ -58,7 +58,7 @@ function createAutoCADTransferCode(): string {
 }
 
 export default function TrailerWorkbench() {
-  const [model, setModel] = useState<ProjectModel>(() => createDefaultModel());
+  const [model, setModel] = useState<ProjectModel>(() => createBlankSetupModel());
   const [workspace, setWorkspace] = useState<WorkspaceId>("geometry");
   const [view, setView] = useState<ViewId>("plan");
   const [preferences, setPreferences] = useState<ViewPreferences>({
@@ -85,7 +85,7 @@ export default function TrailerWorkbench() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [arrangementWizardOpen, setArrangementWizardOpen] = useState(false);
   const [arrangementWizardInitialSource, setArrangementWizardInitialSource] = useState<
-    "CURRENT" | "BLANK"
+    "CURRENT" | "BLANK" | "RESUME"
   >("CURRENT");
   const [wizardInitialSource, setWizardInitialSource] = useState<
     Extract<SetupSourceType, "CURRENT" | "BLANK"> | undefined
@@ -141,7 +141,7 @@ export default function TrailerWorkbench() {
           setHasLocalProject(true);
         }
       } catch {
-        setToast({ text: "The saved local draft could not be read; the bundled case was loaded.", type: "error" });
+        setToast({ text: "The saved local draft could not be read. Start a new case or open a saved project.", type: "error" });
         setHasLocalProject(false);
       } finally {
         setHydrated(true);
@@ -362,6 +362,16 @@ export default function TrailerWorkbench() {
     setView("plan");
   };
 
+  const editWorkbenchModel = (next: ProjectModel) => {
+    if (model.bedLayout && JSON.stringify(next.bedLayout) === JSON.stringify(model.bedLayout) && JSON.stringify(next.trailers) !== JSON.stringify(model.trailers)) {
+      setToast({ text: "Use Edit arrangement → Trailers to change individual beds. This prevents a shared control from overwriting the bed matrix.", type: "error" });
+      setWizardInitialSource("CURRENT");
+      setWizardOpen(true);
+      return;
+    }
+    setModel(next);
+  };
+
   const centralWorkspace =
     workspace === "report" ? (
       <ReportWorkspace model={model} vm={vm} />
@@ -374,7 +384,7 @@ export default function TrailerWorkbench() {
         onViewChange={changeView}
         onPreferencesChange={setPreferences}
         onSelect={setSelectedId}
-        onModelChange={setModel}
+        onModelChange={editWorkbenchModel}
       />
     );
 
@@ -388,9 +398,10 @@ export default function TrailerWorkbench() {
         saved={saved}
         busy={busy}
         onSetup={() => {
-          setWizardInitialSource(undefined);
+          setWizardInitialSource("CURRENT");
           setWizardOpen(true);
         }}
+        onHome={() => setStartupOpen(true)}
         onHelp={() => setHelpOpen(true)}
         onArrangementSetup={() => {
           setArrangementWizardInitialSource("CURRENT");
@@ -415,7 +426,23 @@ export default function TrailerWorkbench() {
         open={startupOpen}
         busy={busy}
         hasLocalProject={hasLocalProject}
+        onManualArrangement={() => {
+          localStorage.removeItem(WIZARD_DRAFT_STORAGE_KEY);
+          setWizardInitialSource("BLANK");
+          setStartupOpen(false);
+          setWizardOpen(true);
+        }}
+        onResumeManual={() => {
+          setWizardInitialSource(undefined);
+          setStartupOpen(false);
+          setWizardOpen(true);
+        }}
         onFastArrangement={startNewFastArrangement}
+        onResumeAutomatic={() => {
+          setArrangementWizardInitialSource("RESUME");
+          setStartupOpen(false);
+          setArrangementWizardOpen(true);
+        }}
         onOpenFile={handleStartupFile}
         onContinue={() => setStartupOpen(false)}
       />
@@ -540,7 +567,7 @@ export default function TrailerWorkbench() {
           onCollapsedChange={setNavigationCollapsed}
           onWorkspaceChange={changeWorkspace}
           onSelect={setSelectedId}
-          onModelChange={setModel}
+          onModelChange={editWorkbenchModel}
           onOpenDetails={() => setDetailsOpen(true)}
         />
         <div className="central-workspace" id="engineering-workspace" tabIndex={-1}>{centralWorkspace}</div>
@@ -552,7 +579,7 @@ export default function TrailerWorkbench() {
           calculating={engine.calculating}
           workerReady={engine.workerReady}
           workerError={engine.error}
-          onModelChange={setModel}
+          onModelChange={editWorkbenchModel}
           onSelect={setSelectedId}
           onNavigate={changeWorkspace}
           onOpenHandCalculation={() => setHandCalculationOpen(true)}
@@ -578,7 +605,7 @@ export default function TrailerWorkbench() {
           onOpenChange={setDetailsOpen}
           onHeightChange={setDetailsHeight}
           onFullScreenChange={setDetailsFullScreen}
-          onModelChange={setModel}
+          onModelChange={editWorkbenchModel}
         />
       </div>
       <footer className="application-statusbar">

@@ -281,7 +281,7 @@ export function HelpGuide({
             <aside className="help-download-note">
               <IconFileImport size={16} />
               <span>
-                AutoCAD reader: <a href={assetPath("/autocad/SARENS_TRAILERDRAFTSMAN_v1.22_FULL_PACKAGE.zip")} download>download the tested v1.22 full package</a>. Its SHA-256 checksum is supplied beside the archive.
+                AutoCAD reader: <a href={assetPath("/autocad/SARENS_TRAILERDRAFTSMAN_v1.23_FULL_PACKAGE.zip")} download>download the v1.23 full package</a>. Includes the CAD v2 bed/PPU placement reader. Its SHA-256 checksum is supplied beside the archive.
               </span>
             </aside>
           )}

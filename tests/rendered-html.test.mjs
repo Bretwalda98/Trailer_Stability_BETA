@@ -44,9 +44,9 @@ test("server-renders the standalone engineering workbench", async () => {
   assert.match(html, /Spine beam/);
   assert.match(html, /Engineering details/);
   assert.match(html, /Find arrangement/);
-  assert.match(html, /Find the minimum buildable SPMT formation/);
-  assert.match(html, /Start arrangement search/);
-  assert.match(html, /Open case/);
+  assert.match(html, /Build your own arrangement/);
+  assert.match(html, /Automatically find an arrangement/);
+  assert.match(html, /Open saved project/);
   assert.doesNotMatch(html, /Run optimisation/);
   assert.doesNotMatch(html, /Build an arrangement manually/);
   assert.match(html, /Results and selected item inspector/);
