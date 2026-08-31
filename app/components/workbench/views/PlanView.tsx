@@ -3,6 +3,8 @@
 import { GROUP_COLOURS } from "../../../geometry/buildGeometryViewModel";
 import { buildHydraulicRouteSegments } from "../../../geometry/hydraulic-routes";
 import { engineeringRectPoints } from "../../../geometry/transform";
+import { localToWorld, trailerFootprint } from "../../../engine/placement";
+import { deckPpuFootprint } from "../../../engine/deck-ppus";
 import {
   AxisGlyph,
   CogMarker,
@@ -155,27 +157,17 @@ export function PlanView(props: EngineeringViewProps) {
       {preferences.layers.trailers && (
         <g className="trailer-layer">
           {vm.trailers.map((trailer) => {
-            const points = engineeringRectPoints(
-              trailer.startXM,
-              trailer.centreYM,
-              trailer.lengthM,
-              trailer.widthM,
-            );
+            const points = trailer.footprint;
             const centreStart = transform.toScreen({
               x: trailer.startXM,
               y: trailer.centreYM,
             });
-            const centreEnd = transform.toScreen({
-              x: trailer.startXM + trailer.lengthM,
-              y: trailer.centreYM,
-            });
-            const labelAt = transform.toScreen({
-              x: trailer.startXM + trailer.lengthM / 2,
-              y: trailer.centreYM,
-            });
+            const centreEnd = transform.toScreen(localToWorld(trailer, trailer.lengthM));
+            const labelAt = transform.toScreen(localToWorld(trailer, trailer.lengthM / 2));
             return (
               <g
                 key={trailer.id}
+                data-placement-id={trailer.id}
                 className={`trailer-unit svg-selectable${
                   trailer.colliding ? " colliding" : ""
                 }${selectedId === trailer.id ? " is-selected" : ""}`}
@@ -200,10 +192,11 @@ export function PlanView(props: EngineeringViewProps) {
                 />
                 <path
                   className="orientation-arrow"
+                  transform={`rotate(${-trailer.yawDeg} ${centreEnd.x} ${centreEnd.y})`}
                   d={`M ${centreEnd.x - 16} ${centreEnd.y} l -12 -6 l 0 12 z`}
                 />
                 <text x={labelAt.x} y={labelAt.y - 9} textAnchor="middle">
-                  T{trailer.index + 1} · {trailer.definitionName}
+                  T{trailer.index + 1} · {trailer.definitionName}{trailer.yawDeg ? ` · ${trailer.yawDeg.toFixed(1)}°` : ""}
                 </text>
                 <desc>
                   Trailer {trailer.index + 1}: {trailer.definitionName}, rear at lower X and front at higher X
@@ -212,16 +205,8 @@ export function PlanView(props: EngineeringViewProps) {
             );
           })}
           {vm.powerPacks.map((ppu) => {
-            const points = engineeringRectPoints(
-              ppu.startXM,
-              ppu.centreYM,
-              ppu.endXM - ppu.startXM,
-              ppu.widthM,
-            );
-            const labelAt = transform.toScreen({
-              x: (ppu.startXM + ppu.endXM) / 2,
-              y: ppu.centreYM,
-            });
+            const points = ppu.footprint;
+            const labelAt = transform.toScreen(ppu.engineeringCoordinates);
             return (
               <g
                 key={ppu.id}
@@ -255,14 +240,9 @@ export function PlanView(props: EngineeringViewProps) {
               (item) => item.sourceTrailerId === axle.sourceTrailerId,
             );
             if (!trailer) return null;
-            const start = transform.toScreen({
-              x: axle.xM,
-              y: trailer.centreYM - trailer.widthM / 2,
-            });
-            const end = transform.toScreen({
-              x: axle.xM,
-              y: trailer.centreYM + trailer.widthM / 2,
-            });
+            const station = (axle.axleLine - 0.5) * trailer.lengthM / trailer.axleLines;
+            const start = transform.toScreen(localToWorld(trailer, station, -trailer.widthM / 2));
+            const end = transform.toScreen(localToWorld(trailer, station, trailer.widthM / 2));
             return (
               <g
                 key={axle.id}
@@ -292,6 +272,7 @@ export function PlanView(props: EngineeringViewProps) {
             return (
               <rect
                 key={bogie.id}
+                transform={`rotate(${-(vm.trailers.find(item => item.index === bogie.trailerIndex)?.yawDeg ?? 0)} ${point.x} ${point.y})`}
                 className={`bogie svg-selectable${bogie.pinned ? " pinned" : ""}${
                   selectedId === bogie.id ? " is-selected" : ""
                 }`}
@@ -535,6 +516,18 @@ export function PlanView(props: EngineeringViewProps) {
           />
         </g>
       )}
+      {preferences.layers.trailers && (vm.project.model.bedLayout ?? []).map((bed, index) => {
+        const definition = vm.project.model.catalogue.find(item => item.id === bed.definitionId);
+        if (!definition) return null;
+        const footprint = trailerFootprint({ startXM: bed.xM, centreYM: bed.yM, yawDeg: bed.yawDeg, lengthM: bed.axleLines * definition.axleSpacingM, widthM: definition.trailerWidthM });
+        const centre = transform.toScreen(localToWorld({ startXM: bed.xM, centreYM: bed.yM, yawDeg: bed.yawDeg }, bed.axleLines * definition.axleSpacingM / 2));
+        return <g key={bed.id} role="button" tabIndex={0} aria-label={`Select bed B${index + 1}`} onClick={event => { event.stopPropagation(); onSelect(`bed:${bed.id}`); }} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(`bed:${bed.id}`); } }}><path className={`bed-outline${selectedId === `bed:${bed.id}` ? " selected" : ""}`} d={pointPath(transform, footprint, true)} /><text className="view-label" x={centre.x} y={centre.y - 16} textAnchor="middle">B{index + 1} · {bed.axleLines} AL · {bed.yawDeg}°</text></g>;
+      })}
+      {preferences.layers.trailers && (vm.project.model.deckPpus ?? []).map((ppu, index) => {
+        const point = transform.toScreen({ x: ppu.xM, y: ppu.yM });
+        return <g key={ppu.id} role="button" tabIndex={0} aria-label={`Select deck PPU ${index + 1}`} onClick={event => { event.stopPropagation(); onSelect(`deck-ppu:${ppu.id}`); }} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(`deck-ppu:${ppu.id}`); } }}><path className="deck-ppu-outline" d={pointPath(transform, deckPpuFootprint(ppu), true)} /><text className="view-label" x={point.x} y={point.y} textAnchor="middle">PPU {index + 1} · {ppu.massT} t</text></g>;
+      })}
+
       <AxisGlyph />
     </svg>
   );

@@ -104,6 +104,8 @@ export interface LoosePackingItem extends VisualEntityBase {
 }
 
 export interface TrailerUnit extends VisualEntityBase {
+  yawDeg: number;
+  footprint: Point2[];
   index: number;
   definitionId: string;
   definitionName: string;
@@ -175,6 +177,7 @@ export interface PinnedAxleLine extends VisualEntityBase {
 }
 
 export interface PowerPack extends VisualEntityBase {
+  footprint: Point2[];
   trailerIndex: number;
   end: "front" | "rear";
   startXM: number;

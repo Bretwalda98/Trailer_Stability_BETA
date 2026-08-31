@@ -190,7 +190,7 @@ export function ModelTree({
             Supports <span>{vm.supports.length}</span>
           </button>
           <button onClick={() => onWorkspaceChange("geometry")}>
-            Power packs <span>{vm.powerPacks.length}</span>
+            Power packs <span>{vm.powerPacks.length + (model.deckPpus?.length ?? 0)}</span>
           </button>
         </details>
         <details open>

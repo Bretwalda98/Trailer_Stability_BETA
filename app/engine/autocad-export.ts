@@ -1,4 +1,5 @@
 import { calculateProject } from "./core";
+import { assertLegacyPlacementSupported } from "./placement-export";
 import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
 import { currentEngineeringValues, ENGINEERING_REFERENCE } from "./engineering-reference";
 import { hydraulicPressureOutputs } from "./hydraulic-output";
@@ -51,6 +52,7 @@ export function buildAutocadExport(
   authoritativeResult?: CalculationResult,
   generatedAt = new Date().toISOString(),
 ): AutocadExportDocument {
+  assertLegacyPlacementSupported(model);
   model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   const result = authoritativeResult ?? calculateProject(model);
   const resolvedByIndex = new Map(result.resolvedTrailers.map((item) => [item.index, item]));

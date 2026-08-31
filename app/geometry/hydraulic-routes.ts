@@ -1,5 +1,6 @@
 import type { Point2 } from "../engine/types";
 import type { GeometryViewModel } from "./types";
+import { worldToLocal } from "../engine/placement";
 
 export interface HydraulicRouteSegment {
   id: string;
@@ -27,8 +28,8 @@ export function buildHydraulicRouteSegments(vm: GeometryViewModel): HydraulicRou
               bogie.groupId === groupId &&
               !bogie.pinned &&
               (side === "left"
-                ? bogie.yM <= trailer.centreYM
-                : bogie.yM > trailer.centreYM),
+                ? worldToLocal(trailer, { x: bogie.xM, y: bogie.yM }).y <= 1e-9
+                : worldToLocal(trailer, { x: bogie.xM, y: bogie.yM }).y > 1e-9),
           )
           .sort((a, b) => a.xM - b.xM);
         if (!members.length) continue;

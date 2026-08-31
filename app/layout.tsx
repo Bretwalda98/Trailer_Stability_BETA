@@ -7,6 +7,7 @@ import "katex/dist/katex.min.css";
 import "./globals.css";
 import "./professional-workbench.css";
 import "./interface-upgrade.css";
+import "./placement-editor.css";
 import { assetPath } from "./site-path";
 
 export const metadata: Metadata = {

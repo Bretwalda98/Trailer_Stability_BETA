@@ -1,4 +1,5 @@
 import { engineeringLimitsFor } from "./core";
+import { deckPpuWind } from "./deck-ppus";
 import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
 import type { CalculationResult, ProjectModel, TrailerDefinition } from "./types";
 
@@ -143,8 +144,9 @@ export function buildHandCalculation(
   const combinedEnvelopeX = model.cargo.envelopeX * cargoMassFraction;
   const combinedEnvelopeY = model.cargo.envelopeY * cargoMassFraction;
   const windPressure = model.environment.windSpeedMps ** 2 / 1.6 / 1000;
-  const frontWindForce = windPressure * model.cargo.frontWindAreaM2 * model.cargo.frontDragCoefficient;
-  const sideWindForce = windPressure * model.cargo.sideWindAreaM2 * model.cargo.sideDragCoefficient;
+  const deckWind = deckPpuWind(model);
+  const frontWindForce = windPressure * (model.cargo.frontWindAreaM2 * model.cargo.frontDragCoefficient + deckWind.front);
+  const sideWindForce = windPressure * (model.cargo.sideWindAreaM2 * model.cargo.sideDragCoefficient + deckWind.side);
   const frontWindLever = model.cargo.frontWindHeightM + model.packing.heightM + model.trailerDeckHeightM;
   const sideWindLever = model.cargo.sideWindHeightM + model.packing.heightM + model.trailerDeckHeightM;
   const axleMax = result.axlePoints.reduce(
@@ -233,8 +235,8 @@ export function buildHandCalculation(
       equations: [
         equation("Slope shift", "\\Delta x_s=z_A\\tan\\theta_x,\\qquad \\Delta y_s=z_A\\tan\\theta_y"),
         equation("Wind pressure", `q=\\frac{V^2}{1.6\\times1000}=\\frac{${n(model.environment.windSpeedMps)}^2}{1600}=${n(windPressure, 5)}\\ \\mathrm{kN/m^2}`),
-        equation("Wind actions", `F_{w,x}=qA_fC_{d,f}=${n(frontWindForce)}\\ \\mathrm{kN},\\quad F_{w,y}=qA_sC_{d,s}=${n(sideWindForce)}\\ \\mathrm{kN}`),
-        equation("Wind COG shift", "\\Delta x_w=\\frac{F_{w,x}h_{w,x}}{m_Ag},\\qquad \\Delta y_w=\\frac{F_{w,y}h_{w,y}}{m_Ag}"),
+        equation("Wind actions", `F_{w,x}=q(A_fC_{d,f}+A_{PPU,x}C_d)=${n(frontWindForce)}\\ \\mathrm{kN},\\quad F_{w,y}=q(A_sC_{d,s}+A_{PPU,y}C_d)=${n(sideWindForce)}\\ \\mathrm{kN}`),
+        equation("Wind COG shift", "\\Delta x_w=\\frac{(qA_fC_{d,f}h_{w,x}+M_{PPU,x})}{m_Ag},\\qquad \\Delta y_w=\\frac{(qA_sC_{d,s}h_{w,y}+M_{PPU,y})}{m_Ag}"),
         equation("Acceleration shift", "\\Delta x_a=\\frac{z_Aa_x}{g},\\qquad \\Delta y_a=\\frac{z_Aa_y}{g}"),
         equation("Dynamic shift", "\\boldsymbol{\\Delta}_{dyn}=\\boldsymbol{\\Delta}_{s}+\\boldsymbol{\\Delta}_{w}+\\boldsymbol{\\Delta}_{a}"),
       ],
@@ -242,6 +244,7 @@ export function buildHandCalculation(
         fact("Residual slopes", `${n(model.environment.longitudinalSlopeDeg)}° longitudinal; ${n(model.environment.transverseSlopeDeg)}° transverse`),
         fact("Slope shift", `X ${n(result.analysis.slopeShift.x)} m; Y ${n(result.analysis.slopeShift.y)} m`),
         fact("Wind areas / levers", `front ${n(model.cargo.frontWindAreaM2)} m² at ${n(frontWindLever)} m; side ${n(model.cargo.sideWindAreaM2)} m² at ${n(sideWindLever)} m`),
+        fact("Deck PPU wind moments", `front ${n(windPressure * deckWind.frontMoment)} kNm; side ${n(windPressure * deckWind.sideMoment)} kNm; unshielded rectangular projections`),
         fact("Wind shift", `X ${n(result.analysis.windShift.x)} m; Y ${n(result.analysis.windShift.y)} m`),
         fact("Accelerations", `X ${n(model.environment.longitudinalAccelerationMps2)} m/s²; Y ${n(model.environment.transverseAccelerationMps2)} m/s²`),
         fact("Acceleration shift", `X ${n(result.analysis.accelerationShift.x)} m; Y ${n(result.analysis.accelerationShift.y)} m`),

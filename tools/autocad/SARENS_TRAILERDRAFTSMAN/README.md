@@ -1,4 +1,6 @@
-# SARENS_TRAILERDRAFTSMAN v1.22
+# SARENS_TRAILERDRAFTSMAN v1.23
+
+Version 1.23 adds CAD v2 for individual beds, stagger/yaw and secured deck-mounted PPUs. Use the website's compact `.sartd` export, not the legacy coded JSON route, for these layouts. Keep `SARTD_Placement_v2.lsp` beside the main LISP. The imported file contains resolved plan and orthographic side/end equipment envelopes; these are dimensionally scaled drafting geometry, not a manufacturer fabrication model. Group tables still use the authoritative website results. V1 exports retain their existing block-based renderer.
 
 SARENS_TRAILERDRAFTSMAN creates the complete trailer-arrangement drawing in AutoCAD. Version 1.22 carries the website's resolved three-/four-point hydraulic results into the official loading tables, including neutral and A-D pressures, per-group utilisation, and ground-bearing pressure (GBP).
 
@@ -6,7 +8,8 @@ The preferred web workflow uses one numbered `.sartd` file. It contains only res
 
 ## Package contents
 
-- `SARENS_TRAILERDRAFTSMAN_v1.1.lsp` — AutoLISP release 1.22.
+- `SARENS_TRAILERDRAFTSMAN_v1.1.lsp` — AutoLISP release 1.23; stable APPLOAD filename.
+- `SARTD_Placement_v2.lsp` — validated, data-only bed/PPU geometry importer and renderer.
 - `Autocad Blocks\SARENS_TRAILERDRAFTSMAN_BLOCK_LIBRARY.dwg` — blocks and Sarens/T.EN layouts.
 - `SARTD-CAD-FORMAT.md` — controlled compact exchange contract.
 - `SARTD_Excel_Active.ps1` — compatibility helper for live calculation-file import.
@@ -17,13 +20,13 @@ Keep the LSP, helpers, documentation, and complete `Autocad Blocks` folder toget
 
 ## Installation
 
-1. Extract the full v1.22 archive to a stable local or network folder.
-2. Add that folder to AutoCAD **Trusted Locations** if required.
+1. Extract the full v1.23 archive to a stable local or network folder.
+2. Add the extracted `SARENS_TRAILERDRAFTSMAN` folder to AutoCAD **Support File Search Path** and **Trusted Locations** if required. Both LISP files must stay together.
 3. Run `APPLOAD` and load `SARENS_TRAILERDRAFTSMAN_v1.1.lsp`.
 4. Optionally add the LSP to the Startup Suite.
 5. If prompted, select `SARENS_TRAILERDRAFTSMAN_BLOCK_LIBRARY.dwg`. The path is remembered.
 
-The final load message must report `v1.22 compact CAD exchange loaded`.
+The final load message must report `SARTD placement CAD v2 reader/drawing module loaded (v1.23)`.
 
 ## Preferred website workflow
 
@@ -59,7 +62,7 @@ Run `SARTDRUN` to select one of three sources:
 - Compact lengths and coordinates are millimetres; masses are tonnes; forces are kN; angles are degrees.
 - Trailer width, length, axle count, pitch, deck height, PPU geometry, and resolved X/Y positions come from the selected case.
 - Three-point and four-point hydraulic routing are supported.
-- The supplied three-/four-point boundary is retained for validation and official annotations; no duplicate cyan polygon or free-standing result text is drawn.
+- V1 retains the existing boundary/annotation behaviour. V2 draws the authoritative three-/four-point boundary once with the resolved plan and marks the exported case status explicitly, including diagnostic failed cases.
 - Hydraulic group counts, loads, utilisation and neutral/A-D pressure cases populate the official paper-space tables.
 - Overall and per-group GBP are read from the exported calculation result; Group 4 uses its own selected trailer width and axle pitch rather than a scaled Group 3 placeholder.
 - Cargo COG Z is relative to the cargo bottom. AutoCAD places the deck first, the packing on the deck, and the cargo on the packing without adding either height twice.

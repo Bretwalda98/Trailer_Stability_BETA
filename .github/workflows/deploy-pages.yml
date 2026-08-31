@@ -52,6 +52,8 @@ jobs:
           test -f dist/client/sw.js
           test -f dist/client/autocad/SARENS_TRAILERDRAFTSMAN_v1.20_FULL_PACKAGE.zip
           test -f dist/client/autocad/SARENS_TRAILERDRAFTSMAN_v1.20_FULL_PACKAGE.sha256
+          test -f dist/client/autocad/SARENS_TRAILERDRAFTSMAN_v1.23_FULL_PACKAGE.zip
+          test -f dist/client/autocad/SARENS_TRAILERDRAFTSMAN_v1.23_FULL_PACKAGE.sha256
           grep -q "/Trailer_Stability_BETA/" dist/client/index.html
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4

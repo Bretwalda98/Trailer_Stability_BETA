@@ -17,9 +17,12 @@ import {
   minimumAxleLinesPerTrainForSupports,
   minimumTotalAxleLines,
   longitudinalOffsetCandidates,
+  trainAngleCandidates,
+  anglePitchCandidates,
   MINIMUM_TRAIN_CLEARANCE_M,
   spacingCandidates,
   validAxleLineValues,
+  validateArrangementPlacement,
 } from "./arrangement";
 import { createEmptyRun, rankPasses, runOptimiser } from "./optimiser";
 import type {
@@ -477,6 +480,7 @@ export async function runArrangementOptimiser(
   await notify(true, true);
 
   let completedUnits = 0;
+  const testedFormations = new Map<string, boolean>();
 
   const evaluateFormation = async (
     trainCount: number,
@@ -487,8 +491,12 @@ export async function runArrangementOptimiser(
     verificationTemplate?: PassResult,
     longitudinalOffsetsM: number[] = [],
     hydraulicSystemMode: HydraulicSystemMode = model.hydraulicSystemMode,
+    trainAnglesDeg: number[] = [],
   ): Promise<boolean> => {
     throwIfStopped(callbacks.signal);
+    const formationKey = JSON.stringify([trainCount, axleLines, composition, pitchM.toFixed(6), longitudinalOffsetsM, hydraulicSystemMode, trainAnglesDeg]);
+    if (!finalVerification && testedFormations.has(formationKey)) return testedFormations.get(formationKey)!;
+    if (!finalVerification) testedFormations.set(formationKey, false);
     if (completedUnits + 1 >= run.progress.overallPlanned) {
       run.progress.overallPlanned = completedUnits + 2;
     }
@@ -500,7 +508,13 @@ export async function runArrangementOptimiser(
       pitchM,
       longitudinalOffsetsM,
       hydraulicSystemMode,
+      trainAnglesDeg,
     );
+    const widthLimit = effectiveMaximumFormationWidth(settings, model.cargo.widthM);
+    if (descriptor.clearanceM < -EPS || (trainCount > 1 && descriptor.clearanceM + EPS < settings.minimumClearanceM) || descriptor.overallWidthM > widthLimit + EPS) {
+      addEvent(run, started, "Geometry", "Formation removed before calculation", `${arrangementSummary(descriptor)}; actual footprint clearance ${descriptor.clearanceM.toFixed(3)} m; required ${settings.minimumClearanceM.toFixed(3)} m; width limit ${widthLimit.toFixed(3)} m.`, "INFO");
+      return false;
+    }
     const arranged = applyArrangementDescriptor(model, descriptor);
     if (finalVerification && verificationTemplate) {
       const unitStarted = performance.now();
@@ -518,7 +532,7 @@ export async function runArrangementOptimiser(
         verificationModel,
         verificationTemplate.pinnedAxleLines,
       );
-      const verificationResult = calculateProject(verificationModel);
+      const verificationResult = validateArrangementPlacement(verificationModel, calculateProject(verificationModel));
       run.passes.push(makeRefinementPass(
         run,
         descriptor,
@@ -579,6 +593,7 @@ export async function runArrangementOptimiser(
       `${arrangementSummary(descriptor)}; ${hydraulicModeLabel(hydraulicSystemMode)} hydraulics`,
     );
     const inner = await runOptimiser(exactModel, {
+      validateResult: validateArrangementPlacement,
       signal: callbacks.signal,
       boundedConvergence: settings.searchMode === "ADAPTIVE_BOUNDED" && !finalVerification,
       mathematicalConvergence: mathematical,
@@ -611,6 +626,7 @@ export async function runArrangementOptimiser(
     run.progress.phasePercent = Math.min(100, (completedUnits / run.progress.phasePlanned) * 100);
     rankArrangementPasses(run.passes, model);
     const hasPass = inner.passes.some((pass) => pass.result.status === "PASS");
+    testedFormations.set(formationKey, hasPass);
     if (hasPass) {
       addEvent(
         run,
@@ -633,21 +649,18 @@ export async function runArrangementOptimiser(
     hydraulicSystemMode: HydraulicSystemMode,
   ): Promise<boolean> => {
     let passed = false;
-    for (const offsets of longitudinalOffsetCandidates(settings, trainCount)) {
-      passed = await evaluateFormation(
-        trainCount,
-        axleLines,
-        composition,
-        pitchM,
-        false,
-        undefined,
-        offsets,
-        hydraulicSystemMode,
-      );
-      // Templates are ordered in-line first, then by increasing stagger, so
-      // the first exact pass is least complex at this fixed total-AL,
-      // train-count and hydraulic-system level.
-      if (passed) break;
+    for (const angles of trainAngleCandidates(settings, trainCount)) {
+      for (const candidatePitch of [...new Set([pitchM, ...anglePitchCandidates(definition, settings, trainCount, axleLines, angles, model.cargo.widthM)])]) {
+        for (const offsets of longitudinalOffsetCandidates(settings, trainCount)) {
+          const templatePassed = await evaluateFormation(
+            trainCount, axleLines, composition, candidatePitch,
+            false, undefined, offsets, hydraulicSystemMode, angles,
+          );
+          // Retain the least-complex passing stagger for each pitch/angle seed.
+          passed = passed || templatePassed;
+          if (templatePassed) break;
+        }
+      }
     }
     return passed;
   };
@@ -719,7 +732,7 @@ export async function runArrangementOptimiser(
             minimumPitchResult,
             maximumPitchResult,
           );
-          if (branchYBound.feasible) {
+          if (branchYBound.feasible || settings.allowAngledFormations) {
             viableHydraulicModes.push(hydraulicSystemMode);
           } else {
             addEvent(
@@ -819,7 +832,7 @@ export async function runArrangementOptimiser(
           return false;
         }
         let bucketHasPass = false;
-        if (settings.searchMode === "MATHEMATICAL_BRANCH_BOUND") {
+        if (settings.searchMode === "MATHEMATICAL_BRANCH_BOUND" && !settings.allowAngledFormations) {
           const resultAtPitch = (pitchM: number) => {
             const descriptor = createArrangementDescriptor(
               definition,
@@ -1173,13 +1186,14 @@ export async function runArrangementOptimiser(
             pitchM,
             bestArrangement.longitudinalOffsetsM,
             bestArrangement.hydraulicSystemMode,
+            bestArrangement.trainAnglesDeg,
           );
           let candidateModel = applyArrangementDescriptor(model, descriptor);
           candidateModel = applySharedSplit(candidateModel, best.d138);
           candidateModel = applySharedX(candidateModel, best.e89);
           candidateModel = applySharedPins(candidateModel, best.pinnedAxleLines);
           const caseStarted = performance.now();
-          const result = calculateProject(candidateModel);
+          const result = validateArrangementPlacement(candidateModel, calculateProject(candidateModel));
           const pass = makeRefinementPass(
             run,
             descriptor,
@@ -1226,6 +1240,7 @@ export async function runArrangementOptimiser(
           best,
           arrangement.longitudinalOffsetsM,
           arrangement.hydraulicSystemMode,
+          arrangement.trainAnglesDeg,
         );
       }
     }

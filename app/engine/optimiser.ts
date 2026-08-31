@@ -8,6 +8,7 @@ import {
   engineeringLimitsFor,
 } from "./core";
 import { applyArrangementDescriptor } from "./arrangement";
+import { supportOnTrailer, supportXBounds } from "./placement";
 import type {
   ActivityEvent,
   CalculationResult,
@@ -29,6 +30,8 @@ export interface OptimiserCallbacks {
   mathematicalConvergence?: boolean;
   /** Stops after feasibility is established; the winning formation is fully searched later. */
   feasibilityOnly?: boolean;
+  /** Exact caller-specific placement constraints, applied before ranking/early stopping. */
+  validateResult?: (model: ProjectModel, result: CalculationResult) => CalculationResult;
 }
 
 interface PlannedCase {
@@ -531,17 +534,6 @@ function supportGeometryAllowsCase(
   result1: CalculationResult,
   e89: number,
 ): boolean {
-  const analysedIndex = Math.max(
-    0,
-    Math.min(model.trailers.length - 1, Math.round(model.analysedTrailer) - 1),
-  );
-  const trailer0 = result0.resolvedTrailers.find((item) => item.index === analysedIndex)
-    ?? result0.resolvedTrailers[0];
-  const trailer1 = result1.resolvedTrailers.find((item) => item.index === analysedIndex)
-    ?? result1.resolvedTrailers[0];
-  if (!trailer0 || !trailer1) return false;
-  const startM = trailer0.startXM + (trailer1.startXM - trailer0.startXM) * e89;
-  const lengthM = trailer0.lengthM + (trailer1.lengthM - trailer0.lengthM) * e89;
   const required = Math.max(
     2,
     Math.min(10, Math.round(model.optimiser.minimumActiveSupports)),
@@ -549,15 +541,15 @@ function supportGeometryAllowsCase(
   const allowedSupports = model.supports
     .filter((support) => support.allowed && Number.isFinite(support.xM))
     .slice(0, 10);
-  const geometricallyAvailable = allowedSupports.filter(
-      (support) =>
-        support.xM - support.widthM / 2 >= startM - 1e-9 &&
-        support.xM + support.widthM / 2 <= startM + lengthM + 1e-9,
-    ).length;
   // The calculation engine requires every allowed support to lie on the
   // analysed deck. Counting only the configured minimum can admit a probe
   // that is guaranteed to fail later with SUPPORT_OUTSIDE_TRAILER.
-  return geometricallyAvailable === allowedSupports.length && geometricallyAvailable >= required;
+  return allowedSupports.length >= required && result0.resolvedTrailers.length > 0 && result0.resolvedTrailers.every(trailer0 => {
+    const trailer1 = result1.resolvedTrailers.find(item => item.index === trailer0.index);
+    if (!trailer1) return false;
+    const placement = { ...trailer0, startXM: trailer0.startXM + (trailer1.startXM - trailer0.startXM) * e89 };
+    return allowedSupports.every(support => supportOnTrailer(placement, support).fits);
+  });
 }
 
 function stabilityConstraintPoints(result: CalculationResult): Array<{ x: number; y: number }> {
@@ -594,17 +586,11 @@ export function deriveSupportXInterval(
   result0: CalculationResult,
   result1: CalculationResult,
 ): StabilityXInterval | null {
-  const analysedIndex = Math.max(
-    0,
-    Math.min(model.trailers.length - 1, Math.round(model.analysedTrailer) - 1),
-  );
-  const trailer0 = result0.resolvedTrailers.find((item) => item.index === analysedIndex) ?? result0.resolvedTrailers[0];
-  const trailer1 = result1.resolvedTrailers.find((item) => item.index === analysedIndex) ?? result1.resolvedTrailers[0];
   const allowedSupports = model.supports
     .filter((support) => support.allowed && Number.isFinite(support.xM))
     .slice(0, 10);
   const required = Math.max(2, Math.min(10, Math.round(model.optimiser.minimumActiveSupports)));
-  if (!trailer0 || !trailer1 || allowedSupports.length < required) return null;
+  if (!result0.resolvedTrailers.length || allowedSupports.length < required) return null;
 
   let minimumM = Number.NEGATIVE_INFINITY;
   let maximumM = Number.POSITIVE_INFINITY;
@@ -615,10 +601,11 @@ export function deriveSupportXInterval(
     else maximumM = Math.min(maximumM, boundary);
     return minimumM <= maximumM + 1e-9;
   };
-  const start0 = trailer0.startXM;
-  const start1 = trailer1.startXM;
-  const end0 = trailer0.startXM + trailer0.lengthM;
-  const end1 = trailer1.startXM + trailer1.lengthM;
+  for (const trailer0 of result0.resolvedTrailers) {
+  const trailer1 = result1.resolvedTrailers.find(item => item.index === trailer0.index);
+  if (!trailer1) return null;
+  const { startM: start0, endM: end0 } = supportXBounds(trailer0);
+  const { startM: start1, endM: end1 } = supportXBounds(trailer1);
   for (const support of allowedSupports) {
     const supportLeft = support.xM - support.widthM / 2;
     const supportRight = support.xM + support.widthM / 2;
@@ -626,6 +613,7 @@ export function deriveSupportXInterval(
     if (!intersectGreaterThanOrEqual(supportLeft - start0, -(start1 - start0))) return null;
     // trailer end >= support right
     if (!intersectGreaterThanOrEqual(end0 - supportRight, end1 - end0)) return null;
+  }
   }
   if (!Number.isFinite(minimumM) || !Number.isFinite(maximumM) || minimumM > maximumM + 1e-9) return null;
   return { minimumM, maximumM };
@@ -1293,6 +1281,7 @@ export async function runOptimiser(model: ProjectModel, callbacks: OptimiserCall
     );
     try {
       result = planned.cachedResult ?? calculateProject(evaluatedModel);
+      if (callbacks.validateResult) result = callbacks.validateResult(evaluatedModel, result);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       result = {

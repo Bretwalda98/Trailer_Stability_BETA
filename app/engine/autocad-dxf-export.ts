@@ -1,4 +1,6 @@
 import type { CalculationResult, Point2, ProjectModel } from "./types";
+import { localToWorld, trailerFootprint } from "./placement";
+import { deckPpuFootprint } from "./deck-ppus";
 
 function value(number: number): string {
   return Number.isFinite(number) ? number.toFixed(6) : "0";
@@ -46,9 +48,15 @@ export function buildAutocadDxfExport(model: ProjectModel, result: CalculationRe
   ].join("");
   const cargo = rectangle("TS_CARGO", model.cargo.extremeX, model.cargo.extremeY + model.cargo.widthM / 2, model.cargo.lengthM, model.cargo.widthM);
   const trailerGeometry = result.resolvedTrailers.flatMap((trailer) => {
-    const outline = rectangle("TS_TRAILERS", trailer.startXM, trailer.centreYM, trailer.lengthM, trailer.widthM);
+    const outline = polyline("TS_TRAILERS", trailer.footprint ?? trailerFootprint(trailer), true);
+    const ppus = (["rear", "front"] as const).map(end => {
+      const lengthM = end === "rear" ? trailer.ppuLeftLengthM : trailer.ppuRightLengthM;
+      if (!lengthM) return "";
+      const start = localToWorld(trailer, end === "rear" ? -lengthM : trailer.lengthM);
+      return polyline("TS_TRAILERS", trailerFootprint({ ...trailer, startXM: start.x, centreYM: start.y, lengthM }), true);
+    }).join("");
     const label = text("TS_TEXT", { x: trailer.startXM, y: trailer.centreYM + trailer.widthM / 2 + 0.22 }, `${trailer.name} — ${model.trailers[trailer.index]?.axleLines ?? 0} AL`);
-    return [outline, label];
+    return [outline, ppus, label];
   }).join("");
   const axleGeometry = result.axlePoints.map((axle) => {
     const half = 0.14;
@@ -68,7 +76,12 @@ export function buildAutocadDxfExport(model: ProjectModel, result: CalculationRe
     text("TS_TEXT", { x: model.cargo.extremeX, y: model.cargo.extremeY + model.cargo.widthM + 0.6 }, `Trailer Stability — ${model.cargo.name || "untitled case"}`, 0.25),
     text("TS_TEXT", { x: model.cargo.extremeX, y: model.cargo.extremeY + model.cargo.widthM + 0.3 }, `Result: ${result.status}; total mass ${result.totalMassT.toFixed(2)} t; rear = lower X / left, front = higher X / right.`),
   ].join("");
-  const entities = [cargo, trailerGeometry, axleGeometry, hydraulic, supports, cogs, notes].join("");
+  const bedSeams = (model.bedLayout ?? []).map(bed => {
+    const definition = model.catalogue.find(d => d.id === bed.definitionId);
+    return definition ? polyline("TS_TRAILERS", trailerFootprint({ startXM: bed.xM, centreYM: bed.yM, yawDeg: bed.yawDeg, lengthM: bed.axleLines * definition.axleSpacingM, widthM: definition.trailerWidthM }), true) : "";
+  }).join("");
+  const deckPpus = (model.deckPpus ?? []).map(ppu => polyline("TS_TRAILERS", deckPpuFootprint(ppu), true) + text("TS_TEXT", { x: ppu.xM, y: ppu.yM }, `${ppu.id} ${ppu.massT} t`)).join("");
+  const entities = [cargo, trailerGeometry, bedSeams, deckPpus, axleGeometry, hydraulic, supports, cogs, notes].join("");
   return [
     dxfPair(0, "SECTION"), dxfPair(2, "HEADER"), dxfPair(9, "$ACADVER"), dxfPair(1, "AC1009"), dxfPair(0, "ENDSEC"),
     tables,

@@ -27,6 +27,9 @@ import type {
   TrailerInput,
 } from "./types";
 import { applyAutomaticProjectWindInputs } from "./wind";
+import { applyBedLayout } from "./bed-layout";
+import { deckPpuMassItems, deckPpuTrainId, deckPpuWind, validateDeckPpus } from "./deck-ppus";
+import { localToWorld, worldToLocal, MAX_TRAILER_YAW_DEG, polygonBounds, polygonsOverlap, supportOnTrailer, trailerFootprint, type PlanPlacement } from "./placement";
 
 const GRAVITY = 9.81;
 const EPS = 1e-9;
@@ -88,6 +91,14 @@ interface ResolvedTrailer {
   localCogX: number;
   tareMassT: number;
   ppuMassT: number;
+}
+
+function placementOf(trailer: ResolvedTrailer): PlanPlacement {
+  return { startXM: trailer.xM, centreYM: trailer.yM, yawDeg: trailer.input.yawDeg ?? 0, lengthM: trailer.definition.axleSpacingM * trailer.input.axleLines, widthM: trailer.definition.trailerWidthM };
+}
+
+function trailerPoint(trailer: ResolvedTrailer, x: number, y = 0): Point2 {
+  return localToWorld(placementOf(trailer), x, y);
 }
 
 interface StabilityState {
@@ -155,7 +166,7 @@ function trailerMassItems(
   const items: Array<{ mass: number; point: Point3 }> = [
     {
       mass: trailer.tareMassT,
-      point: { x: trailer.xM + moduleLength / 2, y: trailer.yM, z: model.trailerDeckHeightM },
+      point: { ...trailerPoint(trailer, moduleLength / 2), z: model.trailerDeckHeightM },
     },
   ];
   const ppuWeight = trailer.definition.ppuWeightT ?? 0;
@@ -164,8 +175,7 @@ function trailerMassItems(
     items.push({
       mass: ppuWeight,
       point: {
-        x: trailer.xM - ppuLength / 2,
-        y: trailer.yM,
+        ...trailerPoint(trailer, -ppuLength / 2),
         z: model.trailerDeckHeightM,
       },
     });
@@ -174,8 +184,7 @@ function trailerMassItems(
     items.push({
       mass: ppuWeight,
       point: {
-        x: trailer.xM + moduleLength + ppuLength / 2,
-        y: trailer.yM,
+        ...trailerPoint(trailer, moduleLength + ppuLength / 2),
         z: model.trailerDeckHeightM,
       },
     });
@@ -194,14 +203,13 @@ function resolvedComponentCogs(
   cargoPackingPpu: Point3;
 } {
   const trailerItems: Array<{ mass: number; point: Point3 }> = [];
-  const ppuItems: Array<{ mass: number; point: Point3 }> = [];
+  const ppuItems: Array<{ mass: number; point: Point3 }> = deckPpuMassItems(model);
   for (const trailer of trailers) {
     const moduleLength = trailer.definition.axleSpacingM * trailer.input.axleLines;
     trailerItems.push({
       mass: trailer.tareMassT,
       point: {
-        x: trailer.xM + moduleLength / 2,
-        y: trailer.yM,
+        ...trailerPoint(trailer, moduleLength / 2),
         z: model.trailerDeckHeightM,
       },
     });
@@ -211,8 +219,7 @@ function resolvedComponentCogs(
       ppuItems.push({
         mass: ppuWeight,
         point: {
-          x: trailer.xM - ppuLength / 2,
-          y: trailer.yM,
+          ...trailerPoint(trailer, -ppuLength / 2),
           z: model.trailerDeckHeightM,
         },
       });
@@ -221,8 +228,7 @@ function resolvedComponentCogs(
       ppuItems.push({
         mass: ppuWeight,
         point: {
-          x: trailer.xM + moduleLength + ppuLength / 2,
-          y: trailer.yM,
+          ...trailerPoint(trailer, moduleLength + ppuLength / 2),
           z: model.trailerDeckHeightM,
         },
       });
@@ -278,7 +284,7 @@ function resolveTrailers(model: ProjectModel, baseLoadCog: Point3): { trailers: 
         ppuMassT,
       };
     });
-    const items = [{ mass: load.mass, point: load.point }, ...resolved.flatMap((item) => trailerMassItems(model, item))];
+    const items = [{ mass: load.mass, point: load.point }, ...resolved.flatMap((item) => trailerMassItems(model, item)), ...deckPpuMassItems(model)];
     result = weightedPoint(items);
     const delta = Math.hypot(result.point.x - allInclusiveReference.x, result.point.y - allInclusiveReference.y);
     allInclusiveReference = { x: result.point.x, y: result.point.y };
@@ -306,7 +312,7 @@ function buildAxles(model: ProjectModel, trailers: ResolvedTrailer[]): AxlePoint
     const crossSpacing =
       trailer.definition.crossBogieSpacingM ?? Math.max(0, trailer.definition.trailerWidthM - trailer.definition.tyreWidthM);
     for (let axleLine = 1; axleLine <= trailer.input.axleLines; axleLine += 1) {
-      const x = trailer.xM + (axleLine - 0.5) * trailer.definition.axleSpacingM;
+      const localX = (axleLine - 0.5) * trailer.definition.axleSpacingM;
       const split = clamp(grouping.splitAfterAxleLine, 1, trailer.input.axleLines);
       const leftGroup = grouping.cornerGroups
         ? grouping.cornerGroups[
@@ -326,7 +332,7 @@ function buildAxles(model: ProjectModel, trailers: ResolvedTrailer[]): AxlePoint
           axleLine,
           group: leftGroup,
           pinned,
-          point: { x, y: trailer.yM },
+          point: trailerPoint(trailer, localX),
           capacityT: trailer.definition.axleCapacityT,
           tareT: trailer.definition.axleWeightT,
           loadT: 0,
@@ -340,7 +346,7 @@ function buildAxles(model: ProjectModel, trailers: ResolvedTrailer[]): AxlePoint
             axleLine,
             group: leftGroup,
             pinned,
-            point: { x, y: trailer.yM - crossSpacing / 2 },
+            point: trailerPoint(trailer, localX, -crossSpacing / 2),
             capacityT: trailer.definition.axleCapacityT / 2,
             tareT: trailer.definition.axleWeightT / 2,
             loadT: 0,
@@ -352,7 +358,7 @@ function buildAxles(model: ProjectModel, trailers: ResolvedTrailer[]): AxlePoint
             axleLine,
             group: rightGroup,
             pinned,
-            point: { x, y: trailer.yM + crossSpacing / 2 },
+            point: trailerPoint(trailer, localX, crossSpacing / 2),
             capacityT: trailer.definition.axleCapacityT / 2,
             tareT: trailer.definition.axleWeightT / 2,
             loadT: 0,
@@ -416,14 +422,12 @@ function polygonArea(points: Point2[]): number {
 
 function findTrailerOverlaps(trailers: ResolvedTrailer[]): TrailerOverlap[] {
   const footprints = trailers.map((trailer) => {
-    const moduleLength = trailer.definition.axleSpacingM * trailer.input.axleLines;
     const ppuLength = trailer.definition.ppuLengthM ?? 0;
+    const points = trailerFootprint(placementOf(trailer), trailer.input.ppuLeft ? ppuLength : 0, trailer.input.ppuRight ? ppuLength : 0);
     return {
       trailer,
-      minX: trailer.xM - (trailer.input.ppuLeft ? ppuLength : 0),
-      maxX: trailer.xM + moduleLength + (trailer.input.ppuRight ? ppuLength : 0),
-      minY: trailer.yM - trailer.definition.trailerWidthM / 2,
-      maxY: trailer.yM + trailer.definition.trailerWidthM / 2,
+      points,
+      ...polygonBounds(points),
     };
   });
   const overlaps: TrailerOverlap[] = [];
@@ -435,7 +439,7 @@ function findTrailerOverlaps(trailers: ResolvedTrailer[]): TrailerOverlap[] {
       const overlapYM = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY);
       // Touching edges are permissible; a positive overlap in both axes is a
       // physically impossible trailer collision.
-      if (overlapXM > 1e-6 && overlapYM > 1e-6) {
+      if (overlapXM > 1e-6 && overlapYM > 1e-6 && polygonsOverlap(a.points, b.points)) {
         overlaps.push({
           firstTrailerId: a.trailer.input.id,
           firstTrailerIndex: a.trailer.index,
@@ -799,8 +803,7 @@ function solveSpineSystem(
     .filter(
       (support) =>
         Number.isFinite(support.xM) &&
-        support.xM - support.widthM / 2 >= trailerStartM - EPS &&
-        support.xM + support.widthM / 2 <= trailerEndM + EPS,
+        supportOnTrailer(placementOf(trailer), support).fits,
     )
     .slice(0, 10);
 
@@ -809,7 +812,7 @@ function solveSpineSystem(
   for (const axle of trailerAxles) {
     if (axle.pinned) continue;
     const current = axleLineLoads.get(axle.axleLine) ?? {
-      xM: axle.point.x - beamStartM,
+      xM: (axle.axleLine - 0.5) * spacing + trailerStartM - beamStartM,
       forceKN: 0,
     };
     // The workbook's spine-beam load is the hydraulic axle reaction less the
@@ -848,8 +851,9 @@ function solveSpineSystem(
     });
   }
   for (const item of model.loosePacking.slice(0, 4)) {
-    const startM = item.startXM - beamStartM;
-    const endM = item.endXM - beamStartM;
+    const c = Math.cos(((trailer.input.yawDeg ?? 0) * Math.PI) / 180);
+    const startM = (item.startXM - trailerStartM) / c + trailerStartM - beamStartM;
+    const endM = (item.endXM - trailerStartM) / c + trailerStartM - beamStartM;
     if (!(item.massT > 0) || !(endM - startM > EPS)) continue;
     const clippedStart = clamp(startM, 0, beamLength);
     const clippedEnd = clamp(endM, 0, beamLength);
@@ -873,11 +877,17 @@ function solveSpineSystem(
     ],
     supports: activeSupports.map((support) => ({
       id: support.id,
-      xM: support.xM - beamStartM,
-      widthM: support.widthM,
+      xM: supportOnTrailer(placementOf(trailer), support).stationM + trailerStartM - beamStartM,
+      widthM: supportOnTrailer(placementOf(trailer), support).widthM,
       active: true,
     })),
-    pointLoads: [...axleLineLoads.values()],
+    pointLoads: [
+      ...axleLineLoads.values(),
+      ...(model.deckPpus ?? []).filter(ppu => deckPpuTrainId(model, ppu) === trailer.input.id).map(ppu => ({
+        xM: worldToLocal(placementOf(trailer), { x: ppu.xM, y: ppu.yM }).x + trailerStartM - beamStartM,
+        forceKN: -ppu.massT * GRAVITY,
+      })),
+    ],
     distributedLoads,
     outputStepM: clamp(finite(model.spineMeshSizeM, 0.023), 0.001, 1),
     applySupportSpreading: true,
@@ -922,16 +932,12 @@ function cargoSupportBeam(
       trace: emptyTrace("SOLVER_FAILED"),
     };
   }
-  const trailerStartM = trailer.xM;
-  const trailerEndM = trailerStartM + trailer.definition.axleSpacingM * trailer.input.axleLines;
   const originalActiveById = new Map(supports.map((support) => [support.id, support.active]));
   const defined = supports
     .filter((support) => Number.isFinite(support.xM))
     .slice(0, 10)
     .map((support) => {
-      const geometricallyAllowed =
-        support.xM - support.widthM / 2 >= trailerStartM - EPS &&
-        support.xM + support.widthM / 2 <= trailerEndM + EPS;
+      const geometricallyAllowed = supportOnTrailer(placementOf(trailer), support).fits;
       return {
         ...support,
         positiveConnectionToDeck: support.positiveConnectionToDeck === true,
@@ -1410,6 +1416,17 @@ function analysisSummary(
 }
 
 function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boolean): CalculationResult {
+  const layout = model.bedLayout ? applyBedLayout(model, model.bedLayout) : { model, errors: [] as string[] };
+  model = layout.model;
+  const placementErrors = [
+    ...layout.errors,
+    ...validateDeckPpus(model),
+    ...model.trailers.filter(t => t.enabled && (!Number.isFinite(t.yawDeg ?? 0) || Math.abs(t.yawDeg ?? 0) > MAX_TRAILER_YAW_DEG)).map(t => `${t.id}: rotation must be within ±${MAX_TRAILER_YAW_DEG}°.`),
+  ];
+  if (placementErrors.length) {
+    const empty = calculateProjectInternal({ ...model, bedLayout: undefined, deckPpus: [], trailers: [] }, stabilityProbeOnly);
+    return { ...empty, status: "GEOMETRY_FAIL", failClass: "PLACEMENT", failDetail: placementErrors.join(" "), warnings: placementErrors };
+  }
   model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   model = applyAutomaticProjectWindInputs(model);
   const started = performance.now();
@@ -1552,18 +1569,19 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
     y: resolved.combined.z * Math.tan((model.environment.transverseSlopeDeg * Math.PI) / 180),
   };
   const windPressureKNPerM2 = (model.environment.windSpeedMps ** 2 / 1.6) / 1000;
+  const deckWind = deckPpuWind(model);
   const windLeverArmXM =
     model.cargo.frontWindHeightM + model.packing.heightM + model.trailerDeckHeightM;
   const windLeverArmYM =
     model.cargo.sideWindHeightM + model.packing.heightM + model.trailerDeckHeightM;
   const windShiftX =
     resolved.mass > EPS
-      ? (windPressureKNPerM2 * model.cargo.frontWindAreaM2 * model.cargo.frontDragCoefficient * windLeverArmXM) /
+      ? (windPressureKNPerM2 * (model.cargo.frontWindAreaM2 * model.cargo.frontDragCoefficient * windLeverArmXM + deckWind.frontMoment)) /
         (resolved.mass * GRAVITY)
       : 0;
   const windShiftY =
     resolved.mass > EPS
-      ? (windPressureKNPerM2 * model.cargo.sideWindAreaM2 * model.cargo.sideDragCoefficient * windLeverArmYM) /
+      ? (windPressureKNPerM2 * (model.cargo.sideWindAreaM2 * model.cargo.sideDragCoefficient * windLeverArmYM + deckWind.sideMoment)) /
         (resolved.mass * GRAVITY)
       : 0;
   const windShift = { x: windShiftX, y: windShiftY };
@@ -1747,9 +1765,7 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
         .slice(0, 10)
         .some(
           (support) =>
-            support.xM - support.widthM / 2 < analysedTrailer.xM - EPS ||
-            support.xM + support.widthM / 2 >
-              analysedTrailer.xM + analysedTrailer.definition.axleSpacingM * analysedTrailer.input.axleLines + EPS,
+            !supportOnTrailer(placementOf(analysedTrailer), support).fits,
         )
     : true;
   const allSupportsOnTrailer = !supportsOutsideTrailer;
@@ -1782,8 +1798,29 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
         supportSettle.settledSystem,
       );
   if (beamResult.warning) warnings.push(beamResult.warning);
+  if (model.deckPpus?.length) warnings.push("Deck-mounted PPUs: secured mass, COG, inertia and unshielded wind moments are included. Each host spine beam receives a concentrated vertical load at the PPU centre. Packing/mounting interference, local deck strength, torsion and lashings require separate verification. Road traction retains the existing neutral-load, longitudinal-motion assumptions.");
   const beam = beamResult.metrics;
-  const spineUtil = Math.max(beam.shearUtilisation, beam.bendingUtilisation);
+  const nonInline = Boolean(model.bedLayout?.length || model.deckPpus?.length) || resolved.trailers.some(item => Math.abs(item.input.yawDeg ?? 0) > EPS || Math.abs(item.xM - resolved.trailers[0].xM) > EPS);
+  const invalidAngle = resolved.trailers.some(item => !Number.isFinite(item.input.yawDeg ?? 0) || Math.abs(item.input.yawDeg ?? 0) > MAX_TRAILER_YAW_DEG);
+  const trailerChecks: NonNullable<CalculationResult["trailerChecks"]> = [];
+  if (nonInline && !stabilityProbeOnly && !invalidAngle) {
+    for (const trailer of resolved.trailers) {
+      const localModel = { ...model, analysedTrailer: trailer.index + 1 };
+      const settlement = trailer.index === analysedTrailer.index ? supportSettle : cargoSupportBeam(localModel, resolved.trailers, spineAxlePoints, model.supports);
+      const localBeam = trailer.index === analysedTrailer.index ? beamResult : spineBeam(localModel, resolved.trailers, spineAxlePoints, settlement.supportResults, settlement.settledSystem);
+      const activeCount = settlement.supportResults.filter(support => support.active).length;
+      const fits = model.supports.filter(s => s.allowed).every(s => supportOnTrailer(placementOf(trailer), s).fits);
+      const passed = fits && settlement.converged && activeCount >= model.optimiser.minimumActiveSupports && localBeam.metrics.points.length > 0;
+      const detail = !fits ? "A support bearing strip extends beyond this deck." : !passed ? settlement.warning || localBeam.warning || "Insufficient active supports." : "Support reactions settled on this train.";
+      trailerChecks.push({ trailerIndex: trailer.index, activeSupportCount: activeCount, supports: settlement.supportResults, beam: localBeam.metrics, passed, detail });
+      if (!passed) warnings.push(`Trailer ${trailer.index + 1}: ${detail}`);
+    }
+    if (resolved.trailers.some(item => Math.abs(item.input.yawDeg ?? 0) > EPS)) {
+      warnings.push("Angled trains: vertical equilibrium uses rotated bogies and independent longitudinal spine beams at transverse support-strip intersections. This does not verify transverse packing strength, torsion, connection design or steering compatibility. Beam graph stations are measured along the selected train from its rear datum.");
+    }
+  }
+  const checkedBeams = [beam, ...trailerChecks.map(check => check.beam)];
+  const spineUtil = Math.max(...checkedBeams.map(value => Math.max(value.shearUtilisation, value.bendingUtilisation)));
   // Resource use is the total across the complete formation. Using only the
   // largest individual train would allow multi-train arrangements to avoid the
   // lower-is-better axle-line weighting.
@@ -1801,15 +1838,15 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
     slopeAngle: metric(slopeAngle, limits.slopeAngle, true),
     dynamicAngle: metric(dynamicAngle, limits.dynamicAngle, true),
     dynamicRatio: metric(dynamicRatio, limits.dynamicRatio, true),
-    shearUtil: metric(beam.shearUtilisation, 1, false, detailed && beam.points.length > 0),
-    bendingUtil: metric(beam.bendingUtilisation, 1, false, detailed && beam.points.length > 0),
+    shearUtil: metric(Math.max(...checkedBeams.map(value => value.shearUtilisation)), 1, false, detailed && beam.points.length > 0),
+    bendingUtil: metric(Math.max(...checkedBeams.map(value => value.bendingUtilisation)), 1, false, detailed && beam.points.length > 0),
     deflection: metric(
-      beam.absoluteDeflectionMm,
+      Math.max(...checkedBeams.map(value => value.absoluteDeflectionMm)),
       model.optimiser.deflectionLimitMm,
       false,
       detailed || model.optimiser.deflectionCheck === "REQUIRED",
     ),
-    localBendingUtil: metric(beam.localBendingUtilisation, 1, false, detailed && beam.points.length > 0),
+    localBendingUtil: metric(Math.max(...checkedBeams.map(value => value.localBendingUtilisation)), 1, false, detailed && beam.points.length > 0),
     axleLinesUsed: metric(axleLinesUsed, Number.POSITIVE_INFINITY),
   };
   const roadTransport = calculateRoadTransport(model, axlePoints, resolved.mass);
@@ -1848,7 +1885,11 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
   let status: CalculationResult["status"] = "PASS";
   let failClass = "";
   let failDetail = "";
-  if (trailerOverlaps.length) {
+  if (invalidAngle) {
+    status = "GEOMETRY_FAIL";
+    failClass = "TRAILER_ANGLE";
+    failDetail = `Train rotation must be a finite angle between -${MAX_TRAILER_YAW_DEG}° and +${MAX_TRAILER_YAW_DEG}°. The front must remain toward higher X.`;
+  } else if (trailerOverlaps.length) {
     const overlap = trailerOverlaps[0];
     status = "GEOMETRY_FAIL";
     failClass = "TRAILER_OVERLAP";
@@ -1861,6 +1902,10 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
     status = "SUPPORT_FAIL";
     failClass = "SUPPORT_OUTSIDE_TRAILER";
     failDetail = "Every allowed support must be fully within the analysed trailer deck footprint.";
+  } else if (trailerChecks.some(check => !check.passed)) {
+    status = "SUPPORT_FAIL";
+    failClass = "FORMATION_SUPPORT_CHECK";
+    failDetail = trailerChecks.filter(check => !check.passed).map(check => `T${check.trailerIndex + 1}: ${check.detail}`).join(" ");
   } else if (!supportSettle.converged) {
     status = "SUPPORT_FAIL";
     failClass = "SUPPORT_SETTLEMENT_FAILED";
@@ -1958,12 +2003,15 @@ function calculateProjectInternal(model: ProjectModel, stabilityProbeOnly: boole
       name: item.definition.name,
       startXM: item.xM,
       centreYM: item.yM,
+      yawDeg: item.input.yawDeg ?? 0,
+      footprint: trailerFootprint(placementOf(item)),
       lengthM: item.definition.axleSpacingM * item.input.axleLines,
       widthM: item.definition.trailerWidthM,
       ppuLeftLengthM: item.input.ppuLeft ? item.definition.ppuLengthM ?? 0 : 0,
       ppuRightLengthM: item.input.ppuRight ? item.definition.ppuLengthM ?? 0 : 0,
     })),
     beam,
+    trailerChecks,
     metrics,
     warnings,
     calculationMs: performance.now() - started,

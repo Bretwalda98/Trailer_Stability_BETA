@@ -1,4 +1,5 @@
 import type { WorkSheet } from "xlsx";
+import { assertLegacyPlacementSupported } from "./placement-export";
 import { assetPath } from "../site-path";
 import type {
   EngineeringDegree,
@@ -770,6 +771,7 @@ export async function exportVerificationWorkbook(
   model: ProjectModel,
   templateBytes?: ArrayBuffer,
 ): Promise<Uint8Array> {
+  assertLegacyPlacementSupported(model);
   model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   model = applyAutomaticProjectWindInputs(model);
   let source: ArrayBuffer;

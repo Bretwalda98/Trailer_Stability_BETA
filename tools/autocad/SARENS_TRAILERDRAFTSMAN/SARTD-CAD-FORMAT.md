@@ -1,5 +1,22 @@
 # SARTD-CAD compact exchange v1
 
+## Version 2 extension (reader package v1.23)
+
+Extended bed/yaw/deck-PPU cases use `SARTD-CAD|2|MM-T-KN-DEG|REAR-LOW-X`. Older readers reject version 2 instead of flattening its geometry. All v1 input/result records remain present. The v2 additions are:
+
+| Record | Fields after tag |
+|---|---|
+| `TRAILER` | Existing fields followed by 17 yaw degrees |
+| `BED` | 1 stable ID; 2 resolved trailer index; 3 AL (4/5/6); 4 rear X mm; 5 rear-centre Y mm; 6 yaw degrees; 7 length mm; 8 width mm |
+| `DECKPPU` | 1 ID; 2 resolved host-trailer index; 3 centre X mm; 4 centre Y mm; 5 yaw; 6 length mm; 7 width mm; 8 height mm; 9 mass t; 10 COG above deck mm; 11 secured; 12 drag coefficient; 13 available traction power; 14 host bed/train ID |
+| `VIEWPATH` | 1 PLAN/SIDE/END; 2 allowlisted SARTD layer; 3 semicolon-separated `x,y` pairs in mm; closed paths repeat the first point |
+| `VIEWTEXT` | 1 view; 2 layer; 3 X mm; 4 Y mm; 5 positive text height mm; 6 escaped plain text |
+| `END` | Existing fields followed by 6 BED count; 7 DECKPPU count; 8 combined VIEWPATH/VIEWTEXT count |
+
+All geometry coordinates are local to their named orthographic view, using the case datum. The importer only translates the three view envelopes to non-overlapping drawing locations; it does not rotate, scale or recalculate individual equipment. Side/end views show projected equipment envelopes and bogie stations, not a fabricated detailed chassis. Attached PPUs have a known plan footprint/deck-top line; no undocumented attached-PPU height is invented. Independent PPUs use their entered dimensions and deck-relative COG.
+
+`SUMMARY[2]` and `END[3]` include attached and independent PPUs exactly once. Positive and negative bed yaw, every independent support-strip location, and the authoritative three-/four-point boundary are retained. V2 validates units, counts, numeric geometry, bed/PPU fields and securing before drawing; it never evaluates code from the file. Legacy Excel/coded-JSON import is unchanged and does not support these extensions.
+
 The website emits UTF-8, line-oriented records separated by `|`. The first record is:
 
 ```text

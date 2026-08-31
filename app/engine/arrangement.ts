@@ -1,6 +1,7 @@
 import type {
   ArrangementDescriptor,
   ArrangementOptimiserSettings,
+  CalculationResult,
   CargoSupport,
   HydraulicGrouping,
   HydraulicSystemMode,
@@ -9,6 +10,7 @@ import type {
   TrailerInput,
 } from "./types";
 import { cargoCogEnvelopeGuidance } from "./cargo-envelope";
+import { MAX_TRAILER_YAW_DEG, polygonBounds, polygonClearance, polygonsOverlap, trailerFootprint } from "./placement";
 
 export interface ModuleComposition {
   modules4: number;
@@ -194,6 +196,21 @@ export function effectiveMaximumFormationWidth(
   return limits.length ? Math.min(...limits) : Number.POSITIVE_INFINITY;
 }
 
+/** Recheck actual resolved footprints after COG-relative placement and X refinement. */
+export function validateArrangementPlacement(model: ProjectModel, result: CalculationResult): CalculationResult {
+  if (!result.resolvedTrailers.length) return result;
+  const footprints = result.resolvedTrailers.map(trailer => trailerFootprint(trailer, trailer.ppuLeftLengthM, trailer.ppuRightLengthM));
+  const bounds = polygonBounds(footprints.flat());
+  const settings = model.arrangementOptimiser;
+  let reason = "";
+  if (bounds.maxY - bounds.minY > effectiveMaximumFormationWidth(settings, model.cargo.widthM) + 1e-6) reason = "The resolved trailer and PPU footprints exceed the allowed formation width.";
+  if (settings.limitFormationWidthToCargo && (bounds.minY < model.cargo.extremeY - 1e-6 || bounds.maxY > model.cargo.extremeY + model.cargo.widthM + 1e-6)) reason = "The resolved trailer or PPU outer edge extends beyond the cargo Y edges.";
+  for (let i = 0; i < footprints.length; i++) for (let j = i + 1; j < footprints.length; j++) {
+    if (polygonsOverlap(footprints[i], footprints[j]) || polygonClearance(footprints[i], footprints[j]) + 1e-6 < settings.minimumClearanceM) reason = `Trailers ${i + 1} and ${j + 1} do not maintain the required ${settings.minimumClearanceM.toFixed(3)} m footprint clearance.`;
+  }
+  return reason ? { ...result, status: "GEOMETRY_FAIL", failClass: "FORMATION_BOUNDS", failDetail: reason, warnings: [...result.warnings, reason] } : result;
+}
+
 /**
  * Finite spacing-search boundary used when no hard overall-width rule is active.
  * It is a computational horizon only; it does not make a candidate fail.
@@ -302,10 +319,23 @@ export function createArrangementDescriptor(
   pitchM: number,
   longitudinalOffsetsM: number[] = [],
   hydraulicSystemMode?: HydraulicSystemMode,
+  trainAnglesDeg: number[] = [],
 ): ArrangementDescriptor {
   const trains = integer(trainCount, 1, 12);
   const pitch = trains === 1 ? 0 : Math.max(0, pitchM);
-  const overallWidthM = definition.trailerWidthM + Math.max(0, trains - 1) * pitch;
+  const angles = Array.from({ length: trains }, (_, index) => trainAnglesDeg[index] ?? 0);
+  const lengthM = definition.axleSpacingM * composition.axleLines;
+  const ppu = definition.ppuLengthM ?? 0;
+  const footprints = angles.map((yawDeg, index) => {
+    const angle = yawDeg * Math.PI / 180;
+    return trailerFootprint({ startXM: (longitudinalOffsetsM[index] ?? 0) - lengthM * Math.cos(angle) / 2, centreYM: (index - (trains - 1) / 2) * pitch - lengthM * Math.sin(angle) / 2, lengthM, widthM: definition.trailerWidthM, yawDeg }, settings.ppuPosition === "REAR" || settings.ppuPosition === "BOTH" ? ppu : 0, settings.ppuPosition === "FRONT" || settings.ppuPosition === "BOTH" ? ppu : 0);
+  });
+  const bounds = polygonBounds(footprints.flat());
+  const overallWidthM = bounds.maxY - bounds.minY;
+  let clearanceM = trains === 1 ? 0 : Number.POSITIVE_INFINITY;
+  for (let i = 0; i < trains; i += 1) for (let j = i + 1; j < trains; j += 1) {
+    clearanceM = Math.min(clearanceM, polygonsOverlap(footprints[i], footprints[j]) ? -1 : polygonClearance(footprints[i], footprints[j]));
+  }
   const offsets = Array.from(
     { length: trains },
     (_, index) => Number.isFinite(longitudinalOffsetsM[index]) ? longitudinalOffsetsM[index] : 0,
@@ -322,11 +352,12 @@ export function createArrangementDescriptor(
     modules6: composition.modules6,
     moduleCountPerTrain: composition.moduleCount,
     pitchM: pitch,
-    clearanceM: trains === 1 ? 0 : Math.max(0, pitch - definition.trailerWidthM),
+    clearanceM,
     overallWidthM,
     ppuPosition: settings.ppuPosition,
     hydraulicSystemMode,
-    formationMode: maximumOffset - minimumOffset > EPS ? "STAGGERED" : "INLINE",
+    formationMode: angles.some(value => Math.abs(value) > EPS) ? "ANGLED" : maximumOffset - minimumOffset > EPS ? "STAGGERED" : "INLINE",
+    trainAnglesDeg: angles,
     longitudinalOffsetsM: offsets,
     longitudinalSpanM: maximumOffset - minimumOffset,
   };
@@ -456,6 +487,33 @@ export function longitudinalOffsetCandidates(
   return [...new Map(normalised.map((candidate) => [candidate.join(","), candidate])).values()];
 }
 
+/** Bounded parallel, fan and mirrored fan families. Never discard the zero-angle case. */
+export function trainAngleCandidates(settings: ArrangementOptimiserSettings, trainCount: number): number[][] {
+  const zero = Array.from({ length: trainCount }, () => 0);
+  if (!settings.allowAngledFormations) return [zero];
+  const maximum = settings.maximumTrainAngleDeg ?? 10;
+  const samples = integer(settings.trainAngleSamples ?? 2, 1, 3);
+  const candidates = [zero];
+  for (let step = 1; step <= samples; step += 1) {
+    const angle = maximum * step / samples;
+    const fan = zero.map((_, index) => trainCount === 1 ? angle : angle * (2 * index / (trainCount - 1) - 1));
+    candidates.push(fan, fan.map(value => -value), zero.map(() => angle), zero.map(() => -angle));
+  }
+  return [...new Map(candidates.map(values => [values.join(","), values])).values()];
+}
+
+/** Conservative disjoint Y-strip seeds supplement (never replace) the ordinary pitch grid. */
+export function anglePitchCandidates(definition: TrailerDefinition, settings: ArrangementOptimiserSettings, trainCount: number, axleLines: number, angles: number[], cargoWidthM: number): number[] {
+  if (trainCount < 2 || angles.every(angle => Math.abs(angle) < 1e-9)) return [];
+  const ppuCount = settings.ppuPosition === "BOTH" ? 2 : settings.ppuPosition === "NONE" ? 0 : 1;
+  const length = axleLines * definition.axleSpacingM + ppuCount * (definition.ppuLengthM ?? 0);
+  const projectedWidth = Math.max(...angles.map(angle => Math.abs(Math.cos(angle * Math.PI / 180)) * definition.trailerWidthM + Math.abs(Math.sin(angle * Math.PI / 180)) * length));
+  const minimum = projectedWidth + settings.minimumClearanceM;
+  const maximum = (formationSearchMaximumWidth(settings, cargoWidthM) - projectedWidth) / (trainCount - 1);
+  if (maximum < minimum) return [];
+  return [...new Set([minimum, maximum, (minimum + maximum) / 2, Math.max(minimum, Math.min(maximum, settings.preferredCentreSpacingM))].map(pitch => Number(pitch.toFixed(6))))];
+}
+
 function groupingForTrain(
   index: number,
   trainCount: number,
@@ -515,16 +573,21 @@ export function applyArrangementDescriptor(
   for (let index = 0; index < descriptor.trainCount; index += 1) {
     const transverseOffset = (index - (descriptor.trainCount - 1) / 2) * descriptor.pitchM;
     const longitudinalOffset = descriptor.longitudinalOffsetsM[index] ?? 0;
+    const yawDeg = descriptor.trainAnglesDeg?.[index] ?? 0;
+    const angle = yawDeg * Math.PI / 180;
+    const rearCorrectionX = trainLengthM * (1 - Math.cos(angle)) / 2;
+    const rearCorrectionY = -trainLengthM * Math.sin(angle) / 2;
     trailers.push({
       id: `arranged-train-${index + 1}`,
       definitionId: descriptor.trailerDefinitionId,
       axleLines: descriptor.axleLinesPerTrain,
       singleFile: false,
-      xM: loadCentreX + centreXOffset + longitudinalOffset,
-      yM: loadCentreY + transverseOffset,
-      formationOffsetXM: longitudinalOffset,
+      xM: loadCentreX + centreXOffset + longitudinalOffset + rearCorrectionX,
+      yM: loadCentreY + transverseOffset + rearCorrectionY,
+      yawDeg,
+      formationOffsetXM: longitudinalOffset + rearCorrectionX,
       placementReference: "ALL_INCLUSIVE_COG",
-      offsetFromReference: { x: centreXOffset + longitudinalOffset, y: transverseOffset },
+      offsetFromReference: { x: centreXOffset + longitudinalOffset + rearCorrectionX, y: transverseOffset + rearCorrectionY },
       ppuLeft: descriptor.ppuPosition === "REAR" || descriptor.ppuPosition === "BOTH",
       ppuRight: descriptor.ppuPosition === "FRONT" || descriptor.ppuPosition === "BOTH",
       enabled: true,
@@ -540,6 +603,7 @@ export function applyArrangementDescriptor(
   }
   return {
     ...base,
+    bedLayout: undefined,
     trailers,
     groupings,
     hydraulicSystemMode,
@@ -562,6 +626,10 @@ export function collectArrangementIssues(
   settings: ArrangementOptimiserSettings,
 ): ArrangementIssue[] {
   const issues: ArrangementIssue[] = [];
+  if (model.deckPpus?.length) issues.push({ id: "manual-deck-ppus", severity: "blocking", title: "Deck-mounted PPUs require manual placement", detail: "This search replaces the bed formation. Remove deck-mounted PPUs from the search draft, then place and recheck them in Edit arrangement after applying a candidate." });
+  if (settings.allowAngledFormations && (!Number.isFinite(settings.maximumTrainAngleDeg) || (settings.maximumTrainAngleDeg ?? 0) <= 0 || (settings.maximumTrainAngleDeg ?? 0) > MAX_TRAILER_YAW_DEG || !Number.isInteger(settings.trainAngleSamples) || (settings.trainAngleSamples ?? 0) < 1 || (settings.trainAngleSamples ?? 0) > 3)) {
+    issues.push({ id: "angle-bounds", severity: "blocking", title: "Set valid train-angle limits", detail: `Choose a maximum angle greater than zero and no more than ${MAX_TRAILER_YAW_DEG}°, with 1–3 angle samples.` });
+  }
   const definition = selectedDefinition(model, settings);
   const allowedSupportXs = model.supports
     .filter((support) => support.allowed && Number.isFinite(support.xM))
@@ -812,5 +880,5 @@ export function arrangementSummary(descriptor: ArrangementDescriptor): string {
     descriptor.modules5 ? `${descriptor.modules5}×5` : "",
     descriptor.modules4 ? `${descriptor.modules4}×4` : "",
   ].filter(Boolean).join(" + ");
-  return `${descriptor.trainCount} train${descriptor.trainCount === 1 ? "" : "s"}; ${descriptor.axleLinesPerTrain} AL/train (${modules}); ${descriptor.totalAxleLines} AL total; ${descriptor.overallWidthM.toFixed(3)} m wide; ${descriptor.formationMode === "STAGGERED" ? `${descriptor.longitudinalSpanM.toFixed(3)} m longitudinal stagger` : "in-line"}`;
+  return `${descriptor.trainCount} train${descriptor.trainCount === 1 ? "" : "s"}; ${descriptor.axleLinesPerTrain} AL/train (${modules}); ${descriptor.totalAxleLines} AL total; ${descriptor.overallWidthM.toFixed(3)} m wide; ${descriptor.formationMode === "ANGLED" ? `angles ${(descriptor.trainAnglesDeg ?? []).map(value => value.toFixed(2)).join(", ")}°; ` : ""}${descriptor.longitudinalSpanM > EPS ? `${descriptor.longitudinalSpanM.toFixed(3)} m longitudinal stagger` : "in-line centres"}`;
 }

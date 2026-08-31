@@ -19,7 +19,7 @@ export function buildCaseTextExport(model: ProjectModel, result: CalculationResu
   const engineering = currentEngineeringValues(model, result);
   const trailerRows = result.resolvedTrailers.map((trailer, index) => {
     const input = model.trailers[index];
-    return `  ${index + 1}. ${trailer.name}; ${input?.axleLines ?? 0} AL; rear X ${number(trailer.startXM)} m; centre Y ${number(trailer.centreYM)} m; ${number(trailer.lengthM)} m x ${number(trailer.widthM)} m; PPU rear/front ${number(trailer.ppuLeftLengthM)} / ${number(trailer.ppuRightLengthM)} m`;
+    return `  ${index + 1}. ${trailer.name}; ${input?.axleLines ?? 0} AL; rear X ${number(trailer.startXM)} m; centre Y ${number(trailer.centreYM)} m; rotation ${number(trailer.yawDeg ?? 0)} deg; ${number(trailer.lengthM)} m x ${number(trailer.widthM)} m; PPU rear/front ${number(trailer.ppuLeftLengthM)} / ${number(trailer.ppuRightLengthM)} m`;
   });
   const supportRows = result.supports.map((support, index) =>
     `  ${index + 1}. ${support.id}; X ${number(support.xM)} m; width ${number(support.widthM)} m; reaction ${number(support.reactionT)} t; ${support.active ? "active" : "inactive"}; ${support.reactionState}; positive connection ${support.positiveConnectionToDeck ? "yes" : "no"}${support.disableReason ? ` (${support.disableReason})` : ""}`,
@@ -45,6 +45,7 @@ export function buildCaseTextExport(model: ProjectModel, result: CalculationResu
     `Status: ${result.status}`,
     `Failure class: ${result.failClass || "none"}`,
     `Failure detail: ${result.failDetail || "none"}`,
+    ...result.warnings.map(warning => `Warning: ${warning}`),
     `Calculation time: ${number(result.calculationMs, 2)} ms`,
     `Total all-inclusive mass: ${number(result.totalMassT)} t`,
     point("Load COG", result.loadCog),
@@ -66,6 +67,12 @@ export function buildCaseTextExport(model: ProjectModel, result: CalculationResu
     "",
     "RESOLVED TRAILERS",
     ...(trailerRows.length ? trailerRows : ["  No trailers configured."]),
+    "BED CONNECTION MATRIX",
+    ...(model.bedLayout ?? []).map(bed => `  ${bed.id}; train ${bed.train}; ${bed.axleLines} AL; rear (${number(bed.xM)}, ${number(bed.yM)}) m; rotation ${number(bed.yawDeg)} deg`),
+    "DECK-MOUNTED PPUS",
+    ...(model.deckPpus ?? []).map(ppu => `  ${ppu.id}; host ${ppu.hostId}; ${number(ppu.massT)} t; centre (${number(ppu.xM)}, ${number(ppu.yM)}) m; COG Z above deck ${number(ppu.cogZM)} m; rotation ${number(ppu.yawDeg)} deg; dimensions ${number(ppu.lengthM)} x ${number(ppu.widthM)} x ${number(ppu.heightM)} m; secured ${ppu.secured}; traction power ${ppu.suppliesHydraulics ?? false}; Cd ${number(ppu.dragCoefficient)}`),
+    "INDEPENDENT TRAIN BEAM CHECKS",
+    ...(result.trailerChecks ?? []).flatMap(check => [`  T${check.trailerIndex + 1}: ${check.detail}; active supports ${check.activeSupportCount}; shear utilisation ${number(check.beam.shearUtilisation)}; bending utilisation ${number(check.beam.bendingUtilisation)}`, ...check.supports.map(support => `    ${support.id}: ${number(support.reactionT)} t; ${support.reactionState}`)]),
     "",
     `HYDRAULICS — ${model.hydraulicSystemMode === "FOUR_POINT" ? "four-point" : "three-point"}`,
     `Stability-boundary points: ${result.stabilityPolygon.length}`,

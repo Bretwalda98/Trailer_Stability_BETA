@@ -1,4 +1,7 @@
 import { calculateProject } from "./core";
+import { applyBedLayout } from "./bed-layout";
+import { placementCadGraphics } from "./autocad-placement-graphics";
+import { deckPpuTrainId } from "./deck-ppus";
 import { applyAutomaticProjectCargoCogEnvelopeInputs } from "./cargo-envelope";
 import { hydraulicPressureOutputs } from "./hydraulic-output";
 import type { CalculationResult, HydraulicGrouping, ProjectModel } from "./types";
@@ -51,7 +54,7 @@ function cornerGroups(grouping: HydraulicGrouping): {
 
 /**
  * Builds the deliberately small, line-oriented interchange consumed directly
- * by SARENS_TRAILERDRAFTSMAN v1.22. It mirrors the drafting engine's retained
+ * by SARENS_TRAILERDRAFTSMAN v1.23. It mirrors the drafting engine's retained
  * data object and omits browser-only state, diagrams and catalogue rows that
  * the AutoLISP renderer never reads.
  *
@@ -64,10 +67,18 @@ export function buildAutocadCompactExport(
   authoritativeResult?: CalculationResult,
   generatedAt = new Date().toISOString(),
 ): string {
+  if (model.bedLayout) {
+    const compiled = applyBedLayout(model, model.bedLayout);
+    if (compiled.errors.length) throw new Error(compiled.errors.join(" "));
+    model = compiled.model;
+  }
   model = applyAutomaticProjectCargoCogEnvelopeInputs(model);
   const result = authoritativeResult ?? calculateProject(model);
+  if (result.failClass === "PLACEMENT") throw new Error(result.failDetail);
+  const extended = Boolean(model.bedLayout?.length || model.deckPpus?.length || model.trailers.some(trailer => Math.abs(trailer.yawDeg ?? 0) > 1e-9));
+  const graphics = extended ? placementCadGraphics(model, result) : [];
   const lines: string[] = [
-    line(AUTOCAD_COMPACT_FORMAT, AUTOCAD_COMPACT_VERSION, "MM-T-KN-DEG", "REAR-LOW-X"),
+    line(AUTOCAD_COMPACT_FORMAT, extended ? 2 : AUTOCAD_COMPACT_VERSION, "MM-T-KN-DEG", "REAR-LOW-X"),
     line(
       "CASE",
       textField(model.cargo.name || "Untitled case"),
@@ -110,10 +121,10 @@ export function buildAutocadCompactExport(
     throw new Error("AutoCAD export requires at least one enabled trailer with a valid catalogue definition.");
   }
 
-  let totalPowerpacks = 0;
+  let totalPowerpacks = model.deckPpus?.length ?? 0;
   let totalAxleLines = 0;
   let trailerSelfWeightT = 0;
-  let totalPowerpackWeightT = 0;
+  let totalPowerpackWeightT = (model.deckPpus ?? []).reduce((sum, ppu) => sum + ppu.massT, 0);
   result.resolvedTrailers.forEach((resolved, outputIndex) => {
     const input = model.trailers[resolved.index];
     const definition = input && model.catalogue.find((item) => item.id === input.definitionId);
@@ -145,6 +156,7 @@ export function buildAutocadCompactExport(
       frontPpuWeight,
       definition.axleWeightT * input.axleLines,
       definition.axleCapacityT,
+      ...(extended ? [resolved.yawDeg ?? 0] : []),
     ));
 
     const grouping = model.groupings[resolved.index] ?? {
@@ -172,6 +184,17 @@ export function buildAutocadCompactExport(
         .join(","),
     ));
   });
+
+  for (const bed of model.bedLayout ?? []) {
+    const definition = model.catalogue.find(item => item.id === bed.definitionId)!;
+    const trailerIndex = result.resolvedTrailers.findIndex(item => item.id === bed.train) + 1;
+    lines.push(line("BED", textField(bed.id), trailerIndex, bed.axleLines, bed.xM * 1000, bed.yM * 1000, bed.yawDeg, bed.axleLines * definition.axleSpacingM * 1000, definition.trailerWidthM * 1000));
+  }
+  for (const ppu of model.deckPpus ?? []) lines.push(line("DECKPPU", textField(ppu.id), result.resolvedTrailers.findIndex(item => item.id === deckPpuTrainId(model, ppu)) + 1, ppu.xM * 1000, ppu.yM * 1000, ppu.yawDeg, ppu.lengthM * 1000, ppu.widthM * 1000, ppu.heightM * 1000, ppu.massT, ppu.cogZM * 1000, ppu.secured, ppu.dragCoefficient, ppu.suppliesHydraulics === true, textField(ppu.hostId)));
+  for (const graphic of graphics) {
+    if (graphic.text !== undefined) lines.push(line("VIEWTEXT", graphic.view, graphic.layer, graphic.points[0].x * 1000, graphic.points[0].y * 1000, (graphic.heightM ?? .22) * 1000, textField(graphic.text)));
+    else lines.push(line("VIEWPATH", graphic.view, graphic.layer, graphic.points.map(point => `${numericField(point.x * 1000)},${numericField(point.y * 1000)}`).join(";")));
+  }
 
   model.supports.forEach((support, index) => {
     const settled = result.supports[index];
@@ -271,6 +294,7 @@ export function buildAutocadCompactExport(
     totalPowerpacks,
     model.supports.length,
     result.stabilityPolygon.length,
+    ...(extended ? [model.bedLayout?.length ?? 0, model.deckPpus?.length ?? 0, graphics.length] : []),
   ));
   return `${lines.join("\r\n")}\r\n`;
 }

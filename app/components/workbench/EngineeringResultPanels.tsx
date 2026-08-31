@@ -15,7 +15,7 @@ export function EngineeringResultPanels({ model, result }: { model: ProjectModel
   const activeTrailers = model.trailers.filter((trailer) => trailer.enabled);
   const definitions = [...new Map(activeTrailers.map((trailer) => [trailer.definitionId, model.catalogue.find((item) => item.id === trailer.definitionId)])).values()].filter(Boolean);
   const totalAxleLines = activeTrailers.reduce((sum, trailer) => sum + trailer.axleLines, 0);
-  const ppuCount = activeTrailers.reduce((sum, trailer) => sum + Number(trailer.ppuLeft) + Number(trailer.ppuRight), 0);
+  const ppuCount = activeTrailers.reduce((sum, trailer) => sum + Number(trailer.ppuLeft) + Number(trailer.ppuRight), model.deckPpus?.length ?? 0);
   const trailerTareT = activeTrailers.reduce((sum, trailer) => {
     const definition = model.catalogue.find((item) => item.id === trailer.definitionId);
     return sum + trailer.axleLines * (definition?.axleWeightT ?? 0);
@@ -23,7 +23,7 @@ export function EngineeringResultPanels({ model, result }: { model: ProjectModel
   const ppuMassT = activeTrailers.reduce((sum, trailer) => {
     const definition = model.catalogue.find((item) => item.id === trailer.definitionId);
     return sum + (Number(trailer.ppuLeft) + Number(trailer.ppuRight)) * (definition?.ppuWeightT ?? 0);
-  }, 0);
+  }, (model.deckPpus ?? []).reduce((sum, ppu) => sum + ppu.massT, 0));
   const pressures = hydraulicPressureOutputs(model, result);
   const pressureByGroup = new Map(pressures.map((pressure) => [pressure.group, pressure]));
   const groundByGroup = new Map(result.groundBearing.groups.map((group) => [group.group, group]));
@@ -70,6 +70,15 @@ export function EngineeringResultPanels({ model, result }: { model: ProjectModel
       </tbody></table></div>
     </Panel>
 
+    {!!result.trailerChecks?.length && <Panel title="Individual train checks" subtitle="Selected load case · every independent beam">
+      <div className="result-table-scroll"><table className="result-box-table"><thead><tr><th>Train</th><th>Active supports</th><th>Shear</th><th>Bending</th><th>Support solution</th></tr></thead><tbody>
+        {result.trailerChecks.map(check => <tr key={check.trailerIndex}><th>T{check.trailerIndex + 1}</th><td>{check.activeSupportCount}</td><td>{formatEngineering(check.beam.shearUtilisation * 100, "%")}</td><td>{formatEngineering(check.beam.bendingUtilisation * 100, "%")}</td><td>{check.passed ? "Settled" : check.detail}</td></tr>)}
+      </tbody></table></div>
+      <p className="result-box-warning">Global beam utilisation uses the worst checked train. The beam graph shows the selected train. Transverse packing strength, torsion, securing and steering compatibility are separate checks.</p>
+    </Panel>}
+    {!!model.deckPpus?.length && <Panel title="Deck-mounted PPUs" subtitle="Additional carried equipment">
+      <dl className="result-box-list">{model.deckPpus.map((ppu, index) => <div key={ppu.id}><dt>PPU {index + 1} · {ppu.hostId}</dt><dd>{formatEngineering(ppu.massT, "t")} · COG ({ppu.xM.toFixed(3)}, {ppu.yM.toFixed(3)}, {(model.trailerDeckHeightM + ppu.cogZM).toFixed(3)}) m</dd></div>)}</dl>
+    </Panel>}
     <Panel title="Hydraulic suspension" subtitle="bar · level ground at average deck height">
       <div className="result-table-scroll"><table className="result-box-table"><thead><tr><th>Case</th>{groupIds.map((group) => <th key={group}>G{group}</th>)}</tr></thead><tbody>
         {(["neutralBar", "aBar", "bBar", "cBar", "dBar"] as const).map((key, index) => <tr key={key}><th>{["Neutral", "A", "B", "C", "D"][index]}</th>{groupIds.map((group) => <td key={group}>{formatEngineering(pressureByGroup.get(group)?.[key], "bar")}</td>)}</tr>)}
