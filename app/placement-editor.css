@@ -20,7 +20,7 @@
 .arrangement-home-existing { display: flex; flex-wrap: wrap; gap: 12px; }
 .arrangement-home-existing button { display: flex; align-items: center; gap: 10px; }
 .arrangement-home footer { border-top: 1px solid #273842; padding-top: 22px; margin-top: 30px; color: #91a2ad; line-height: 1.5; font-size: 13px; }
-.placement-editor { min-width: 0; padding: 20px; border-bottom: 1px solid #33434f; }
+.placement-editor { min-width: 0; padding: 20px; border-bottom: 1px solid #33434f; container-type: inline-size; }
 .placement-editor header { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 16px; }
 .placement-editor header > div:first-child { flex: 1 1 230px; }
 .placement-editor h3 { margin: 0 0 8px; font-size: 17px; }
@@ -30,14 +30,20 @@
 .placement-editor input, .placement-editor select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 40px; border: 1px solid #4b616f; border-radius: 2px; color: #e2ecf4; background: #080e13; padding: 8px; font: inherit; }
 .placement-editor input[type=checkbox] { width: 20px; height: 20px; min-height: 0; accent-color: #439aff; }
 .placement-command-panel { border: 1px solid #344752; margin: 14px 0 18px; background: #080d11; }
-.placement-add-bed { display: grid; grid-template-columns: minmax(190px, 1fr) auto repeat(3, auto); gap: 8px; align-items: end; padding: 12px; border-bottom: 1px solid #293b46; }
+.placement-add-bed { display: grid; grid-template-columns: minmax(190px, 1fr) repeat(3, minmax(86px, auto)); gap: 8px; align-items: end; padding: 12px; border-bottom: 1px solid #293b46; }
 .placement-add-bed label { display: grid; gap: 6px; color: #acbdc9; font-size: 12px; }
-.placement-add-bed > span { align-self: center; color: #737d86; font-size: 11px; text-transform: uppercase; letter-spacing: .045em; }
-.placement-batch-actions { display: grid; grid-template-columns: minmax(210px, .7fr) minmax(0, 1.3fr); gap: 16px; align-items: center; padding: 12px; }
+.placement-add-bed label small { color: #737d86; font-size: 10px; line-height: 1.25; }
+.placement-batch-actions { display: grid; grid-template-columns: 1fr; gap: 10px; align-items: center; padding: 12px; }
 .placement-batch-actions > div:first-child { display: grid; gap: 5px; color: #f1f3f5; }
 .placement-batch-actions > div:first-child span { color: #aeb5bc; font-size: 12px; line-height: 1.35; }
-.placement-action-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-.placement-action-buttons button { min-height: 36px; }
+.placement-action-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.placement-action-buttons button { min-width: 0; min-height: 40px; padding-inline: 8px; }
+@container (max-width: 620px) {
+  .placement-add-bed { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .placement-add-bed label { grid-column: 1 / -1; }
+  .placement-batch-actions { grid-template-columns: 1fr; }
+  .placement-action-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .formation-list, .bed-inspector { border: 1px solid #344752; margin: 16px 0; background: #080d11; }
 .formation-list > header, .bed-inspector > header { padding: 12px 14px; margin: 0; border-bottom: 1px solid #293b46; align-items: center; }
 .formation-list > header p, .bed-inspector > header p { margin: 0; max-width: 60ch; }
@@ -84,8 +90,9 @@
   .placement-editor button, .placement-editor input, .placement-editor select, .arrangement-home button { min-height: 44px; }
   .placement-ppu { grid-template-columns: 1fr; }
   .placement-add-bed, .placement-batch-actions { grid-template-columns: 1fr; }
-  .placement-add-bed > span { display: none; }
-  .placement-action-buttons { justify-content: flex-start; }
+  .placement-add-bed { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .placement-add-bed label { grid-column: 1 / -1; }
+  .placement-action-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .formation-train > header { grid-template-columns: minmax(0, 1fr) auto; }
   .formation-train > header small { grid-column: 1 / -1; text-align: left; }
   .formation-bed-list { grid-template-columns: 1fr; }
