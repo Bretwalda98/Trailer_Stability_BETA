@@ -1814,6 +1814,19 @@ textarea::placeholder {
 .result-box-warning, .result-box-empty { margin: 0; padding: 9px 10px; color: #d9a85d; font-size: 10px; }
 .result-box-empty { color: #8797a2; }
 
+/* Failure explanations retain the actual governing arithmetic instead of a generic NOK label. */
+.failure-math { border: 1px solid #7c3038; background: #180d10; }
+.failure-math > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 10px; border-bottom: 1px solid #633038; background: #241014; }
+.failure-math > header b { color: #ffb5b9; font-size: 12px; }
+.failure-math > header span { color: #c58a90; font: 9px var(--font-mono); text-align: right; }
+.failure-math article { padding: 9px 10px; border-top: 1px solid #48242a; }
+.failure-math article:first-of-type { border-top: 0; }
+.failure-math article > b { display: block; color: #ffb5b9; font-size: 11px; }
+.failure-math p, .failure-math small { display: block; margin: 4px 0 0; line-height: 1.45; }
+.failure-math p { color: #e9d7d8; font: 10px var(--font-mono); }
+.failure-math small { color: #d69c9f; font-size: 10px; }
+.failure-math.compact { margin: 9px; }
+
 .arrangement-hard-constraints { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
 .arrangement-hard-constraints span { padding: 9px 10px; border-left: 3px solid #3cc98a; background: #0d1715; color: #c8d6d0; }
 .arrangement-hard-constraints b { display: block; color: #66d9a3; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
@@ -2253,6 +2266,48 @@ textarea::placeholder {
   .candidate-compare {
     min-height: 190px;
   }
+}
+
+/* A right inspector must never compress into unreadable columns. */
+.results-panel-resizer { display: none; }
+@media (min-width: 901px) {
+  .workbench-grid {
+    grid-template-columns: 232px minmax(380px, 1fr) 10px var(--results-panel-width, 390px);
+  }
+  .workbench-grid.navigation-collapsed {
+    grid-template-columns: 48px minmax(380px, 1fr) 10px var(--results-panel-width, 390px);
+  }
+  .workbench-grid.results-collapsed {
+    grid-template-columns: 232px minmax(380px, 1fr) 28px 0;
+  }
+  .workbench-grid.navigation-collapsed.results-collapsed {
+    grid-template-columns: 48px minmax(380px, 1fr) 28px 0;
+  }
+  .results-panel-resizer {
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    width: 10px;
+    min-width: 10px;
+    margin: 0;
+    border: 0;
+    border-left: 1px solid #31404a;
+    border-right: 1px solid #0a0f13;
+    background: #101820;
+    color: #7d98ad;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .results-panel-resizer:hover, .results-panel-resizer:focus-visible { background: #173041; color: #d5e9f6; outline: none; }
+  .results-panel-resizer svg { pointer-events: none; }
+  .results-collapsed .results-panel-resizer { width: 28px; min-width: 28px; cursor: pointer; border-left-color: #31404a; }
+  .results-collapsed .results-inspector { display: none; }
+}
+
+@media (min-width: 901px) and (max-width: 1180px) {
+  .workbench-grid, .workbench-grid.navigation-collapsed,
+  .workbench-grid.results-collapsed, .workbench-grid.navigation-collapsed.results-collapsed { grid-template-columns: 166px minmax(480px, 1fr); }
+  .results-panel-resizer { display: none; }
 }
 
 .application-statusbar span {

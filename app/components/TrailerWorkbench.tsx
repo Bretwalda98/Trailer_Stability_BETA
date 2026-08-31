@@ -1,7 +1,7 @@
 "use client";
 
-import { IconChartLine, IconGeometry, IconHierarchy2 } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { IconChartLine, IconChevronLeft, IconChevronRight, IconGeometry, IconHierarchy2 } from "@tabler/icons-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createDefaultModel, hydrateProjectModel } from "../data/default-model";
 import { passToProject } from "../engine/optimiser";
 import { createBlankSetupModel, WIZARD_DRAFT_STORAGE_KEY, type SetupSourceType } from "../engine/setup";
@@ -96,6 +96,8 @@ export default function TrailerWorkbench() {
   const [persistActiveProject, setPersistActiveProject] = useState(false);
   const [optimiseAfterSetup, setOptimiseAfterSetup] = useState(false);
   const [navigationCollapsed, setNavigationCollapsed] = useState(false);
+  const [resultsCollapsed, setResultsCollapsed] = useState(false);
+  const [resultsWidth, setResultsWidth] = useState(390);
   const hydratedRef = useRef(false);
 
   const engine = useEngineeringEngine(model);
@@ -512,7 +514,10 @@ export default function TrailerWorkbench() {
           }}
         />
       )}
-      <div className={`workbench-grid mobile-panel-${mobilePanel}${navigationCollapsed ? " navigation-collapsed" : ""}`}>
+      <div
+        className={`workbench-grid mobile-panel-${mobilePanel}${navigationCollapsed ? " navigation-collapsed" : ""}${resultsCollapsed ? " results-collapsed" : ""}`}
+        style={{ "--results-panel-width": `${resultsWidth}px` } as CSSProperties}
+      >
         <div className="mobile-workspace-nav">
           <label>
             <span>Workspace</span>
@@ -571,6 +576,27 @@ export default function TrailerWorkbench() {
           onOpenDetails={() => setDetailsOpen(true)}
         />
         <div className="central-workspace" id="engineering-workspace" tabIndex={-1}>{centralWorkspace}</div>
+        <button
+          type="button"
+          className="results-panel-resizer"
+          aria-label={resultsCollapsed ? "Show results panel" : "Resize or hide results panel"}
+          title={resultsCollapsed ? "Show results" : "Drag to resize; click to hide"}
+          onClick={() => setResultsCollapsed((current) => !current)}
+          onPointerDown={(event) => {
+            if (resultsCollapsed) return;
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            const resize = (move: PointerEvent) => setResultsWidth(Math.max(300, Math.min(620, window.innerWidth - move.clientX)));
+            const finish = () => {
+              window.removeEventListener("pointermove", resize);
+              window.removeEventListener("pointerup", finish);
+            };
+            window.addEventListener("pointermove", resize);
+            window.addEventListener("pointerup", finish, { once: true });
+          }}
+        >
+          {resultsCollapsed ? <IconChevronLeft size={15} /> : <IconChevronRight size={15} />}
+        </button>
         <ResultsInspector
           model={model}
           result={engine.result}

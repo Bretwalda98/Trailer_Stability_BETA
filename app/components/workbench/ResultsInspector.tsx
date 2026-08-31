@@ -19,6 +19,7 @@ import type {
 } from "../../geometry/types";
 import type { WorkspaceId } from "./types";
 import { EngineeringResultPanels } from "./EngineeringResultPanels";
+import { FailureMath } from "./FailureMath";
 
 interface ResultsInspectorProps {
   model: ProjectModel;
@@ -417,6 +418,7 @@ export function ResultsInspector({
           </div>
         </section>
       )}
+      {result.status !== "PASS" && <FailureMath model={model} result={result} compact />}
 
       <section className="inspector-section result-summary">
         <header className="result-summary-header">

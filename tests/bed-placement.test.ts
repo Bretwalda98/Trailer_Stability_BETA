@@ -12,6 +12,7 @@ import { buildAutocadCompactExport } from "../app/engine/autocad-compact-export"
 import { applyArrangementDescriptor, bestModuleComposition, createArrangementDescriptor, trainAngleCandidates, validateArrangementPlacement } from "../app/engine/arrangement";
 import { collectSetupIssues } from "../app/engine/setup";
 import { buildCaseTextExport } from "../app/engine/case-text-export";
+import { appendBedAtSelectedTrainFront, bedTrainKeys, groupAndAlignBeds, nextTrainName } from "../app/engine/formation-editor";
 import type { BedPlacement, DeckPpu, ProjectModel } from "../app/engine/types";
 
 const close = (actual: number, expected: number, tolerance = 1e-7) => assert.ok(Math.abs(actual - expected) < tolerance, `${actual} != ${expected}`);
@@ -130,6 +131,28 @@ assert.match(shorterTrainCheck.trailerChecks?.find(check => check.trailerIndex =
 assert.notEqual(shorterTrainCheck.status, "PASS");
 assert.ok(!collectSetupIssues(mixed, calculateProject(mixed)).some(issue => ["trailer-shared-axles-1", "shared-split-1", "shared-pins-1"].includes(issue.id)));
 assert.throws(() => assertLegacyPlacementSupported(mixed), /unequal/);
+
+const editorBeds: BedPlacement[] = [
+  { id: "B1", train: "Train 1", definitionId: def.id, axleLines: 4, xM: 0, yM: 0, yawDeg: 0, ppuRear: false, ppuFront: false },
+  { id: "B2", train: "legacy", definitionId: def.id, axleLines: 5, xM: 25, yM: 0, yawDeg: 0, ppuRear: false, ppuFront: true },
+  { id: "B3", train: "Train 1", definitionId: def.id, axleLines: 6, xM: 9, yM: 0, yawDeg: 0, ppuRear: false, ppuFront: false },
+];
+assert.equal(nextTrainName(editorBeds), "Train 2");
+const editorPpu: DeckPpu = { id: "PPU-editor", hostId: "B2", xM: 27, yM: 0, yawDeg: 0, lengthM: 1, widthM: 1, heightM: .4, massT: 4, cogZM: .2, secured: true, dragCoefficient: 1.2 };
+assert.deepEqual(bedTrainKeys(editorBeds, ["B1"], [editorPpu], ["PPU-editor"]).sort(), ["Train 1", "legacy"]);
+const groupedEditor = groupAndAlignBeds(mixedBase, editorBeds, [editorPpu], ["B1", "B2"]);
+assert.equal(groupedEditor.error, undefined);
+assert.equal(groupedEditor.train, "Train 2");
+assert.equal(groupedEditor.beds.filter(bed => bed.train === "Train 2").length, 2);
+close(groupedEditor.beds.find(bed => bed.id === "B2")!.xM, def.axleSpacingM * 4);
+close(groupedEditor.ppus[0].xM, def.axleSpacingM * 4 + 2);
+const batchEditor = appendBedAtSelectedTrainFront(mixedBase, groupedEditor.beds, groupedEditor.ppus, ["Train 1", "Train 2"], 5, (train, index) => `new-${train}-${index}`);
+assert.equal(batchEditor.error, undefined);
+assert.deepEqual(batchEditor.addedBedIds?.sort(), ["new-Train 1-0", "new-Train 2-1"]);
+assert.equal(batchEditor.beds.find(bed => bed.id === "B2")!.ppuFront, false);
+assert.equal(batchEditor.beds.find(bed => bed.id === "new-Train 2-1")!.ppuFront, true);
+const blockedBatch = appendBedAtSelectedTrainFront(mixedBase, [{ ...editorBeds[0], axleLines: 6 }, ...Array.from({ length: 15 }, (_, index) => ({ ...editorBeds[0], id: `B-limit-${index}`, axleLines: 6 as const, xM: (index + 1) * def.axleSpacingM * 6 }))], [], ["Train 1"], 4, () => "must-not-add");
+assert.match(blockedBatch.error ?? "", /99-AL/);
 const settings = { ...base.arrangementOptimiser, trailerDefinitionId: def.id, allowAngledFormations: true, maximumTrainAngleDeg: 10, trainAngleSamples: 2 };
 const angles = trainAngleCandidates(settings, 2);
 assert.ok(angles.some(list => list.every(angle => angle === 0)));

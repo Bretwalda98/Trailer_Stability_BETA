@@ -29,18 +29,41 @@
 .placement-actions label { display: grid; gap: 6px; flex: 1 1 180px; color: #acbdc9; font-size: 12px; }
 .placement-editor input, .placement-editor select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 40px; border: 1px solid #4b616f; border-radius: 2px; color: #e2ecf4; background: #080e13; padding: 8px; font: inherit; }
 .placement-editor input[type=checkbox] { width: 20px; height: 20px; min-height: 0; accent-color: #439aff; }
-.placement-table-scroll { max-width: 100%; overflow: auto; border: 1px solid #344752; }
-.placement-table { width: 100%; min-width: 920px; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
-.placement-table th, .placement-table td { padding: 8px; border-bottom: 1px solid #293b46; text-align: left; }
-.placement-table th { font-weight: 500; color: #aabdc9; }
-.placement-table th:first-child { width: 125px; }
-.placement-table th:nth-child(2) { width: 140px; }
-.placement-table th:nth-child(3) { width: 60px; }
-.placement-table th:nth-child(n+7) { width: 68px; }
-.placement-table tr.selected { background: #102c40; }
+.placement-command-panel { border: 1px solid #344752; margin: 14px 0 18px; background: #080d11; }
+.placement-add-bed { display: grid; grid-template-columns: minmax(190px, 1fr) auto repeat(3, auto); gap: 8px; align-items: end; padding: 12px; border-bottom: 1px solid #293b46; }
+.placement-add-bed label { display: grid; gap: 6px; color: #acbdc9; font-size: 12px; }
+.placement-add-bed > span { align-self: center; color: #737d86; font-size: 11px; text-transform: uppercase; letter-spacing: .045em; }
+.placement-batch-actions { display: grid; grid-template-columns: minmax(210px, .7fr) minmax(0, 1.3fr); gap: 16px; align-items: center; padding: 12px; }
+.placement-batch-actions > div:first-child { display: grid; gap: 5px; color: #f1f3f5; }
+.placement-batch-actions > div:first-child span { color: #aeb5bc; font-size: 12px; line-height: 1.35; }
+.placement-action-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.placement-action-buttons button { min-height: 36px; }
+.formation-list, .bed-inspector { border: 1px solid #344752; margin: 16px 0; background: #080d11; }
+.formation-list > header, .bed-inspector > header { padding: 12px 14px; margin: 0; border-bottom: 1px solid #293b46; align-items: center; }
+.formation-list > header p, .bed-inspector > header p { margin: 0; max-width: 60ch; }
+.formation-count { color: #aeb5bc; font: 12px "IBM Plex Mono", Consolas, monospace; white-space: nowrap; }
+.formation-train { border-bottom: 1px solid #293b46; }
+.formation-train:last-child { border-bottom: 0; }
+.formation-train > header { display: grid; grid-template-columns: minmax(180px, 1fr) auto minmax(100px, auto); gap: 12px; align-items: center; min-height: 44px; padding: 8px 14px; margin: 0; background: #0b1116; }
+.formation-train[data-selected=true] > header { border-left: 3px solid #2f81f7; padding-left: 11px; background: #0e1b25; }
+.formation-train > header > span { color: #aeb5bc; font: 12px "IBM Plex Mono", Consolas, monospace; }
+.formation-train > header small { color: #737d86; text-align: right; }
+.formation-select { display: flex; align-items: center; gap: 9px; color: #f1f3f5; font-weight: 650; }
+.formation-select input, .formation-bed-row input, .placement-ppu legend input { flex: 0 0 auto; }
+.formation-bed-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1px; background: #293b46; }
+.formation-bed-row { display: grid; grid-template-columns: 38px minmax(0, 1fr); background: #080d11; min-width: 0; }
+.formation-bed-row > label { display: grid; place-items: center; border-right: 1px solid #293b46; }
+.formation-bed-row > button { display: grid; grid-template-columns: 44px 58px repeat(3, minmax(64px, 1fr)); align-items: center; gap: 8px; min-width: 0; min-height: 48px; padding: 7px 10px; border: 0; border-left: 2px solid transparent; background: #080d11; color: #aeb5bc; text-align: left; font: 12px "IBM Plex Mono", Consolas, monospace; }
+.formation-bed-row > button:hover { background: #101c25; }
+.formation-bed-row.active > button { border-left-color: #2f81f7; background: #112638; color: #f1f3f5; }
+.formation-bed-row[data-invalid=true] > button { border-left-color: #e9a23b; }
+.formation-bed-row > button b { color: #f1f3f5; font-family: "IBM Plex Sans Variable", sans-serif; }
+.bed-inspector { padding-bottom: 14px; }
+.bed-inspector-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 14px; }
+.bed-inspector-fields label { display: grid; gap: 6px; color: #b5c6d2; font-size: 12px; min-width: 0; }
 .placement-editor [data-invalid=false] input:not([type=checkbox]) { border-left: 3px solid #328566; }
 .placement-editor [data-invalid=true] input:not([type=checkbox]) { border-left: 3px solid #d8a041; }
-.placement-editor [data-invalid=true] legend, .placement-table tr[data-invalid=true] th { color: #f0bc68; }
+.placement-editor [data-invalid=true] legend { color: #f0bc68; }
 .wizard-hydraulic-table input { min-width: 95px; width: 100%; max-width: 160px; padding: 8px; color: #e2ecf4; background: #080e13; border: 1px solid #4b616f; }
 .placement-table small { display: block; margin-top: 5px; font-size: 10px; overflow-wrap: anywhere; }
 .placement-ppu { margin: 18px 0; padding: 16px; border: 1px solid #425765; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-width: 0; }
@@ -48,6 +71,7 @@
 .placement-ppu label.placement-checkbox { display: flex; align-items: center; }
 .placement-errors { border-left: 3px solid #ed5e61; background: #28171c; padding: 12px; margin-top: 14px; color: #ffb0b5; font-size: 13px; }
 .placement-errors ul { padding-left: 20px; margin: 8px 0 0; line-height: 1.6; }
+.placement-notice { border-left: 3px solid #2f81f7; background: #0c1d2b; padding: 10px 12px; color: #cde5f7; }
 .engineering-svg .bed-outline { fill: #348ccb12; stroke: #6bbdf0; stroke-width: 1; vector-effect: non-scaling-stroke; cursor: pointer; }
 .engineering-svg .bed-outline.selected { stroke: #ffce61; stroke-width: 2; }
 .engineering-svg .deck-ppu-outline { fill: #b585371a; stroke: #efb75f; stroke-width: 1; vector-effect: non-scaling-stroke; cursor: pointer; }
@@ -59,4 +83,13 @@
   .placement-editor { padding: 14px; }
   .placement-editor button, .placement-editor input, .placement-editor select, .arrangement-home button { min-height: 44px; }
   .placement-ppu { grid-template-columns: 1fr; }
+  .placement-add-bed, .placement-batch-actions { grid-template-columns: 1fr; }
+  .placement-add-bed > span { display: none; }
+  .placement-action-buttons { justify-content: flex-start; }
+  .formation-train > header { grid-template-columns: minmax(0, 1fr) auto; }
+  .formation-train > header small { grid-column: 1 / -1; text-align: left; }
+  .formation-bed-list { grid-template-columns: 1fr; }
+  .formation-bed-row > button { grid-template-columns: 42px 54px 1fr; }
+  .formation-bed-row > button span:nth-of-type(2), .formation-bed-row > button span:nth-of-type(3) { display: none; }
+  .bed-inspector-fields { grid-template-columns: 1fr; }
 }
