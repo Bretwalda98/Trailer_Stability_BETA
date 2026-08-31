@@ -3764,7 +3764,7 @@ input[type="checkbox"] {
 
 .setup-wizard-shell {
   display: grid;
-  grid-template-columns: 216px 390px minmax(0, 1fr);
+  grid-template-columns: 216px minmax(520px, 580px) minmax(420px, 1fr);
   grid-template-rows: 54px minmax(0, 1fr) 64px;
   width: 100%;
   height: 100%;
@@ -5640,7 +5640,7 @@ input[type="checkbox"] {
 
 @media (max-width: 1180px) {
   .setup-wizard-shell {
-    grid-template-columns: 184px 350px minmax(0, 1fr);
+    grid-template-columns: 184px minmax(460px, 500px) minmax(380px, 1fr);
   }
 
   .optimiser-wizard-shell {
